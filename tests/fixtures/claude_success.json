@@ -1,0 +1,16 @@
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "stop_reason": "end_turn",
+  "terminal_reason": "completed",
+  "total_cost_usd": 0.011338,
+  "num_turns": 1,
+  "result": "ok",
+  "usage": {
+    "input_tokens": 9,
+    "output_tokens": 41
+  },
+  "permission_denials": [],
+  "duration_ms": 1719
+}
