@@ -54,7 +54,9 @@ rules 1, 9 and 10 below:
 The owner works on **Windows, in PowerShell 5.1**. Any command they are to run is given in
 PowerShell syntax: no `sed`/`grep`/`/tmp`; line continuation is a backtick; no `&&` (use `;` and
 check `$LASTEXITCODE`); long output piped through `Select-Object -Last N`. Multi-line edits go
-through a here-string piped to `python -`.
+through a here-string piped to `uv run python -` (`python` is not on the owner's PATH; uv
+provides one). An `if`/`elseif`/`else` chain is written on a single line: the PowerShell 5.1
+console runs each pasted line as it arrives, so an `elseif` or `else` on its own line fails.
 
 ## Cloud sessions
 
