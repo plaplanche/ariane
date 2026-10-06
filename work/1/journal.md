@@ -90,3 +90,20 @@ I did not add a separate release note anywhere; the ticket's wording is unchange
 ## 2026-10-06 17:38:56Z Agent verified
 
 Same branch, history kept, no push.
+
+## 2026-10-06 17:38:56Z Agent work committed
+
+- `src/ariane/cli.py`
+- `tests/test_cli.py`
+
+## 2026-10-06 17:39:13Z Checks replayed by Ariane
+
+| Check | Blocking | Result | Duration |
+| --- | --- | --- | --- |
+| lint | yes | pass | 0.1 s |
+| format | yes | pass | 0.0 s |
+| types | yes | pass | 0.2 s |
+| tests | yes | pass | 16.9 s |
+| file length | yes | pass | 0.1 s |
+
+Summary: 5 passed, 0 failed (0 blocking).
