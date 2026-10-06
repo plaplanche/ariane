@@ -28,6 +28,9 @@ and approvals (C2) arrive in slice 3, so `ariane start` runs the flow straight t
    changes to another ticket's records under `work/`. Refuse when it changed no file outside
    `work/`. Commit what it left outside `work/`, as Ariane. New files ignored by git are listed
    in the journal as a warning: the checks see them, the pull request does not carry them.
+   The comparison is per entry as git lists it, so a file added inside a folder that was
+   already ignored (for example `.venv/`) is not reported, and caches such as
+   `.pytest_cache/` are; refining it is left to slice 4 (C9 complete).
 9. Run every declared check, all of them even when one fails (C9), in the same credential-free
    environment as the agent: checks run code the agent wrote. Verify again, and also that the
    branch still points at the commit that was checked. The full report goes to
