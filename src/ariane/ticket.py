@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import shutil
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,6 +15,8 @@ BRIEF = "brief.md"
 JOURNAL = "journal.md"
 STATUS = "status.md"
 CHECKS = "checks.md"
+RECORDS = (BRIEF, JOURNAL, STATUS, CHECKS)
+_BACKTICKS = re.compile(r"`+")
 
 
 def folder_path(root: Path, number: int) -> Path:
@@ -26,36 +31,45 @@ def now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%SZ")
 
 
-class TicketFolder:
-    """Ariane's records of one ticket.
+def fence(text: str) -> str:
+    """A backtick fence longer than any backtick run inside `text`."""
+    longest = max((len(run) for run in _BACKTICKS.findall(text)), default=0)
+    return "`" * max(3, longest + 1)
 
-    Ariane keeps the journal in memory and rewrites the whole file at every entry, so an agent
-    that edits or deletes the folder cannot alter what Ariane records.
+
+def fenced(text: str, info: str = "text") -> str:
+    marks = fence(text)
+    return f"{marks}{info}\n{text.rstrip()}\n{marks}"
+
+
+class TicketFolder:
+    """Ariane's records of one ticket, in `root/work/<n>/`.
+
+    Ariane keeps every record in memory and rewrites it whole, so an agent that edits,
+    deletes, replaces with a link, or adds files in the folder cannot alter what Ariane
+    records. Known secrets are masked in everything written.
     """
 
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self._brief = ""
-        self._journal = ""
+    def __init__(self, root: Path, number: int, secrets: Sequence[str] = ()) -> None:
+        self.root = root
+        self.path = folder_path(root, number)
+        self._secrets = [s for s in secrets if s]
+        self._records: dict[str, str] = {}
 
     def create(self, issue: Issue) -> None:
-        self.path.mkdir(parents=True, exist_ok=False)
-        self._brief = brief(issue)
-        self.write(BRIEF, self._brief)
-        self._journal = f"# Journal of ticket #{issue.number}\n"
-        self.write(JOURNAL, self._journal)
+        if self.path.exists() or self.path.is_symlink():
+            raise FileExistsError(f"ticket folder already exists: {self.path}")
+        self.write(BRIEF, brief(issue))
+        self.write(JOURNAL, f"# Journal of ticket #{issue.number}\n")
+
+    def exists(self) -> bool:
+        return JOURNAL in self._records
 
     def log(self, step: str, detail: str = "") -> None:
         entry = f"\n## {now()} {step}\n"
         if detail:
             entry += f"\n{detail.rstrip()}\n"
-        self._journal += entry
-        self.write(JOURNAL, self._journal)
-
-    def restore(self) -> None:
-        """Rewrite the brief and journal as Ariane recorded them, whatever an agent did."""
-        self.write(BRIEF, self._brief)
-        self.write(JOURNAL, self._journal)
+        self.write(JOURNAL, self._records.get(JOURNAL, "") + entry)
 
     def set_status(self, state: str, detail: str, next_action: str) -> None:
         self.write(
@@ -65,8 +79,43 @@ class TicketFolder:
         )
 
     def write(self, name: str, text: str) -> None:
-        self.path.mkdir(parents=True, exist_ok=True)
-        _write(self.path / name, text)
+        self._records[name] = self._redact(text)
+        self._ensure_folder()
+        target = self.path / name
+        if target.is_symlink() or target.is_dir():
+            _remove(target)
+        target.write_text(self._records[name], encoding="utf-8", newline="\n")
+
+    def restore(self) -> None:
+        """Rewrite the folder exactly as Ariane recorded it, whatever an agent did."""
+        self._ensure_folder()
+        for entry in self.path.iterdir():
+            if entry.name not in self._records:
+                _remove(entry)
+        for name, text in self._records.items():
+            self.write(name, text)
+
+    def _ensure_folder(self) -> None:
+        """Make every folder from the root down a real directory, never a link or a file."""
+        self.root.mkdir(parents=True, exist_ok=True)
+        current = self.root
+        for part in self.path.relative_to(self.root).parts:
+            current = current / part
+            if current.is_symlink() or (current.exists() and not current.is_dir()):
+                _remove(current)
+            current.mkdir(exist_ok=True)
+
+    def _redact(self, text: str) -> str:
+        for secret in self._secrets:
+            text = text.replace(secret, "***")
+        return text
+
+
+def _remove(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
 
 
 def brief(issue: Issue) -> str:
@@ -89,7 +138,3 @@ def read_status(path: Path) -> dict[str, str]:
             key, _, value = line[2:].partition(": ")
             fields[key] = value
     return fields
-
-
-def _write(path: Path, text: str) -> None:
-    path.write_text(text, encoding="utf-8", newline="\n")

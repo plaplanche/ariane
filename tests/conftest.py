@@ -119,13 +119,14 @@ class FakeRuntime:
 
     action: Action = edit_app
     stop_reason: StopReason = StopReason.FINISHED
+    summary: str = "changed app.txt"
     name: str = "fake"
     sessions: list[Session] = field(default_factory=list)
 
     def run(self, session: Session) -> SessionResult:
         self.sessions.append(session)
         self.action(session)
-        return SessionResult(self.stop_reason, 0.42, 10, 20, "changed app.txt")
+        return SessionResult(self.stop_reason, 0.42, 10, 20, self.summary)
 
 
 @pytest.fixture

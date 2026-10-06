@@ -12,8 +12,8 @@ from ariane import __version__, config, flow, git, ticket
 from ariane.claude_code import ClaudeCodeRuntime
 from ariane.github import GitHubTracker
 
-EXIT_OK = 0
-EXIT_STOPPED = 1
+EXIT_OK = flow.EXIT_OK
+EXIT_STOPPED = flow.EXIT_STOPPED
 EXIT_USAGE = 2
 
 

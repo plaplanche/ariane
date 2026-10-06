@@ -69,6 +69,17 @@ def test_c22_a_valid_configuration_is_parsed_with_defaults() -> None:
         ("checks.0.command", "pytest -q", "checks[0].command: expected a non-empty list"),
         ("checks.0.blocking", "yes", "checks[0].blocking: expected true or false"),
         ("checks.0.shell", True, "checks[0].shell: unknown key"),
+        (
+            "agents.implementer.timeout_minutes",
+            float("nan"),
+            "timeout_minutes: expected a positive",
+        ),
+        ("agents.implementer.max_budget_usd", float("inf"), "max_budget_usd: expected a positive"),
+        ("agents.implementer.max_budget_usd", -1, "max_budget_usd: expected a positive"),
+        ("tracker.api_url", "http://api.example.invalid", "tracker.api_url: expected an https"),
+        ("tracker.api_url", "ftp://x", "tracker.api_url: expected an https"),
+        ("project.base_branch", "-x", "project.base_branch: not a valid branch name"),
+        ("project.base_branch", "a b", "project.base_branch: not a valid branch name"),
     ],
 )
 def test_c22_an_invalid_configuration_names_the_faulty_key(
@@ -78,6 +89,13 @@ def test_c22_an_invalid_configuration_names_the_faulty_key(
         config.parse(with_change(path, value))
     assert str(error.value).startswith("ariane.toml: ")
     assert message in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "url", ["https://git.example.invalid/api/v3", "http://127.0.0.1:8080", "http://localhost"]
+)
+def test_c22_https_or_a_local_test_server_is_accepted_as_api_url(url: str) -> None:
+    assert config.parse(with_change("tracker.api_url", url)).tracker.api_url == url
 
 
 def test_c22_duplicate_check_names_are_refused() -> None:

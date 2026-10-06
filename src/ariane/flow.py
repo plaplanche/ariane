@@ -14,6 +14,10 @@ from ariane.tracker import Issue, Tracker, TrackerError
 
 REMOTE = "origin"
 SETUP_TIMEOUT_S = 30 * 60
+EXIT_OK = 0
+EXIT_STOPPED = 1
+# Failures that stop a ticket cleanly, with a journaled reason, instead of a traceback.
+_FAILURES = (git.GitError, TrackerError, OSError, process.CommandNotFoundError)
 
 
 @dataclass(frozen=True)
@@ -53,16 +57,18 @@ def start(
     try:
         issue = tracker.read_issue(number)
     except TrackerError as exc:
-        return Outcome(1, f"Did not start #{number}: {exc}. Next: check the number and access.")
+        return Outcome(EXIT_STOPPED, f"Did not start #{number}: {exc}. Next: check the number.")
     branch = branch_name(number)
     worktree = worktree_path(repo_root, number)
     try:
-        url, heads_before = _prepare(repo_root, config, branch, worktree)
-    except (Stop, git.GitError) as exc:
+        url, refs_before = _prepare(repo_root, config, branch, worktree)
+        run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url)
+    except (Stop, *_FAILURES) as exc:
         reason, next_action = _describe(exc)
-        return Outcome(1, f"Did not start ticket #{number}: {reason}. Next: {next_action}.")
-    run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url)
-    return run.execute(heads_before)
+        return Outcome(
+            EXIT_STOPPED, f"Did not start ticket #{number}: {reason}. Next: {next_action}."
+        )
+    return run.execute(refs_before)
 
 
 def _prepare(
@@ -75,17 +81,21 @@ def _prepare(
         raise Stop(f"branch {branch} already exists locally", "delete it to start over")
     url = git.push_url(repo_root, REMOTE)
     git.fetch(repo_root, REMOTE, config.base_branch)
-    heads = git.remote_heads(repo_root, url)
-    if branch in heads:
-        raise Stop(f"branch {branch} already exists on {REMOTE}", "close its pull request first")
+    refs = git.remote_refs(repo_root, url)
+    if f"refs/heads/{branch}" in refs:
+        raise Stop(
+            f"branch {branch} already exists on {REMOTE}",
+            "close its pull request and delete the branch, then start again",
+        )
     git.add_worktree(repo_root, worktree, branch, f"{REMOTE}/{config.base_branch}")
-    return url, heads
+    return url, refs
 
 
-def _describe(exc: Exception) -> tuple[str, str]:
+def _describe(exc: BaseException) -> tuple[str, str]:
     if isinstance(exc, Stop):
         return exc.reason, exc.next_action
-    return str(exc).splitlines()[0].rstrip(":"), "read the error above and retry"
+    first = str(exc).splitlines()[0].rstrip(":") if str(exc) else type(exc).__name__
+    return first, "read the error above and retry"
 
 
 class _TicketRun:
@@ -109,9 +119,19 @@ class _TicketRun:
         self.branch = branch
         self.url = url
         self.number = issue.number
-        self.folder = ticket.TicketFolder(ticket.folder_path(worktree, issue.number))
+        token = environ.get(config.tracker.token_env, "")
+        self.folder = ticket.TicketFolder(worktree, issue.number, secrets=[token])
+        remotes = git.remotes(worktree)
+        token_env = config.tracker.token_env
+        # Agent sessions and anything running code an agent wrote get no credential.
+        self.agent_env = context.untrusted_environment(
+            environ, token_env=token_env, remotes=remotes, keep_agent_login=True
+        )
+        self.untrusted_env = context.untrusted_environment(
+            environ, token_env=token_env, remotes=remotes, keep_agent_login=False
+        )
 
-    def execute(self, heads_before: dict[str, str]) -> Outcome:
+    def execute(self, refs_before: dict[str, str]) -> Outcome:
         try:
             setup_error = self._setup()
             self.folder.create(self.issue)
@@ -126,15 +146,17 @@ class _TicketRun:
             self.folder.set_status("implementing", "implementer session running", "wait")
             self._commit_record(f"#{self.number}: open the ticket folder")
             start_commit = git.head(self.worktree)
+            guard = git.config_fingerprint(self.worktree, ignore_ref=self.branch)
             result = self._implement()
-            self._verify_agent(start_commit, heads_before)
+            self._verify("the agent session", start_commit, guard, refs_before)
             self._commit_agent_work(start_commit, result)
-            return self._check_and_deliver()
-        except (Stop, git.GitError, TrackerError) as exc:
+            return self._check_and_deliver(start_commit, guard, refs_before)
+        except (Stop, *_FAILURES) as exc:
             return self._stopped(exc)
 
     def _setup(self) -> Stop | None:
-        """Run the setup command (C8); an error is returned, journaled once the folder exists."""
+        """Run the setup command (C8) on the base code; an error is journaled once the folder
+        exists."""
         if not self.config.setup:
             return None
         command = self.config.setup
@@ -147,7 +169,7 @@ class _TicketRun:
             return Stop(
                 f"setup `{' '.join(command)}` failed ({status})",
                 "fix the setup command, then start the ticket again",
-                f"```text\n{done.output.rstrip()}\n```",
+                ticket.fenced(done.output),
             )
         leftovers = git.untracked(self.worktree)
         if leftovers:
@@ -161,11 +183,7 @@ class _TicketRun:
 
     def _implement(self) -> SessionResult:
         agent = self.config.implementer
-        git.guard_pushes(self.worktree)
         prompt = context.implementer_prompt(self.issue, self.branch, self.config.checks)
-        env = context.agent_environment(
-            self.environ, role="implementer", token_env=self.config.tracker.token_env
-        )
         session = Session(
             role="implementer",
             model=agent.model,
@@ -174,13 +192,13 @@ class _TicketRun:
             timeout_s=agent.timeout_minutes * 60,
             cwd=self.worktree,
             prompt=prompt,
-            env=env,
+            env=self.agent_env,
         )
         self.folder.log(
             "Implementer session started",
             f"Runtime {self.runtime.name}, model {agent.model}, tools {', '.join(agent.tools)},"
             f" budget {agent.max_budget_usd:g} USD, time limit {agent.timeout_minutes:g} min.\n\n"
-            f"Context given to the agent:\n\n````text\n{prompt}````",
+            f"Context given to the agent:\n\n{ticket.fenced(prompt)}",
         )
         result = self.runtime.run(session)
         cost = "not reported" if result.cost_usd is None else f"{result.cost_usd:.4f} USD"
@@ -189,40 +207,56 @@ class _TicketRun:
         self.folder.log(
             f"Implementer session stopped: {result.stop_reason.value}",
             f"Cost {cost} (as reported), tokens {tokens}.\n\nRefused tool calls:\n{denials}\n\n"
-            f"Agent summary:\n\n````text\n{result.summary.rstrip()}\n````",
+            f"Agent summary:\n\n{ticket.fenced(result.summary)}",
         )
         return result
 
-    def _verify_agent(self, start_commit: str, heads_before: dict[str, str]) -> None:
-        """C11: the agent did not switch branch, rewrite history or push."""
+    def _verify(
+        self,
+        after: str,
+        start_commit: str,
+        guard: str,
+        refs_before: dict[str, str],
+        expected_head: str | None = None,
+    ) -> None:
+        """C11: after untrusted code ran, nothing escaped the ticket branch."""
+        keep = "inspect the working tree; Ariane pushed nothing"
         branch = git.current_branch(self.worktree)
         if branch != self.branch:
-            raise Stop(
-                f"the agent left branch {self.branch} (now {branch or 'detached'})",
-                "inspect the working tree; nothing was pushed by Ariane",
-            )
+            raise Stop(f"{after} left branch {self.branch} (now {branch or 'detached'})", keep)
         if not git.is_ancestor(self.worktree, start_commit, "HEAD"):
+            raise Stop(f"{after} rewrote the ticket branch's history", keep)
+        if expected_head is not None and git.head(self.worktree) != expected_head:
+            raise Stop(f"{after} moved the ticket branch", keep)
+        if git.config_fingerprint(self.worktree, ignore_ref=self.branch) != guard:
             raise Stop(
-                "the agent rewrote the ticket branch's history",
-                "inspect the working tree; nothing was pushed by Ariane",
+                f"{after} changed git configuration, hooks or local branches",
+                "inspect .git/config, .git/hooks and the branches; Ariane pushed nothing",
             )
-        for ref, sha in git.remote_heads(self.worktree, self.url).items():
-            if heads_before.get(ref) == sha or not git.has_commit(self.worktree, sha):
-                continue
-            if not git.is_ancestor(self.worktree, sha, start_commit):
-                raise Stop(
-                    f"a commit made during the agent session was pushed to {ref}",
-                    f"inspect and revert {ref} on {REMOTE}",
-                )
-        self.folder.log("Agent verified", "Same branch, history kept, no push.")
+        refs = git.remote_refs(self.worktree, self.url)
+        if refs != refs_before:
+            changed = sorted(r for r in {*refs, *refs_before} if refs.get(r) != refs_before.get(r))
+            raise Stop(
+                f"the remote changed during {after} ({', '.join(changed)})",
+                "check it was not the agent; if a person pushed, start the ticket again",
+            )
+        self.folder.log(
+            f"Verified after {after}", "Same branch and history, git unchanged, remote unchanged."
+        )
 
     def _commit_agent_work(self, start_commit: str, result: SessionResult) -> None:
-        own = ticket.relative_folder(self.number) + "/"
         changed = [
-            p for p in git.changed_paths(self.worktree, start_commit) if not p.startswith(own)
+            p
+            for p in git.changed_paths(self.worktree, start_commit)
+            if not p.startswith(ticket.WORK_DIR + "/")
         ]
-        if changed:
-            git.commit_all(self.worktree, f"#{self.number}: {self.issue.title}")
+        exclude = f":(exclude){ticket.WORK_DIR}"
+        if git.commit(
+            self.worktree,
+            [".", exclude],
+            f"#{self.number}: {self.issue.title}",
+            env=self.untrusted_env,
+        ):
             self.folder.log("Agent work committed", "\n".join(f"- `{p}`" for p in changed))
         if result.stop_reason is not StopReason.FINISHED:
             raise Stop(
@@ -232,10 +266,13 @@ class _TicketRun:
         if not changed:
             raise Stop("the agent changed no file", "clarify the issue, then start again")
 
-    def _check_and_deliver(self) -> Outcome:
-        commit = git.head(self.worktree)
-        results = checks.run_checks(self.config.checks, self.worktree)
-        self.folder.write(ticket.CHECKS, checks.report(results, commit))
+    def _check_and_deliver(
+        self, start_commit: str, guard: str, refs_before: dict[str, str]
+    ) -> Outcome:
+        checked = git.head(self.worktree)
+        results = checks.run_checks(self.config.checks, self.worktree, self.untrusted_env)
+        self._verify("the checks", start_commit, guard, refs_before, expected_head=checked)
+        self.folder.write(ticket.CHECKS, checks.report(results, checked))
         self.folder.log(
             "Checks replayed by Ariane",
             checks.summary_table(results) + "\n\n" + checks.summary_line(results),
@@ -249,23 +286,34 @@ class _TicketRun:
             )
         self.folder.set_status("delivering", "checks green, pushing the branch", "wait")
         self._commit_record(f"#{self.number}: record the checks")
-        git.push(self.worktree, self.url, self.branch)
-        pull = self.tracker.open_pull_request(
-            head=self.branch,
-            base=self.config.base_branch,
-            title=self.issue.title,
-            body=self._pull_request_body(results),
-        )
+        git.push(self.worktree, self.url, git.head(self.worktree), self.branch)
+        try:
+            pull = self.tracker.open_pull_request(
+                head=self.branch,
+                base=self.config.base_branch,
+                title=self.issue.title,
+                body=self._pull_request_body(results),
+            )
+        except TrackerError as exc:
+            raise Stop(
+                f"branch {self.branch} is pushed but the pull request was refused: {exc}",
+                f"open the pull request from {self.branch} by hand, or delete that branch"
+                " and start again",
+            ) from None
         self.folder.log("Delivered", f"Pull request #{pull.number}: {pull.url}")
         self.folder.set_status(
             "delivered", f"pull request {pull.url}", "review and merge the pull request"
         )
         self._commit_record(f"#{self.number}: record the delivery")
-        git.push(self.worktree, self.url, self.branch)
+        note = ""
+        try:
+            git.push(self.worktree, self.url, git.head(self.worktree), self.branch)
+        except git.GitError:
+            note = " (the delivery record stays local: its push failed)"
         return Outcome(
-            0,
-            f"Opened pull request {pull.url} for issue #{self.number}, checks"
-            " replayed green. Next: review and merge it.",
+            EXIT_OK,
+            f"Opened pull request {pull.url} for issue #{self.number}, checks replayed green"
+            f"{note}. Next: review and merge it.",
         )
 
     def _pull_request_body(self, results: list[checks.CheckResult]) -> str:
@@ -279,17 +327,19 @@ class _TicketRun:
         )
 
     def _commit_record(self, message: str) -> None:
-        folder = ticket.relative_folder(self.number)
         self.folder.restore()
-        git.commit_paths(self.worktree, [folder], message)
+        folder = ticket.relative_folder(self.number)
+        git.commit(self.worktree, [folder], message, env=self.untrusted_env)
 
-    def _stopped(self, exc: Exception) -> Outcome:
+    def _stopped(self, exc: BaseException) -> Outcome:
         reason, next_action = _describe(exc)
         detail = exc.detail if isinstance(exc, Stop) else str(exc)
-        if self.folder.path.exists():
-            self.folder.log(f"Stopped: {reason}", detail)
-            self.folder.set_status("stopped", reason, next_action)
-            # If this commit fails, the reason is still in the working tree's files.
-            with contextlib.suppress(git.GitError):
+        if self.folder.exists():
+            # Recording the stop must not hide the reason: report it even if this fails.
+            with contextlib.suppress(*_FAILURES):
+                self.folder.log(f"Stopped: {reason}", detail)
+                self.folder.set_status("stopped", reason, next_action)
                 self._commit_record(f"#{self.number}: record the stop")
-        return Outcome(1, f"Stopped ticket #{self.number}: {reason}. Next: {next_action}.", detail)
+        return Outcome(
+            EXIT_STOPPED, f"Stopped ticket #{self.number}: {reason}. Next: {next_action}.", detail
+        )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -12,7 +13,12 @@ from ariane.tracker import InMemoryTracker
 
 from conftest import PY, FakeRuntime, Project, make_config, sh
 
-ENV = {"PATH": __import__("os").environ["PATH"], "GH_TOKEN": "secret-token", "HOME": "/nowhere"}
+TOKEN = "secret-token-for-tests"
+
+
+def environ() -> dict[str, str]:
+    """Ariane's environment in a test: the real one (git identity, PATH) plus a token."""
+    return {**os.environ, "GH_TOKEN": TOKEN}
 
 
 def start(
@@ -28,7 +34,7 @@ def start(
         config=config or make_config(),
         tracker=tracker,
         runtime=runtime,
-        environ=ENV,
+        environ=environ(),
     )
 
 
@@ -74,7 +80,7 @@ def test_c5_context_is_assembled_by_ariane_journaled_and_marks_the_issue_untrust
     assert '<untrusted-ticket number="7">' in session.prompt
     assert "Set app.txt to version 2." in session.prompt
     assert session.prompt in journal(project)
-    assert session.env["ARIANE_ROLE"] == "implementer"
+    assert session.role == "implementer"
     assert "GH_TOKEN" not in session.env
     assert session.env["GIT_TERMINAL_PROMPT"] == "0"
     assert "Cost 0.4200 USD (as reported), tokens 10 in, 20 out" in journal(project)
@@ -225,7 +231,7 @@ def test_c11_a_push_that_bypasses_the_guard_is_detected(
 
     outcome = start(project, tracker, FakeRuntime(action=push_explicitly))
     assert outcome.exit_code == 1
-    assert "was pushed to elsewhere" in outcome.line
+    assert "the remote changed during the agent session (refs/heads/elsewhere)" in outcome.line
     assert tracker.opened == []
 
 

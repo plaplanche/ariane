@@ -1,19 +1,20 @@
-"""Run external commands: argument lists, PATH resolution, UTF-8 output, process-tree timeouts."""
+"""Run external commands: argument lists, PATH resolution, UTF-8 output, process-tree cleanup."""
 
 from __future__ import annotations
 
 import contextlib
 import os
-import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO
 
-# After a timeout kill, how long to wait for the pipes to close before giving up on the output.
+# After the process exits or is killed, how long to wait for its pipes to close.
 _DRAIN_SECONDS = 10.0
 
 
@@ -22,7 +23,6 @@ class CommandNotFoundError(Exception):
 
     def __init__(self, name: str) -> None:
         super().__init__(f"command not found on PATH: {name}")
-        self.name = name
 
 
 @dataclass(frozen=True)
@@ -49,18 +49,33 @@ class Completed:
 
 
 def resolve(name: str, env: Mapping[str, str] | None = None) -> str:
-    """Resolve an executable through the PATH, so that Windows `.cmd` shims are found."""
-    path = (env if env is not None else os.environ).get("PATH")
-    found = shutil.which(name, path=path)
-    if found is None:
-        raise CommandNotFoundError(name)
-    return found
+    """Resolve an executable through the absolute PATH entries only.
+
+    Unlike `shutil.which` on Windows, the current directory is never searched, so a `git.cmd`
+    dropped in a working tree cannot shadow the real one. Windows `.cmd` shims are found
+    through PATHEXT.
+    """
+    if os.path.dirname(name):
+        return name
+    source = env if env is not None else os.environ
+    if sys.platform == "win32":
+        exts = [""] + [e for e in source.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if e]
+    else:
+        exts = [""]
+    for entry in source.get("PATH", "").split(os.pathsep):
+        if not entry or not os.path.isabs(entry):
+            continue
+        for ext in exts:
+            candidate = os.path.join(entry, name + ext)
+            if os.path.isfile(candidate) and (
+                sys.platform == "win32" or os.access(candidate, os.X_OK)
+            ):
+                return candidate
+    raise CommandNotFoundError(name)
 
 
-def decode(data: bytes | None) -> str:
+def decode(data: bytes) -> str:
     """Decode process output as UTF-8 whatever the system locale; invalid bytes are replaced."""
-    if not data:
-        return ""
     return data.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
 
@@ -73,7 +88,11 @@ def run(
     input_text: str | None = None,
     merge_stderr: bool = False,
 ) -> Completed:
-    """Run `argv` without a shell. On timeout the whole process tree is killed."""
+    """Run `argv` without a shell.
+
+    The process gets its own process group. When it exits or reaches its time limit, the whole
+    group is killed, so background children cannot outlive it or hold its output open.
+    """
     if not argv:
         raise ValueError("empty command")
     args = [resolve(argv[0], env), *argv[1:]]
@@ -92,30 +111,57 @@ def run(
         stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
         **kwargs,  # type: ignore[call-overload]
     )
-    data = input_text.encode("utf-8") if input_text is not None else None
+    out = _Reader(proc.stdout)
+    err = _Reader(proc.stderr)
+    if input_text is not None and proc.stdin is not None:
+        threading.Thread(target=_feed, args=(proc.stdin, input_text), daemon=True).start()
     timed_out = False
     try:
-        out, err = proc.communicate(data, timeout=timeout_s)
+        proc.wait(timeout=timeout_s)
     except subprocess.TimeoutExpired:
         timed_out = True
-        kill_tree(proc.pid)
-        try:
-            out, err = proc.communicate(timeout=_DRAIN_SECONDS)
-        except subprocess.TimeoutExpired:  # a descendant escaped the tree and holds the pipes
-            proc.kill()
-            out, err = b"", b""
+    kill_tree(proc.pid)
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        proc.wait(timeout=_DRAIN_SECONDS)
     return Completed(
         argv=tuple(argv),
         returncode=None if timed_out else proc.returncode,
-        stdout=decode(out),
-        stderr=decode(err),
+        stdout=out.text(),
+        stderr=err.text(),
         timed_out=timed_out,
         duration_s=time.monotonic() - start,
     )
 
 
+class _Reader:
+    """Read a pipe to its end in a thread, so a full pipe never blocks the child."""
+
+    def __init__(self, pipe: IO[bytes] | None) -> None:
+        self._chunks: list[bytes] = []
+        self._thread: threading.Thread | None = None
+        if pipe is not None:
+            self._thread = threading.Thread(target=self._read, args=(pipe,), daemon=True)
+            self._thread.start()
+
+    def _read(self, pipe: IO[bytes]) -> None:
+        with contextlib.suppress(OSError, ValueError):
+            for chunk in iter(lambda: pipe.read(65536), b""):
+                self._chunks.append(chunk)
+
+    def text(self) -> str:
+        if self._thread is not None:
+            self._thread.join(_DRAIN_SECONDS)
+        return decode(b"".join(self._chunks))
+
+
+def _feed(stdin: IO[bytes], text: str) -> None:
+    with contextlib.suppress(OSError, ValueError):
+        stdin.write(text.encode("utf-8"))
+        stdin.close()
+
+
 def kill_tree(pid: int) -> None:
-    """Kill a process and all its descendants."""
+    """Kill a process and all its descendants (its process group on POSIX)."""
     if sys.platform == "win32":
         subprocess.run(
             [resolve("taskkill"), "/T", "/F", "/PID", str(pid)],
@@ -124,5 +170,5 @@ def kill_tree(pid: int) -> None:
             check=False,
         )
     else:
-        with contextlib.suppress(ProcessLookupError):
+        with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(pid, signal.SIGKILL)

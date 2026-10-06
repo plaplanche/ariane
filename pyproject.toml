@@ -35,4 +35,4 @@ python_version = "3.11"
 testpaths = ["tests"]
 
 [tool.ruff.lint.isort]
-known-local-folder = ["conftest"]
+known-local-folder = ["conftest", "test_flow"]

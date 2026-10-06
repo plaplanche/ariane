@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -12,22 +13,45 @@ from ariane.tracker import Issue, PullRequest, TrackerError
 _TIMEOUT_S = 30
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects: urllib would forward the Authorization header to the new host."""
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def web_url(api_url: str) -> str:
+    """The web address matching an API address (GitHub or GitHub Enterprise Server)."""
+    parsed = urllib.parse.urlsplit(api_url.rstrip("/"))
+    if parsed.netloc == "api.github.com":
+        return "https://github.com"
+    path = parsed.path.removesuffix("/api/v3")
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
 class GitHubTracker:
     def __init__(self, *, repository: str, token: str, api_url: str) -> None:
         self._repository = repository
         self._token = token
         self._api_url = api_url.rstrip("/")
+        self._web_url = web_url(api_url)
 
     def read_issue(self, number: int) -> Issue:
         data = self._request("GET", f"/repos/{self._repository}/issues/{number}")
         if "pull_request" in data:
             raise TrackerError(f"#{number} is a pull request, not an issue")
-        return Issue(
-            number=int(data["number"]),
-            title=str(data["title"]),
-            body=str(data.get("body") or ""),
-            url=str(data["html_url"]),
-        )
+        try:
+            return Issue(
+                number=int(data["number"]),
+                title=str(data["title"]),
+                body=str(data.get("body") or ""),
+                url=str(data["html_url"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise TrackerError(f"GitHub API: unexpected issue #{number}: {exc!r}") from None
 
     def open_pull_request(self, *, head: str, base: str, title: str, body: str) -> PullRequest:
         data = self._request(
@@ -35,10 +59,13 @@ class GitHubTracker:
             f"/repos/{self._repository}/pulls",
             {"head": head, "base": base, "title": title, "body": body},
         )
-        return PullRequest(number=int(data["number"]), url=str(data["html_url"]))
+        try:
+            return PullRequest(number=int(data["number"]), url=str(data["html_url"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise TrackerError(f"GitHub API: unexpected pull request: {exc!r}") from None
 
     def file_url(self, branch: str, path: str) -> str:
-        return f"https://github.com/{self._repository}/blob/{branch}/{path}"
+        return f"{self._web_url}/{self._repository}/blob/{branch}/{path}"
 
     def _request(self, method: str, path: str, payload: Any = None) -> dict[str, Any]:
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
@@ -50,7 +77,7 @@ class GitHubTracker:
         if data is not None:
             request.add_header("Content-Type", "application/json")
         try:
-            with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as response:
+            with _OPENER.open(request, timeout=_TIMEOUT_S) as response:
                 body = response.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -60,7 +87,12 @@ class GitHubTracker:
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             reason = getattr(exc, "reason", exc)
             raise TrackerError(f"GitHub API {method} {path}: {reason}") from None
-        result = json.loads(body)
+        try:
+            result = json.loads(body)
+        except json.JSONDecodeError:
+            raise TrackerError(
+                f"GitHub API {method} {path}: response is not JSON: {body[:200]!r}"
+            ) from None
         if not isinstance(result, dict):
             raise TrackerError(f"GitHub API {method} {path}: unexpected response")
         return result

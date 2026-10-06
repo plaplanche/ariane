@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from ariane.github import GitHubTracker
+from ariane.github import GitHubTracker, web_url
 from ariane.tracker import TrackerError
 
 TOKEN = "ghp_secret_for_tests"
@@ -42,8 +42,10 @@ def stub(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Stub, str]]:
                 }
             )
             status, payload = state.responses.get((self.command, self.path), (404, {}))
-            data = json.dumps(payload).encode("utf-8")
+            data = payload if isinstance(payload, bytes) else json.dumps(payload).encode("utf-8")
             self.send_response(status)
+            if status in (301, 302, 307, 308):
+                self.send_header("Location", "http://127.0.0.1:9/elsewhere")
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
@@ -109,8 +111,20 @@ def test_c11_opens_a_pull_request_from_the_ticket_branch(stub: tuple[Stub, str])
         "body": "Closes #5",
     }
     assert tracker(url).file_url("ariane/5", "work/5/checks.md") == (
-        "https://github.com/owner/name/blob/ariane/5/work/5/checks.md"
+        f"{url}/owner/name/blob/ariane/5/work/5/checks.md"
     )
+
+
+@pytest.mark.parametrize(
+    ("api", "web"),
+    [
+        ("https://api.github.com", "https://github.com"),
+        ("https://api.github.com/", "https://github.com"),
+        ("https://git.example.invalid/api/v3", "https://git.example.invalid"),
+    ],
+)
+def test_c1_the_report_link_uses_the_web_address_of_the_api(api: str, web: str) -> None:
+    assert web_url(api) == web
 
 
 def test_c1_http_errors_are_explained_without_the_token(stub: tuple[Stub, str]) -> None:
@@ -130,3 +144,24 @@ def test_c1_http_errors_are_explained_without_the_token(stub: tuple[Stub, str]) 
 def test_c1_an_unreachable_api_is_a_tracker_error() -> None:
     with pytest.raises(TrackerError, match="GitHub API GET"):
         tracker("http://127.0.0.1:9").read_issue(1)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [b"<html>not the API</html>", [1, 2], {"title": "no number", "html_url": "h"}],
+)
+def test_c1_an_unexpected_success_body_is_a_tracker_error(
+    stub: tuple[Stub, str], payload: Any
+) -> None:
+    state, url = stub
+    state.responses[("GET", "/repos/owner/name/issues/5")] = (200, payload)
+    with pytest.raises(TrackerError, match="GitHub API"):
+        tracker(url).read_issue(5)
+
+
+def test_c21_a_redirect_is_refused_so_the_token_never_follows_it(stub: tuple[Stub, str]) -> None:
+    state, url = stub
+    state.responses[("GET", "/repos/owner/name/issues/5")] = (302, {})
+    with pytest.raises(TrackerError, match="HTTP 302"):
+        tracker(url).read_issue(5)
+    assert len(state.requests) == 1

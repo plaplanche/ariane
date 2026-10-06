@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from ariane import process
 from ariane.config import CheckConfig
+from ariane.ticket import fenced
 
 
 @dataclass(frozen=True)
@@ -16,20 +17,22 @@ class CheckResult:
     command: tuple[str, ...]
     blocking: bool
     passed: bool
-    detail: str  # "exit 0", "exit 1", "timed out after 900 s", "command not found: x"
+    detail: str  # "exit 0", "exit 1", "timed out after 900 s", "command not found on PATH: x"
     output: str
     duration_s: float
 
 
-def run_checks(checks: Sequence[CheckConfig], cwd: Path) -> list[CheckResult]:
-    """Run every check, even after a failure."""
-    return [run_check(check, cwd) for check in checks]
+def run_checks(
+    checks: Sequence[CheckConfig], cwd: Path, env: Mapping[str, str] | None = None
+) -> list[CheckResult]:
+    """Run every check, even after a failure, in environment `env`."""
+    return [run_check(check, cwd, env) for check in checks]
 
 
-def run_check(check: CheckConfig, cwd: Path) -> CheckResult:
+def run_check(check: CheckConfig, cwd: Path, env: Mapping[str, str] | None = None) -> CheckResult:
     timeout_s = check.timeout_minutes * 60
     try:
-        done = process.run(check.command, cwd=cwd, timeout_s=timeout_s, merge_stderr=True)
+        done = process.run(check.command, cwd=cwd, timeout_s=timeout_s, env=env, merge_stderr=True)
     except process.CommandNotFoundError as exc:
         return CheckResult(check.name, check.command, check.blocking, False, str(exc), "", 0.0)
     detail = f"timed out after {timeout_s:g} s" if done.timed_out else f"exit {done.returncode}"
@@ -65,22 +68,12 @@ def report(results: Sequence[CheckResult], commit: str) -> str:
     parts = [f"# Checks\n\nReplayed by Ariane on commit `{commit}`.\n", summary_table(results), ""]
     for r in results:
         verdict = "passed" if r.passed else "failed"
-        fence = _fence(r.output)
         parts += [
             f"## {r.name}\n",
             f"- Command: `{' '.join(r.command)}`",
             f"- Blocking: {'yes' if r.blocking else 'no'}",
             f"- Result: {verdict} ({r.detail}, {r.duration_s:.1f} s)\n",
-            f"{fence}text\n{r.output.rstrip()}\n{fence}\n",
+            fenced(r.output) + "\n",
         ]
     parts.append(summary_line(results))
     return "\n".join(parts) + "\n"
-
-
-def _fence(text: str) -> str:
-    """A backtick fence longer than any backtick run inside `text`."""
-    longest = run = 0
-    for char in text:
-        run = run + 1 if char == "`" else 0
-        longest = max(longest, run)
-    return "`" * max(3, longest + 1)

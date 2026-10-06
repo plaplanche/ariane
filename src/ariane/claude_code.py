@@ -58,7 +58,7 @@ class ClaudeCodeRuntime:
                 self.command(session),
                 cwd=session.cwd,
                 timeout_s=session.timeout_s,
-                env=session.env,
+                env={**session.env, "ARIANE_ROLE": session.role},
                 input_text=session.prompt,
             )
         except process.CommandNotFoundError as exc:

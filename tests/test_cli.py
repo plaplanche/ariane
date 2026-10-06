@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ariane import __version__, ticket
+from ariane import __version__, flow, ticket
 
 from conftest import PY, Project
 
@@ -67,7 +67,7 @@ def test_c23_status_without_a_ticket_folder_says_how_to_start(project: Project) 
 
 
 def test_c23_status_is_read_from_the_ticket_folder(project: Project) -> None:
-    folder = ticket.TicketFolder(project.root / "work" / "5")
+    folder = ticket.TicketFolder(project.root, 5)
     folder.set_status("delivered", "pull request https://x/1", "review and merge the pull request")
     done = ariane(project.root, "status", "#5")
     assert done.returncode == 0
@@ -104,3 +104,13 @@ def test_c23_issue_number_is_validated(tmp_path: Path, bad: str) -> None:
     done = ariane(tmp_path, "start", bad)
     assert done.returncode == 2
     assert f"not an issue number: {bad}" in done.stderr
+
+
+def test_c23_status_reads_the_ticket_working_tree_before_the_main_checkout(
+    project: Project,
+) -> None:
+    ticket.TicketFolder(project.root, 5).set_status("stopped", "old", "x")
+    in_worktree = ticket.TicketFolder(flow.worktree_path(project.root, 5), 5)
+    in_worktree.set_status("implementing", "implementer session running", "wait")
+    line = one_line(ariane(project.root, "status", "5"))
+    assert line.startswith("Ticket #5 is implementing (implementer session running)")

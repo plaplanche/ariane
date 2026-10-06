@@ -23,16 +23,24 @@ and approvals (C2) arrive in slice 3, so `ariane start` runs the flow straight t
 6. Create the ticket folder `work/<n>/`: `brief.md` prefilled from the issue (status `draft`) and
    `journal.md`. It is created after setup so that it is not mistaken for a setup leftover.
 7. Run one implementer session (ADR 0007) with a context Ariane assembles itself.
-8. Verify the agent did not switch branch, rewrite history or push. Refuse when it changed no
-   file outside `work/<n>/`. Commit what it left, as Ariane.
-9. Run every declared check, all of them even when one fails (C9). The full report goes to
+8. Verify the agent did not switch branch, rewrite history, change git configuration, hooks or
+   local branches, or change any branch or tag on the remote (ADR 0007). Refuse when it changed
+   no file outside `work/`. Commit what it left outside `work/`, as Ariane.
+9. Run every declared check, all of them even when one fails (C9), in the same credential-free
+   environment as the agent: checks run code the agent wrote. Verify again, and also that the
+   branch still points at the commit that was checked. The full report goes to
    `work/<n>/checks.md`, one section per check with its complete output and a summary line.
-10. Commit the ticket folder.
+10. Commit the ticket folder, rewritten exactly as Ariane recorded it.
 11. If a blocking check failed: stop, exit code 1, no push.
-12. Otherwise push `ariane/<n>` with an explicit remote URL and open a pull request against the
-    base branch. Its body holds the summary table, a link to `work/<n>/checks.md` on the ticket
-    branch (readable only by people with access to the repository) and `Closes #<n>`. The human
-    merges.
+12. Otherwise push exactly the checked commit plus Ariane's record commit, with an explicit
+    remote URL, and open a pull request against the base branch. Its body holds the summary
+    table, a link to `work/<n>/checks.md` on the ticket branch (readable only by people with
+    access to the repository) and `Closes #<n>`. If the pull request is refused after the push,
+    the ticket stops and says how to finish by hand. The human merges.
+
+The setup command runs with Ariane's environment: it runs before any agent, on the base
+branch's code. Ariane's own git commands never run hooks (ADR 0007), so in slice 1 a project's
+commit hooks do not run on the commits Ariane makes.
 
 The main checkout is never modified, and Ariane never pushes to the base branch. The ticket
 folder is committed on the ticket branch, so the pull request carries it.

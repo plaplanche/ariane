@@ -33,34 +33,56 @@ Claude Code 2.1.291; a session Ariane kills at its time limit is `timeout`. Reco
 kept as test fixtures.
 
 The implementer's tools never include `Skill`: no user-level skill (for example gstack's `ship`
-or `land-and-deploy`) can load (C6). Its environment holds `ARIANE_ROLE=<role>` (C22), loses
-the tracker token variables, and gets `IS_SANDBOX=1` when Ariane runs as root (cloud sandboxes).
-The prompt wraps the issue title and body in clearly delimited untrusted-data markers. The whole
-context is written to the journal.
+or `land-and-deploy`) can load (C6). The runtime sets `ARIANE_ROLE=<role>` (C22). The prompt
+wraps the issue title and body in clearly delimited untrusted-data markers, and any closing
+marker inside them is escaped. The whole context is written to the journal.
 
-**Push guard** (C11). The deny list above is only a first layer: prefix rules are bypassed by
-`git -C . push` or a script. Before the session, Ariane:
+**Untrusted environment** (C21, basic). The agent session, and the checks that run the code it
+wrote, get Ariane's environment minus every variable that can carry a credential: the tracker
+token, any name containing `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIAL` or `API_KEY`, and
+`SSH_AUTH_SOCK` and the askpass variables. SSH is disabled through `GIT_SSH_COMMAND`. The agent
+session alone keeps the agent runtime's own login (`ANTHROPIC_*`, `CLAUDE_*`), and gets
+`IS_SANDBOX=1` when Ariane runs as root (cloud sandboxes). Known secret values are also masked
+in everything written to the ticket folder.
 
-- sets, for the ticket's working tree only (`extensions.worktreeConfig`), every remote's push
-  URL to an invalid value, so a plain `git push` fails;
-- runs the agent with `GIT_TERMINAL_PROMPT=0` and an empty `credential.helper` (through
-  `GIT_CONFIG_COUNT`), so no stored credential is offered.
+**Push guard** (C11), in layers:
 
-Ariane itself pushes with the explicit remote URL. After the session it checks that the branch,
-the starting commit and the remote branches did not change. The owner protects `main` on GitHub
-(pull request required): it is the only guard that also holds where the network layer
-authenticates git on its own, as in cloud sandboxes.
+1. The deny list above (prefix rules, easily bypassed: a first layer only).
+2. Through `GIT_CONFIG_*` variables, so no configuration file changes, the agent's git sees an
+   invalid push URL for every remote, no credential helper and no terminal prompt.
+3. After the session and again after the checks, Ariane stops the ticket if the branch moved
+   or was switched, if its history was rewritten, if a fingerprint of the shared git
+   configuration, hooks, info files, this working tree's configuration and the local branches
+   and tags changed, or if any branch or tag on the remote changed. That last rule is strict:
+   a person pushing during the session also stops the ticket, until claims (C13) make it finer.
+4. Ariane's own git commands run with hooks and the filesystem monitor disabled
+   (`core.hooksPath` set to the null device, `core.fsmonitor=false`), and the commits it makes
+   run without credentials. It pushes an exact commit with the explicit remote URL.
+5. The owner protects `main` on GitHub (pull request required).
+
+An agent with a shell can still find credentials on disk (for example `~/.git-credentials`) or
+reach the network on its own: layers 1 and 2 slow it down, layer 3 detects a push to the
+remote it watches (`origin`), and only layer 5 prevents a change to `main`. Real isolation
+needs an operating-system sandbox and is part of slice 7 (security).
 
 Ariane's own `ariane.toml` declares `claude-sonnet-5-5` for the implementer. Reviews by a
 different model (C10) arrive in slice 2.
 
-**Processes**: one helper runs every command as an argument list resolved with `shutil.which`
-(so `.cmd` shims work), decodes output as UTF-8 with replacement, and on timeout kills the whole
-process tree (`taskkill /T /F` on Windows, a process group on POSIX).
+**Processes**: one helper runs every command as an argument list, resolved through the
+absolute PATH entries only (never the current directory, so a `git.cmd` in a working tree
+cannot shadow git; `.cmd` shims are found through PATHEXT). Output is decoded as UTF-8 with
+replacement. When the command exits or reaches its time limit, its whole process tree is killed
+(a process group on POSIX, `taskkill /T /F` on Windows, where children of a process that
+already exited cannot be found).
+
+**GitHub client**: redirects are refused (urllib would forward the token to the new host),
+`tracker.api_url` must be https (or http to the local machine, for tests), and any unexpected
+response becomes a tracker error.
 
 ## Consequences
 Tests run the full flow with the in-memory tracker and a fake runtime, without network or model.
 An agent can still reach the network through its tools; slice 7 (security) narrows that.
+Checks that need a credential (for example a private package index) cannot get one in slice 1.
 
 ## Alternatives considered
 - Shelling out to the `gh` CLI for the tracker: handles authentication, but adds a tool to

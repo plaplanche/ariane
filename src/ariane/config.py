@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import ipaddress
+import math
 import tomllib
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -97,17 +100,26 @@ def parse(data: dict[str, Any]) -> Config:
             f"{CONFIG_FILE}: agents.implementer.tools: Skill is not allowed (undeclared skills, C6)"
         )
 
+    base_branch = _str(project, "base_branch", "project.")
+    if base_branch.startswith("-") or any(c.isspace() or c in "~^:?*[\\" for c in base_branch):
+        raise ConfigError(f"{CONFIG_FILE}: project.base_branch: not a valid branch name")
+    api_url = _str(tracker, "api_url", "tracker.", "https://api.github.com").rstrip("/")
+    if not _safe_api_url(api_url):
+        raise ConfigError(
+            f"{CONFIG_FILE}: tracker.api_url: expected an https:// URL (the token is sent there)"
+        )
+
     setup = None
     if "setup" in project:
         setup = _str_list(project, "setup", "project.")
     return Config(
-        base_branch=_str(project, "base_branch", "project."),
+        base_branch=base_branch,
         setup=setup,
         tracker=TrackerConfig(
             kind=kind,
             repository=repository,
             token_env=_str(tracker, "token_env", "tracker."),
-            api_url=_str(tracker, "api_url", "tracker.", "https://api.github.com").rstrip("/"),
+            api_url=api_url,
         ),
         implementer=AgentConfig(
             runtime=runtime,
@@ -118,6 +130,23 @@ def parse(data: dict[str, Any]) -> Config:
         ),
         checks=_checks(raw_checks),
     )
+
+
+def _safe_api_url(url: str) -> bool:
+    """https, or plain http to the local machine only (a test server)."""
+    parsed = urllib.parse.urlsplit(url)
+    if not parsed.hostname:
+        return False
+    if parsed.scheme == "https":
+        return True
+    if parsed.scheme != "http":
+        return False
+    if parsed.hostname == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        return False
 
 
 def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:
@@ -191,6 +220,11 @@ def _positive(table: dict[str, Any], key: str, prefix: str, default: float | Non
     value = table.get(key, default)
     if value is None:
         raise ConfigError(f"{CONFIG_FILE}: {prefix}{key}: missing key")
-    if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int | float)
+        or not math.isfinite(value)
+        or value <= 0
+    ):
         raise ConfigError(f"{CONFIG_FILE}: {prefix}{key}: expected a positive number")
     return float(value)
