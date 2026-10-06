@@ -19,6 +19,11 @@ Windows (PowerShell 5.1 and 7), macOS and Linux are each tested in CI from slice
   `shell: powershell` (5.1) and once under `shell: pwsh` (7).
 - Pushing the workflow file is impossible from a cloud session (no `workflow` scope): it is
   left uncommitted there and the owner commits it from their machine.
+- A second workflow, `.github/workflows/check-statuses.yml`, runs on pull requests from `ariane/*`
+  branches of this repository and publishes the committed `work/<n>/checks.md` as commit
+  statuses (`contents: read`, `statuses: write`). It exists because a cloud session's GitHub
+  proxy refuses the statuses endpoint, while a workflow runs on GitHub's side. It does not
+  re-run the checks.
 
 ## Consequences
 Six jobs per pull request update or push to `main`, a few minutes each. Platform bugs (paths, encodings, process trees) show up

@@ -77,3 +77,27 @@ def report(results: Sequence[CheckResult], commit: str) -> str:
         ]
     parts.append(summary_line(results))
     return "\n".join(parts) + "\n"
+
+
+def parse_summary_table(text: str) -> list[tuple[str, bool, str]]:
+    """Read the first table of a `checks.md` text: (name, passed, description) per check."""
+    rows: list[list[str]] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            if rows:
+                break
+            continue
+        rows.append([cell.strip() for cell in stripped.strip("|").split("|")])
+    if len(rows) < 2 or [c.lower() for c in rows[0]] != ["check", "blocking", "result", "duration"]:
+        return []
+    parsed = []
+    for cells in rows[2:]:
+        if len(cells) != 4:
+            continue
+        name, _, result, duration = cells
+        plain = result.replace("**", "")
+        if plain.startswith("fail (") and plain.endswith(")"):
+            plain = plain[len("fail (") : -1]
+        parsed.append((name, result == "pass", f"{plain}, {duration}"))
+    return parsed
