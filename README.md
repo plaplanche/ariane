@@ -24,6 +24,8 @@ ariane status 12
 (`<repo>.ariane/worktrees/12`), runs the setup command, one implementer session, every check,
 then pushes the branch, opens the pull request and publishes each check's result as a commit
 status (`ariane/<check name>`) on its head commit. The ticket's records are in `work/12/`.
+A GitHub Actions workflow (`check-statuses.yml`) also publishes these statuses from the committed
+report, including when Ariane cannot (for example from a cloud session).
 The token needs permission to write commit statuses (for a fine-grained token, "Commit statuses:
 read and write"), on top of reading issues and writing pull requests.
 

@@ -41,3 +41,20 @@ def test_c9_summary_table_marks_failures() -> None:
     result = checks.CheckResult("lint", ("ruff",), False, False, "exit 1", "", 1.25)
     table = checks.summary_table([result])
     assert "| lint | no | **fail** (exit 1) | 1.2 s |" in table
+
+
+def test_c9_parse_summary_table_reads_passing_and_failing_rows() -> None:
+    results = [
+        checks.CheckResult("lint", ("x",), True, True, "exit 0", "", 0.1),
+        checks.CheckResult("tests", ("y",), True, False, "exit 1", "", 33.7),
+    ]
+    text = checks.report(results, "abc")
+    assert checks.parse_summary_table(text) == [
+        ("lint", True, "pass, 0.1 s"),
+        ("tests", False, "exit 1, 33.7 s"),
+    ]
+
+
+def test_c9_parse_summary_table_without_table_is_empty() -> None:
+    assert checks.parse_summary_table("# Checks\n\nNothing here.\n") == []
+    assert checks.parse_summary_table("") == []
