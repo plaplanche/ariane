@@ -5,10 +5,11 @@ each entry below is turned into a proposal in that format and this file is remov
 
 Each entry: what happened, then the rule, test, check or probe it calls for (C18).
 
-## 1. The Windows tests check is slow
+## 1. The tests check is several times slower on Windows
 
-- **What happened:** on Windows CI, `uv run pytest` takes about 420 s, against well under a
-  minute on Linux.
+- **What happened:** `uv run pytest` takes about 35 s on Linux CI, 100 s on macOS CI, 195 s on
+  Windows CI and about 420 s on the owner's Windows machine. It is the longest step of a
+  ticket's checks, and it grows with every flow test.
 - **Proposal (check):** record each check's duration per OS (C19) and flag a check whose
   duration grows past a threshold, so the slowdown is seen before it blocks tickets.
 
