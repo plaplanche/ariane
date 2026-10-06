@@ -1,6 +1,6 @@
 # Ariane — vision and specification
 
-Version of 5 October 2026. This file is the reference specification; ADRs in `docs/adr/` record the decisions taken while implementing it.
+Version of 6 October 2026. This file is the reference specification; ADRs in `docs/adr/` record the decisions taken while implementing it.
 
 Ariane turns tickets into reviewed pull requests with AI coding agents, while the human keeps deciding, understanding and approving. It spends the human's attention before the code and at a few checkpoints, instead of on a 2,000-line review at the end; the name comes from Ariadne's thread (*le fil d'Ariane*): you never lose the thread of your own code.
 
@@ -182,6 +182,7 @@ The project declares named checks (lint, types, tests, complexity, file size, co
 - A ticket can carry a mechanical acceptance checklist (a file exists, a line matches a pattern, a section is unchanged), checked by Ariane without a model.
 - The project can set a total coverage threshold and a threshold on the lines the ticket changed, read from a standard report (Cobertura or LCOV); a command also measures the main branch's coverage on demand, in a throwaway working tree.
 - A failing blocking check prevents delivery.
+- Ariane publishes each check's result as a status on the pull request's head commit (a GitHub commit status; the equivalent on other trackers), so the results show next to the pull request and branch protection can require them.
 
 #### C10. Review
 
@@ -338,7 +339,7 @@ Weeks are estimates from 5 October 2026, revised at every gate.
 | Slice | Capabilities | Gate (checked before the next slice starts) |
 | --- | --- | --- |
 | 1. Walking skeleton | C1, C5, C8, C9, C11 and C22 in minimal form; C23 to start a ticket; CI on Windows, macOS and Linux | A real issue becomes a pull request whose checks Ariane replayed green |
-| 2. Dogfooding, learnings, review | C18 (file store), C10 (one reviewer), C19 (cost, rounds, first-pass verdict), redaction of everything posted (C21, basic) | Ariane's own tickets go through Ariane |
+| 2. Dogfooding, learnings, review | C18 (file store), C10 (one reviewer), C19 (cost, rounds, first-pass verdict), redaction of everything posted (C21, basic), check results as commit statuses (C9) | Ariane's own tickets go through Ariane |
 | 3. Approved stages and slices | C2, C4, per-ticket budget (C5), approve and revise commands (C23) | No stage starts without human approval |
 | 4. Stronger checks | C9 complete (pre-change replay, checklist, coverage), rules judge (C10), C3 | A test that tests nothing is flagged; the rules judge runs |
 | 5. Autonomous mode | C12, C13, C14, resume after interruption (C5) | A killed session resumes; two machines never work on the same ticket |
