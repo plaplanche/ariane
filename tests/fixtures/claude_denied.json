@@ -1,0 +1,24 @@
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "stop_reason": "end_turn",
+  "terminal_reason": "completed",
+  "total_cost_usd": 0.008888,
+  "num_turns": 2,
+  "result": "The command `git push --dry-run origin main .` has been denied by the permission system. This is a push command (even though it's a dry-run), which requires user approval. Would you like me to proceed with running this command?",
+  "usage": {
+    "input_tokens": 17,
+    "output_tokens": 402
+  },
+  "permission_denials": [
+    {
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git push --dry-run origin main .",
+        "description": "Run git push dry-run with origin main and current directory"
+      }
+    }
+  ],
+  "duration_ms": 5633
+}

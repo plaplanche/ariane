@@ -1,0 +1,37 @@
+# Ariane's configuration for its own repository (ADR 0003).
+
+[project]
+base_branch = "main"
+setup = ["uv", "sync", "--locked"]
+
+[tracker]
+kind = "github"
+repository = "plaplanche/ariane"
+token_env = "GH_TOKEN"
+
+[agents.implementer]
+runtime = "claude-code"
+model = "claude-sonnet-5-5"
+tools = ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
+max_budget_usd = 5.0
+timeout_minutes = 30
+
+[[checks]]
+name = "lint"
+command = ["uv", "run", "ruff", "check", "."]
+
+[[checks]]
+name = "format"
+command = ["uv", "run", "ruff", "format", "--check", "."]
+
+[[checks]]
+name = "types"
+command = ["uv", "run", "mypy"]
+
+[[checks]]
+name = "tests"
+command = ["uv", "run", "pytest", "-q"]
+
+[[checks]]
+name = "file length"
+command = ["uv", "run", "python", "scripts/check_file_length.py"]

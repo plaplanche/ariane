@@ -1,0 +1,18 @@
+{
+  "type": "result",
+  "subtype": "error_max_budget_usd",
+  "is_error": true,
+  "stop_reason": "end_turn",
+  "terminal_reason": "budget_exhausted",
+  "total_cost_usd": 0.011342000000000001,
+  "num_turns": 1,
+  "errors": [
+    "Reached maximum budget ($0.0001)"
+  ],
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0
+  },
+  "permission_denials": [],
+  "duration_ms": 711
+}
