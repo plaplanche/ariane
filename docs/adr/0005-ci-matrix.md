@@ -8,7 +8,8 @@
 Windows (PowerShell 5.1 and 7), macOS and Linux are each tested in CI from slice 1.
 
 ## Decision
-- GitHub Actions, one workflow `.github/workflows/ci.yml`, on push and pull request.
+- GitHub Actions, one workflow `.github/workflows/ci.yml`, on pull requests and on pushes to
+  `main` only, so a pull request branch is not tested twice for each push.
 - Matrix: `ubuntu-latest`, `macos-latest`, `windows-latest` × Python `3.11` and `3.13`
   (oldest and newest supported), six jobs, `fail-fast: false`.
 - Each job installs uv with the official `astral-sh/setup-uv` action (major version tag), runs
@@ -20,7 +21,7 @@ Windows (PowerShell 5.1 and 7), macOS and Linux are each tested in CI from slice
   left uncommitted there and the owner commits it from their machine.
 
 ## Consequences
-Six jobs per push, a few minutes each. Platform bugs (paths, encodings, process trees) show up
+Six jobs per pull request update or push to `main`, a few minutes each. Platform bugs (paths, encodings, process trees) show up
 before merge.
 
 ## Alternatives considered
