@@ -147,8 +147,10 @@ class _TicketRun:
             self._commit_record(f"#{self.number}: open the ticket folder")
             start_commit = git.head(self.worktree)
             guard = git.config_fingerprint(self.worktree, ignore_ref=self.branch)
+            ignored_before = git.ignored(self.worktree)
             result = self._implement()
             self._verify("the agent session", start_commit, guard, refs_before)
+            self._warn_ignored(ignored_before)
             self._commit_agent_work(start_commit, result)
             return self._check_and_deliver(start_commit, guard, refs_before)
         except (Stop, *_FAILURES) as exc:
@@ -244,7 +246,30 @@ class _TicketRun:
             f"Verified after {after}", "Same branch and history, git unchanged, remote unchanged."
         )
 
+    def _warn_ignored(self, before: set[str]) -> None:
+        """Ignored files the agent created can make checks pass without being delivered."""
+        new = sorted(git.ignored(self.worktree) - before)
+        if new:
+            self.folder.log(
+                "Warning: new files ignored by git",
+                "The checks see them but the pull request does not carry them:\n"
+                + "\n".join(f"- `{p}`" for p in new),
+            )
+
     def _commit_agent_work(self, start_commit: str, result: SessionResult) -> None:
+        # This ticket's own folder is rewritten by Ariane anyway (an agent's `git commit -a`
+        # picks up Ariane's journal); other tickets' records must stay untouched.
+        own = ticket.relative_folder(self.number) + "/"
+        records = [
+            p
+            for p in git.committed_paths(self.worktree, start_commit, ticket.WORK_DIR)
+            if not p.startswith(own)
+        ]
+        if records:
+            raise Stop(
+                f"the agent committed changes to ticket records ({', '.join(records)})",
+                "inspect the branch; Ariane pushed nothing",
+            )
         changed = [
             p
             for p in git.changed_paths(self.worktree, start_commit)

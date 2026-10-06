@@ -86,3 +86,15 @@ def test_c21_existing_or_broken_git_config_variables_are_handled() -> None:
         {"GIT_CONFIG_COUNT": "x"}, token_env="X", remotes=[], keep_agent_login=False
     )
     assert broken["GIT_CONFIG_COUNT"] == "1"
+
+
+def test_c21_the_tracker_token_never_passes_whatever_its_name_or_case() -> None:
+    for name in ("CLAUDE_GH_TOKEN", "GH_PAT", "Gh_Pat"):
+        env = context.untrusted_environment(
+            {name: "s3cret", "PATH": "/bin"},
+            token_env=name.lower(),
+            remotes=[],
+            keep_agent_login=True,
+            is_root=False,
+        )
+        assert "s3cret" not in env.values(), name

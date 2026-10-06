@@ -23,7 +23,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
-        return EXIT_USAGE
+        return _say(EXIT_USAGE, "Did nothing: no command given. Next: run ariane start <issue>.")
     try:
         root = git.repo_root(Path.cwd())
     except git.GitError as exc:

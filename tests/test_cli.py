@@ -114,3 +114,11 @@ def test_c23_status_reads_the_ticket_working_tree_before_the_main_checkout(
     in_worktree.set_status("implementing", "implementer session running", "wait")
     line = one_line(ariane(project.root, "status", "5"))
     assert line.startswith("Ticket #5 is implementing (implementer session running)")
+
+
+def test_c23_no_command_still_ends_with_one_summary_line(tmp_path: Path) -> None:
+    done = ariane(tmp_path)
+    assert done.returncode == 2
+    assert done.stdout.splitlines()[-1] == (
+        "Did nothing: no command given. Next: run ariane start <issue>."
+    )

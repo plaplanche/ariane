@@ -24,8 +24,10 @@ and approvals (C2) arrive in slice 3, so `ariane start` runs the flow straight t
    `journal.md`. It is created after setup so that it is not mistaken for a setup leftover.
 7. Run one implementer session (ADR 0007) with a context Ariane assembles itself.
 8. Verify the agent did not switch branch, rewrite history, change git configuration, hooks or
-   local branches, or change any branch or tag on the remote (ADR 0007). Refuse when it changed
-   no file outside `work/`. Commit what it left outside `work/`, as Ariane.
+   local branches, or change any branch or tag on the remote (ADR 0007), and did not commit
+   changes to another ticket's records under `work/`. Refuse when it changed no file outside
+   `work/`. Commit what it left outside `work/`, as Ariane. New files ignored by git are listed
+   in the journal as a warning: the checks see them, the pull request does not carry them.
 9. Run every declared check, all of them even when one fails (C9), in the same credential-free
    environment as the agent: checks run code the agent wrote. Verify again, and also that the
    branch still points at the commit that was checked. The full report goes to

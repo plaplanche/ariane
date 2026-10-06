@@ -15,7 +15,11 @@ BLOCKED_PUSH_URL = "ariane-blocked://agents-never-push"
 _TIMEOUT_S = 300
 # Ariane's own git commands never run hooks or a filesystem monitor: after an agent session,
 # both could be code the agent planted (C21: the guard comes from Ariane, not the working tree).
-_SAFE_OPTIONS = ["-c", f"core.hooksPath={os.devnull}", "-c", "core.fsmonitor=false"]
+_SAFE_OPTIONS = [
+    *("-c", f"core.hooksPath={os.devnull}"),
+    *("-c", "core.fsmonitor=false"),
+    *("-c", "core.quotepath=off"),  # non-ASCII paths stay readable
+]
 _USERINFO = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@")
 
 
@@ -84,10 +88,11 @@ def add_worktree(cwd: Path, path: Path, branch: str, start: str) -> None:
 
 
 def config_fingerprint(worktree: Path, *, ignore_ref: str) -> str:
-    """A digest of everything in the repository that makes git run code or reroute a push.
+    """A digest of everything that makes git run code or reroute a push.
 
     Covers the shared configuration, hooks and info files, this working tree's own
-    configuration, and the local branches and tags except branch `ignore_ref` (the ticket's
+    configuration, every configuration scope git reads (global included), and the local
+    branches and tags except branch `ignore_ref` (the ticket's
     own). Ariane compares it before and after untrusted code runs: a change means that code
     edited git itself.
     """
@@ -105,6 +110,9 @@ def config_fingerprint(worktree: Path, *, ignore_ref: str) -> str:
         elif path.is_file():
             digest.update(path.read_bytes())
         digest.update(b"\0")
+    # Every configuration scope, global included: Ariane's own git reads them all.
+    scopes = out(["config", "--list", "--show-origin", "--show-scope"], worktree)
+    digest.update(scopes.encode("utf-8"))
     refs = out(
         ["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags"], worktree
     )
@@ -154,10 +162,22 @@ def untracked(cwd: Path) -> list[str]:
     return [line for line in listing.splitlines() if line]
 
 
+def ignored(cwd: Path) -> set[str]:
+    """Files and folders git ignores, as listed by git (a folder counts as one entry)."""
+    listing = out(["ls-files", "--others", "--ignored", "--exclude-standard", "--directory"], cwd)
+    return {line for line in listing.splitlines() if line}
+
+
 def changed_paths(cwd: Path, since: str) -> list[str]:
     """Paths that differ from commit `since`: committed, staged, unstaged or untracked."""
     committed = out(["diff", "--name-only", since, "--"], cwd).splitlines()
     return sorted({*committed, *untracked(cwd)} - {""})
+
+
+def committed_paths(cwd: Path, since: str, pathspec: str) -> list[str]:
+    """Paths under `pathspec` changed by commits since `since`."""
+    listing = out(["diff", "--name-only", since, "HEAD", "--", pathspec], cwd)
+    return [line for line in listing.splitlines() if line]
 
 
 def commit(cwd: Path, pathspec: list[str], message: str, *, env: Mapping[str, str]) -> bool:

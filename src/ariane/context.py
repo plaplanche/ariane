@@ -60,11 +60,14 @@ def untrusted_environment(
     do not).
     """
     env = {}
+    token_name = token_env.upper()
     for name, value in base.items():
-        upper = name.upper()
+        upper = name.upper()  # Windows environment names are case-insensitive
+        if upper == token_name:
+            continue  # the tracker token never passes, whatever its name
         if keep_agent_login and upper.startswith(_AGENT_RUNTIME_PREFIXES):
             env[name] = value
-        elif name == token_env or upper in _CREDENTIAL_CHANNELS or _SECRET_NAME.search(upper):
+        elif upper in _CREDENTIAL_CHANNELS or _SECRET_NAME.search(upper):
             continue
         else:
             env[name] = value

@@ -186,3 +186,59 @@ def test_c8_a_setup_command_missing_from_path_stops_the_ticket(
     assert "setup failed: command not found on PATH: no-such-setup-for-ariane" in outcome.line
     assert runtime.sessions == []
     assert "Stopped: setup failed" in journal(project)
+
+
+def test_c1_an_agent_committing_to_ticket_records_is_stopped(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    (project.root / "work/3").mkdir(parents=True)
+    (project.root / "work/3/journal.md").write_text("an earlier ticket\n", encoding="utf-8")
+    sh(["git", "add", "--all"], project.root)
+    sh(["git", "commit", "--quiet", "-m", "earlier ticket"], project.root)
+    sh(["git", "push", "--quiet", "origin", "main"], project.root)
+
+    def tamper(session: Session) -> None:
+        edit_app(session)
+        (session.cwd / "work/3/journal.md").write_text("tampered\n", encoding="utf-8")
+        sh(["git", "commit", "--quiet", "-am", "agent commit"], session.cwd)
+
+    outcome = start(project, tracker, FakeRuntime(action=tamper))
+    assert outcome.exit_code == 1
+    assert "the agent committed changes to ticket records (work/3/journal.md)" in outcome.line
+    assert tracker.opened == []
+
+
+def test_c9_files_the_agent_hid_from_git_are_reported(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    def hide(session: Session) -> None:
+        edit_app(session)
+        (session.cwd / "ignored-by-git").mkdir()
+        (session.cwd / "ignored-by-git/helper.py").write_text("x = 1\n", encoding="utf-8")
+
+    assert start(project, tracker, FakeRuntime(action=hide)).exit_code == 0
+    assert "- `ignored-by-git/`" in project.show("ariane/7", "work/7/journal.md")
+
+
+def test_c1_non_ascii_paths_are_journaled_readably(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    def accent(session: Session) -> None:
+        edit_app(session)
+        (session.cwd / "café.txt").write_text("é\n", encoding="utf-8")
+
+    assert start(project, tracker, FakeRuntime(action=accent)).exit_code == 0
+    assert "- `café.txt`" in project.show("ariane/7", "work/7/journal.md")
+
+
+def test_c1_an_agent_committing_everything_is_not_blamed_for_ariane_journal(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    def commit_all(session: Session) -> None:
+        edit_app(session)
+        sh(["git", "add", "--all"], session.cwd)
+        sh(["git", "commit", "--quiet", "-m", "agent commit"], session.cwd)
+
+    outcome = start(project, tracker, FakeRuntime(action=commit_all))
+    assert outcome.exit_code == 0, outcome.line
+    assert "Ticket started" in project.show("ariane/7", "work/7/journal.md")
