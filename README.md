@@ -27,3 +27,11 @@ then pushes the branch and opens the pull request. The ticket's records are in `
 - [`docs/spec.md`](docs/spec.md): vision, functional specification (capabilities C1 to C24),
   non-functional requirements, roadmap and founding decisions.
 - [`docs/adr/`](docs/adr/): architecture decision records, written as the implementation goes.
+
+## License
+
+Ariane is free software under the [GNU Affero General Public License v3.0 only](LICENSE)
+(`AGPL-3.0-only`): you may use, study, modify and share it, and anyone who offers a modified
+Ariane to others, including as a network service, must publish their changes under the same
+license. Other licensing terms can be arranged with the copyright holder
+([ADR 0008](docs/adr/0008-license.md)).

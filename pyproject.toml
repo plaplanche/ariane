@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Turns tickets into reviewed pull requests with AI coding agents, while the human keeps deciding."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
 dependencies = []
 
 [project.scripts]

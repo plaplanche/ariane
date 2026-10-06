@@ -58,7 +58,8 @@ in everything written to the ticket folder.
 4. Ariane's own git commands run with hooks and the filesystem monitor disabled
    (`core.hooksPath` set to the null device, `core.fsmonitor=false`), and the commits it makes
    run without credentials. It pushes an exact commit with the explicit remote URL.
-5. The owner protects `main` on GitHub (pull request required).
+5. The owner protects `main` on GitHub (pull request required, CI green). GitHub applies this to
+   private repositories only on paid plans, which is why the repository is public (ADR 0008).
 
 An agent with a shell can still find credentials on disk (for example `~/.git-credentials`) or
 reach the network on its own: layers 1 and 2 slow it down, layer 3 detects a push to the
