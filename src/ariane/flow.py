@@ -16,6 +16,7 @@ REMOTE = "origin"
 SETUP_TIMEOUT_S = 30 * 60
 EXIT_OK = 0
 EXIT_STOPPED = 1
+_STATUS_DESCRIPTION_MAX = 140
 # Failures that stop a ticket cleanly, with a journaled reason, instead of a traceback.
 _FAILURES = (git.GitError, TrackerError, OSError, process.CommandNotFoundError)
 
@@ -315,7 +316,8 @@ class _TicketRun:
             )
         self.folder.set_status("delivering", "checks green, pushing the branch", "wait")
         self._commit_record(f"#{self.number}: record the checks")
-        git.push(self.worktree, self.url, git.head(self.worktree), self.branch)
+        checked_in = git.head(self.worktree)
+        git.push(self.worktree, self.url, checked_in, self.branch)
         try:
             pull = self.tracker.open_pull_request(
                 head=self.branch,
@@ -335,15 +337,42 @@ class _TicketRun:
         )
         self._commit_record(f"#{self.number}: record the delivery")
         note = ""
+        pushed = git.head(self.worktree)
         try:
-            git.push(self.worktree, self.url, git.head(self.worktree), self.branch)
+            git.push(self.worktree, self.url, pushed, self.branch)
         except git.GitError:
             note = " (the delivery record stays local: its push failed)"
+            pushed = checked_in
+        self._publish_statuses(results, pushed)
         return Outcome(
             EXIT_OK,
             f"Opened pull request {pull.url} for issue #{self.number}, checks replayed green"
             f"{note}. Next: review and merge it.",
         )
+
+    def _publish_statuses(self, results: list[checks.CheckResult], sha: str) -> None:
+        """C9: one commit status per check on the pull request's head commit. A refusal is a
+        journaled warning; the journal stays local so that the head commit does not move."""
+        report = self.tracker.file_url(
+            self.branch, f"{ticket.relative_folder(self.number)}/{ticket.CHECKS}"
+        )
+        warnings = []
+        for r in results:
+            description = f"{r.detail}, {r.duration_s:.1f} s"[:_STATUS_DESCRIPTION_MAX]
+            try:
+                self.tracker.set_commit_status(
+                    sha,
+                    f"ariane/{r.name}",
+                    "success" if r.passed else "failure",
+                    description,
+                    report,
+                )
+            except TrackerError as exc:
+                warnings.append(f"- `ariane/{r.name}`: {exc}")
+        if warnings:
+            self.folder.log("Warning: commit statuses refused", "\n".join(warnings))
+            with contextlib.suppress(*_FAILURES):
+                self._commit_record(f"#{self.number}: record the refused statuses")
 
     def _pull_request_body(self, results: list[checks.CheckResult]) -> str:
         report = f"{ticket.relative_folder(self.number)}/{ticket.CHECKS}"

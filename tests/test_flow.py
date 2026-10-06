@@ -165,6 +165,38 @@ def test_c9_a_failing_advisory_check_does_not_block_delivery(
     assert "Summary: 0 passed, 1 failed (0 blocking)." in tracker.opened[0]["body"]
 
 
+def test_c9_each_check_is_published_as_a_status_on_the_pushed_head_commit(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    checks = (
+        CheckConfig("blocking", (PY, "-c", "print('ok')"), True, 1),
+        CheckConfig("advisory", (PY, "-c", "raise SystemExit(1)"), False, 1),
+    )
+    outcome = start(project, tracker, FakeRuntime(), make_config(checks=checks))
+    assert outcome.exit_code == 0, outcome.line
+    head = project.remote_branches()["ariane/7"]
+    link = "memory://blob/ariane/7/work/7/checks.md"
+    assert [(s["sha"], s["context"], s["state"], s["target_url"]) for s in tracker.statuses] == [
+        (head, "ariane/blocking", "success", link),
+        (head, "ariane/advisory", "failure", link),
+    ]
+    assert tracker.statuses[0]["description"].startswith("exit 0, ")
+    assert tracker.statuses[1]["description"].startswith("exit 1, ")
+    assert all(len(s["description"]) <= 140 for s in tracker.statuses)
+
+
+def test_c9_a_refused_status_is_journaled_and_the_ticket_is_still_delivered(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    tracker.refuse_statuses = True
+    outcome = start(project, tracker, FakeRuntime())
+    assert outcome.exit_code == 0, outcome.line
+    assert outcome.line.startswith("Opened pull request memory://pulls/1001")
+    assert tracker.statuses == []
+    assert "Warning: commit statuses refused" in journal(project)
+    assert "statuses are refused" in journal(project)
+
+
 def test_c11_delivery_is_a_pushed_branch_and_a_pull_request_the_human_merges(
     project: Project, tracker: InMemoryTracker
 ) -> None:

@@ -67,6 +67,20 @@ class GitHubTracker:
     def file_url(self, branch: str, path: str) -> str:
         return f"{self._web_url}/{self._repository}/blob/{branch}/{path}"
 
+    def set_commit_status(
+        self, sha: str, context: str, state: str, description: str, target_url: str
+    ) -> None:
+        self._request(
+            "POST",
+            f"/repos/{self._repository}/statuses/{sha}",
+            {
+                "state": state,
+                "context": context,
+                "description": description,
+                "target_url": target_url,
+            },
+        )
+
     def _request(self, method: str, path: str, payload: Any = None) -> dict[str, Any]:
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         request = urllib.request.Request(self._api_url + path, data=data, method=method)
