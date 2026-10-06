@@ -87,39 +87,55 @@ def add_worktree(cwd: Path, path: Path, branch: str, start: str) -> None:
     git(["worktree", "add", "--quiet", "-b", branch, str(path), start], cwd)
 
 
-def config_fingerprint(worktree: Path, *, ignore_ref: str) -> str:
-    """A digest of everything that makes git run code or reroute a push.
+def config_snapshot(worktree: Path, *, ignore_ref: str) -> dict[str, str]:
+    """Everything that makes git run code or reroute a push, by part.
 
-    Covers the shared configuration, hooks and info files, this working tree's own
-    configuration, every configuration scope git reads (global included), and the local
-    branches and tags except branch `ignore_ref` (the ticket's
-    own). Ariane compares it before and after untrusted code runs: a change means that code
-    edited git itself.
+    Parts: each file of the shared configuration, hooks and info folders and of this working
+    tree's own configuration (as a digest), every configuration scope git reads (global
+    included), and the local branches and tags except branch `ignore_ref` (the ticket's own).
+    Ariane compares two snapshots taken before and after untrusted code runs: a difference
+    means that code edited git itself, and `snapshot_changes` names what changed.
     """
     common = Path(out(["rev-parse", "--path-format=absolute", "--git-common-dir"], worktree))
     private = Path(out(["rev-parse", "--path-format=absolute", "--git-dir"], worktree))
-    digest = hashlib.sha256()
     files = [common / "config", private / "config.worktree"]
     for folder in (common / "hooks", common / "info"):
         if folder.is_dir():
             files += sorted(p for p in folder.rglob("*") if p.is_file() or p.is_symlink())
+    snapshot = {}
     for path in files:
-        digest.update(str(path).encode("utf-8") + b"\0")
         if path.is_symlink():
-            digest.update(b"symlink:" + os.readlink(path).encode("utf-8"))
+            content = b"symlink:" + os.readlink(path).encode("utf-8")
         elif path.is_file():
-            digest.update(path.read_bytes())
-        digest.update(b"\0")
-    # Every configuration scope, global included: Ariane's own git reads them all.
+            content = path.read_bytes()
+        else:
+            continue
+        snapshot[f"file {path.as_posix()}"] = hashlib.sha256(content).hexdigest()[:16]
     scopes = out(["config", "--list", "--show-origin", "--show-scope"], worktree)
-    digest.update(scopes.encode("utf-8"))
+    for line in scopes.splitlines():
+        snapshot[f"setting {line}"] = ""
     refs = out(
         ["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags"], worktree
     )
     own = f"refs/heads/{ignore_ref} "
-    kept = [line for line in refs.splitlines() if not line.startswith(own)]
-    digest.update("\n".join(kept).encode("utf-8"))
-    return digest.hexdigest()
+    for line in refs.splitlines():
+        if not line.startswith(own):
+            ref, _, sha = line.partition(" ")
+            snapshot[f"ref {ref}"] = sha
+    return snapshot
+
+
+def snapshot_changes(before: dict[str, str], after: dict[str, str]) -> list[str]:
+    """What differs between two snapshots, one line per added, removed or changed part."""
+    lines = []
+    for key in sorted({*before, *after}):
+        if key not in after:
+            lines.append(f"removed: {key}")
+        elif key not in before:
+            lines.append(f"added: {key}")
+        elif before[key] != after[key]:
+            lines.append(f"changed: {key}")
+    return lines
 
 
 def blocked_push_env(base: Mapping[str, str], remote_names: list[str]) -> dict[str, str]:

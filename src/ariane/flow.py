@@ -146,7 +146,7 @@ class _TicketRun:
             self.folder.set_status("implementing", "implementer session running", "wait")
             self._commit_record(f"#{self.number}: open the ticket folder")
             start_commit = git.head(self.worktree)
-            guard = git.config_fingerprint(self.worktree, ignore_ref=self.branch)
+            guard = git.config_snapshot(self.worktree, ignore_ref=self.branch)
             ignored_before = git.ignored(self.worktree)
             result = self._implement()
             self._verify("the agent session", start_commit, guard, refs_before)
@@ -217,7 +217,7 @@ class _TicketRun:
         self,
         after: str,
         start_commit: str,
-        guard: str,
+        guard: dict[str, str],
         refs_before: dict[str, str],
         expected_head: str | None = None,
     ) -> None:
@@ -230,10 +230,14 @@ class _TicketRun:
             raise Stop(f"{after} rewrote the ticket branch's history", keep)
         if expected_head is not None and git.head(self.worktree) != expected_head:
             raise Stop(f"{after} moved the ticket branch", keep)
-        if git.config_fingerprint(self.worktree, ignore_ref=self.branch) != guard:
+        changes = git.snapshot_changes(
+            guard, git.config_snapshot(self.worktree, ignore_ref=self.branch)
+        )
+        if changes:
             raise Stop(
                 f"{after} changed git configuration, hooks or local branches",
                 "inspect .git/config, .git/hooks and the branches; Ariane pushed nothing",
+                "\n".join(f"- {line}" for line in changes),
             )
         refs = git.remote_refs(self.worktree, self.url)
         if refs != refs_before:
@@ -292,7 +296,7 @@ class _TicketRun:
             raise Stop("the agent changed no file", "clarify the issue, then start again")
 
     def _check_and_deliver(
-        self, start_commit: str, guard: str, refs_before: dict[str, str]
+        self, start_commit: str, guard: dict[str, str], refs_before: dict[str, str]
     ) -> Outcome:
         checked = git.head(self.worktree)
         results = checks.run_checks(self.config.checks, self.worktree, self.untrusted_env)

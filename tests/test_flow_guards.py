@@ -49,6 +49,7 @@ def test_c11_an_agent_that_edits_git_configuration_is_stopped(
     outcome = start(project, tracker, FakeRuntime(action=reroute))
     assert outcome.exit_code == 1
     assert "the agent session changed git configuration, hooks or local branches" in outcome.line
+    assert "added: setting local\t" in outcome.detail and "insteadof=x" in outcome.detail
     assert tracker.opened == []
 
 
@@ -240,5 +241,5 @@ def test_c1_an_agent_committing_everything_is_not_blamed_for_ariane_journal(
         sh(["git", "commit", "--quiet", "-m", "agent commit"], session.cwd)
 
     outcome = start(project, tracker, FakeRuntime(action=commit_all))
-    assert outcome.exit_code == 0, outcome.line
+    assert outcome.exit_code == 0, f"{outcome.line}\n{outcome.detail}"
     assert "Ticket started" in project.show("ariane/7", "work/7/journal.md")
