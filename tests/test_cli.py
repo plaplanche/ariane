@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -57,7 +58,9 @@ def one_line(done: subprocess.CompletedProcess[str]) -> str:
 
 def test_c23_version(tmp_path: Path) -> None:
     done = ariane(tmp_path, "--version")
-    assert done.returncode == 0 and done.stdout.strip() == f"ariane {__version__}"
+    v = sys.version_info
+    expected = f"ariane {__version__} (Python {v.major}.{v.minor}.{v.micro}, {sys.platform})"
+    assert done.returncode == 0 and done.stdout == expected + "\n"
 
 
 def test_c23_status_without_a_ticket_folder_says_how_to_start(project: Project) -> None:
