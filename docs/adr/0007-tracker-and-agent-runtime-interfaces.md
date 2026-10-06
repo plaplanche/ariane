@@ -55,8 +55,11 @@ in everything written to the ticket folder.
    configuration, hooks, info files, this working tree's configuration and the local branches
    and tags changed, or if any branch or tag on the remote changed. That last rule is strict:
    a person pushing during the session also stops the ticket, until claims (C13) make it finer.
+   The generated listings `info/refs` and `info/packs` are excluded: git rewrites them during
+   its own housekeeping, and they cannot run code or reroute a push.
 4. Ariane's own git commands run with hooks and the filesystem monitor disabled
-   (`core.hooksPath` set to the null device, `core.fsmonitor=false`), and the commits it makes
+   (`core.hooksPath` set to the null device, `core.fsmonitor=false`) and without automatic
+   housekeeping (`gc.auto=0`, `maintenance.auto=false`), and the commits it makes
    run without credentials. It pushes an exact commit with the explicit remote URL.
 5. The owner protects `main` on GitHub (pull request required, CI green). GitHub applies this to
    private repositories only on paid plans, which is why the repository is public (ADR 0008).

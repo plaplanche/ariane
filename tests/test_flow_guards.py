@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ariane import ticket
+from ariane import git, ticket
 from ariane.config import CheckConfig
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker, TrackerError
@@ -243,3 +243,36 @@ def test_c1_an_agent_committing_everything_is_not_blamed_for_ariane_journal(
     outcome = start(project, tracker, FakeRuntime(action=commit_all))
     assert outcome.exit_code == 0, f"{outcome.line}\n{outcome.detail}"
     assert "Ticket started" in project.show("ariane/7", "work/7/journal.md")
+
+
+def test_c11_regenerated_server_listings_do_not_stop_the_ticket(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    def housekeeping(session: Session) -> None:
+        edit_app(session)
+        sh(["git", "repack", "-a", "-d", "-q"], session.cwd)
+        sh(["git", "update-server-info"], session.cwd)
+
+    outcome = start(project, tracker, FakeRuntime(action=housekeeping))
+    assert outcome.exit_code == 0, outcome.detail
+
+
+def test_c11_an_agent_that_writes_info_attributes_is_still_stopped(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    def plant(session: Session) -> None:
+        edit_app(session)
+        common = Path(
+            sh(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], session.cwd)
+        )
+        (common / "info").mkdir(exist_ok=True)
+        (common / "info" / "attributes").write_text("* text\n", encoding="utf-8")
+
+    outcome = start(project, tracker, FakeRuntime(action=plant))
+    assert outcome.exit_code == 1
+    assert "info/attributes" in outcome.detail
+
+
+def test_c11_ariane_git_commands_carry_no_background_housekeeping(project: Project) -> None:
+    assert git.out(["config", "--get", "gc.auto"], project.root) == "0"
+    assert git.out(["config", "--get", "maintenance.auto"], project.root) == "false"

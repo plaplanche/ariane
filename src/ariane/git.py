@@ -19,7 +19,12 @@ _SAFE_OPTIONS = [
     *("-c", f"core.hooksPath={os.devnull}"),
     *("-c", "core.fsmonitor=false"),
     *("-c", "core.quotepath=off"),  # non-ASCII paths stay readable
+    # No background housekeeping: it rewrites files (`info/refs`) in the middle of a ticket.
+    *("-c", "gc.auto=0"),
+    *("-c", "maintenance.auto=false"),
 ]
+# Listings `git update-server-info` regenerates for the dumb HTTP transport: not part of the guard.
+_GENERATED_LISTINGS = frozenset({"info/refs", "info/packs"})
 _USERINFO = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@")
 
 
@@ -101,7 +106,12 @@ def config_snapshot(worktree: Path, *, ignore_ref: str) -> dict[str, str]:
     files = [common / "config", private / "config.worktree"]
     for folder in (common / "hooks", common / "info"):
         if folder.is_dir():
-            files += sorted(p for p in folder.rglob("*") if p.is_file() or p.is_symlink())
+            files += sorted(
+                p
+                for p in folder.rglob("*")
+                if (p.is_file() or p.is_symlink())
+                and p.relative_to(common).as_posix() not in _GENERATED_LISTINGS
+            )
     snapshot = {}
     for path in files:
         if path.is_symlink():
