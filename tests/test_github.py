@@ -115,6 +115,34 @@ def test_c11_opens_a_pull_request_from_the_ticket_branch(stub: tuple[Stub, str])
     )
 
 
+def test_c9_sets_a_commit_status_with_the_documented_request(stub: tuple[Stub, str]) -> None:
+    state, url = stub
+    state.responses[("POST", "/repos/owner/name/statuses/abc123")] = (201, {"id": 1})
+    tracker(url).set_commit_status("abc123", "ariane/lint", "failure", "exit 1, 2.0 s", "https://r")
+    request = state.requests[0]
+    assert (request["method"], request["path"]) == ("POST", "/repos/owner/name/statuses/abc123")
+    assert request["body"] == {
+        "state": "failure",
+        "context": "ariane/lint",
+        "description": "exit 1, 2.0 s",
+        "target_url": "https://r",
+    }
+    assert request["headers"]["Authorization"] == f"Bearer {TOKEN}"
+
+
+def test_c9_a_refused_commit_status_is_a_tracker_error_without_the_token(
+    stub: tuple[Stub, str],
+) -> None:
+    state, url = stub
+    state.responses[("POST", "/repos/owner/name/statuses/abc123")] = (
+        403,
+        {"message": "Resource not accessible by personal access token"},
+    )
+    with pytest.raises(TrackerError, match="HTTP 403 Resource not accessible") as error:
+        tracker(url).set_commit_status("abc123", "ariane/lint", "success", "exit 0", "https://r")
+    assert TOKEN not in str(error.value)
+
+
 @pytest.mark.parametrize(
     ("api", "web"),
     [

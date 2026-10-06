@@ -37,6 +37,12 @@ class Tracker(Protocol):
         """Where a human with access to the repository reads `path` on `branch`."""
         ...
 
+    def set_commit_status(
+        self, sha: str, context: str, state: str, description: str, target_url: str
+    ) -> None:
+        """Publish a status (`state` is "success" or "failure") on commit `sha`."""
+        ...
+
 
 @dataclass
 class InMemoryTracker:
@@ -45,6 +51,8 @@ class InMemoryTracker:
     issues: dict[int, Issue] = field(default_factory=dict)
     pull_request_numbers: set[int] = field(default_factory=set)
     opened: list[dict[str, str]] = field(default_factory=list)
+    statuses: list[dict[str, str]] = field(default_factory=list)
+    refuse_statuses: bool = False
 
     def add_issue(self, number: int, title: str, body: str) -> Issue:
         issue = Issue(number, title, body, f"memory://issues/{number}")
@@ -66,3 +74,18 @@ class InMemoryTracker:
 
     def file_url(self, branch: str, path: str) -> str:
         return f"memory://blob/{branch}/{path}"
+
+    def set_commit_status(
+        self, sha: str, context: str, state: str, description: str, target_url: str
+    ) -> None:
+        if self.refuse_statuses:
+            raise TrackerError("statuses are refused")
+        self.statuses.append(
+            {
+                "sha": sha,
+                "context": context,
+                "state": state,
+                "description": description,
+                "target_url": target_url,
+            }
+        )

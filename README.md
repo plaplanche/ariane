@@ -22,7 +22,10 @@ ariane status 12
 
 `ariane start` creates the branch `ariane/12` in a working tree beside the repository
 (`<repo>.ariane/worktrees/12`), runs the setup command, one implementer session, every check,
-then pushes the branch and opens the pull request. The ticket's records are in `work/12/`.
+then pushes the branch, opens the pull request and publishes each check's result as a commit
+status (`ariane/<check name>`) on its head commit. The ticket's records are in `work/12/`.
+The token needs permission to write commit statuses (for a fine-grained token, "Commit statuses:
+read and write"), on top of reading issues and writing pull requests.
 
 - [`docs/spec.md`](docs/spec.md): vision, functional specification (capabilities C1 to C24),
   non-functional requirements, roadmap and founding decisions.
