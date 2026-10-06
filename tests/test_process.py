@@ -13,18 +13,20 @@ from ariane import process
 
 from conftest import PY
 
+# A process that starts a grandchild writing a heartbeat to the file named in argv[1], then
+# sleeps SECONDS. The path travels as an argument, never inside code: a Windows path such as
+# C:\\Users would otherwise be read as an escape sequence.
 GRANDCHILD = """
-import subprocess, sys
+import subprocess, sys, time
 child = (
-    "import time, pathlib\\n"
-    "p = pathlib.Path(r'{beat}')\\n"
+    "import pathlib, sys, time\\n"
+    "p = pathlib.Path(sys.argv[1])\\n"
     "while True:\\n"
     "    p.write_text(str(time.time()))\\n"
     "    time.sleep(0.1)\\n"
 )
-subprocess.Popen([sys.executable, '-c', child])
-import time
-time.sleep(60)
+subprocess.Popen([sys.executable, "-c", child, sys.argv[1]])
+time.sleep(SECONDS)
 """
 
 
@@ -46,7 +48,11 @@ def test_process_stderr_can_be_merged_or_kept_apart(tmp_path: Path) -> None:
 
 
 def test_process_input_text_reaches_standard_input(tmp_path: Path) -> None:
-    code = "import sys; print(sys.stdin.read().upper())"
+    # The child reads and writes UTF-8 bytes, as an agent CLI does, whatever the code page.
+    code = (
+        "import sys; data = sys.stdin.buffer.read().decode('utf-8');"
+        " sys.stdout.buffer.write((data.upper() + '\\n').encode('utf-8'))"
+    )
     assert process.run([PY, "-c", code], cwd=tmp_path, input_text="ça va").stdout == "ÇA VA\n"
 
 
@@ -72,7 +78,8 @@ def _assert_stopped(beat: Path) -> None:
 
 def test_process_timeout_kills_the_whole_tree(tmp_path: Path) -> None:
     beat = tmp_path / "beat.txt"
-    done = process.run([PY, "-c", GRANDCHILD.format(beat=beat)], cwd=tmp_path, timeout_s=5)
+    code = GRANDCHILD.replace("SECONDS", "60")
+    done = process.run([PY, "-c", code, str(beat)], cwd=tmp_path, timeout_s=5)
     assert done.timed_out and done.returncode is None and not done.ok
     assert done.duration_s < 30
     _wait_for(beat)
@@ -82,8 +89,8 @@ def test_process_timeout_kills_the_whole_tree(tmp_path: Path) -> None:
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups")
 def test_process_background_children_do_not_outlive_a_normal_exit(tmp_path: Path) -> None:
     beat = tmp_path / "beat.txt"
-    code = GRANDCHILD.format(beat=beat).replace("time.sleep(60)", "time.sleep(1)")
-    done = process.run([PY, "-c", code], cwd=tmp_path, timeout_s=30)
+    code = GRANDCHILD.replace("SECONDS", "1")
+    done = process.run([PY, "-c", code, str(beat)], cwd=tmp_path, timeout_s=30)
     assert done.ok and not done.timed_out
     assert done.duration_s < 15, "a background child held the output open"
     _wait_for(beat)
