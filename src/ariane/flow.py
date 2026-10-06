@@ -316,8 +316,8 @@ class _TicketRun:
             )
         self.folder.set_status("delivering", "checks green, pushing the branch", "wait")
         self._commit_record(f"#{self.number}: record the checks")
-        checked_in = git.head(self.worktree)
-        git.push(self.worktree, self.url, checked_in, self.branch)
+        first_pushed = git.head(self.worktree)
+        git.push(self.worktree, self.url, first_pushed, self.branch)
         try:
             pull = self.tracker.open_pull_request(
                 head=self.branch,
@@ -342,7 +342,7 @@ class _TicketRun:
             git.push(self.worktree, self.url, pushed, self.branch)
         except git.GitError:
             note = " (the delivery record stays local: its push failed)"
-            pushed = checked_in
+            pushed = first_pushed
         self._publish_statuses(results, pushed)
         return Outcome(
             EXIT_OK,
