@@ -37,13 +37,18 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ariane", description="Turn tickets into reviewed pull requests."
     )
-    parser.add_argument("--version", action="version", version=f"ariane {__version__}")
+    parser.add_argument("--version", action="version", version=_version_line())
     sub = parser.add_subparsers(dest="command")
     start = sub.add_parser("start", help="run the ticket of an issue up to its pull request")
     start.add_argument("issue", type=_issue_number, help="issue number")
     status = sub.add_parser("status", help="show a ticket's state, read from its folder")
     status.add_argument("issue", type=_issue_number, help="issue number")
     return parser
+
+
+def _version_line() -> str:
+    py = sys.version_info
+    return f"ariane {__version__} (Python {py.major}.{py.minor}.{py.micro}, {sys.platform})"
 
 
 def _issue_number(text: str) -> int:
