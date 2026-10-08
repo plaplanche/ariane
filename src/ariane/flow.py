@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ariane import checks, context, git, process, ticket
 from ariane.config import Config
+from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.runtime import AgentRuntime, Session, SessionResult, StopReason
 from ariane.tracker import Issue, Tracker, TrackerError
 
@@ -16,9 +17,7 @@ REMOTE = "origin"
 SETUP_TIMEOUT_S = 30 * 60
 EXIT_OK = 0
 EXIT_STOPPED = 1
-_STATUS_DESCRIPTION_MAX = 140
-# Failures that stop a ticket cleanly, with a journaled reason, instead of a traceback.
-_FAILURES = (git.GitError, TrackerError, OSError, process.CommandNotFoundError)
+_FAILURES = FAILURES
 
 
 @dataclass(frozen=True)
@@ -314,74 +313,24 @@ class _TicketRun:
                 f"blocking checks failed: {names}",
                 f"read work/{self.number}/checks.md in {self.worktree}",
             )
-        self.folder.set_status("delivering", "checks green, pushing the branch", "wait")
-        self._commit_record(f"#{self.number}: record the checks")
-        first_pushed = git.head(self.worktree)
-        git.push(self.worktree, self.url, first_pushed, self.branch)
-        try:
-            pull = self.tracker.open_pull_request(
-                head=self.branch,
-                base=self.config.base_branch,
-                title=self.issue.title,
-                body=self._pull_request_body(results),
-            )
-        except TrackerError as exc:
-            raise Stop(
-                f"branch {self.branch} is pushed but the pull request was refused: {exc}",
-                f"open the pull request from {self.branch} by hand, or delete that branch"
-                " and start again",
-            ) from None
-        self.folder.log("Delivered", f"Pull request #{pull.number}: {pull.url}")
-        self.folder.set_status(
-            "delivered", f"pull request {pull.url}", "review and merge the pull request"
+        delivery = Delivery(
+            self.issue,
+            self.tracker,
+            self.folder,
+            self.worktree,
+            self.branch,
+            self.config.base_branch,
+            self.url,
+            self._commit_record,
         )
-        self._commit_record(f"#{self.number}: record the delivery")
-        note = ""
-        pushed = git.head(self.worktree)
         try:
-            git.push(self.worktree, self.url, pushed, self.branch)
-        except git.GitError:
-            note = " (the delivery record stays local: its push failed)"
-            pushed = first_pushed
-        self._publish_statuses(results, pushed)
+            done = delivery.deliver(results)
+        except PullRequestRefused as exc:
+            raise Stop(exc.reason, exc.next_action) from None
         return Outcome(
             EXIT_OK,
-            f"Opened pull request {pull.url} for issue #{self.number}, checks replayed green"
-            f"{note}. Next: review and merge it.",
-        )
-
-    def _publish_statuses(self, results: list[checks.CheckResult], sha: str) -> None:
-        """C9: one commit status per check on the pull request's head commit. A refusal is a
-        journaled warning; the journal stays local so that the head commit does not move."""
-        report = self.tracker.file_url(
-            self.branch, f"{ticket.relative_folder(self.number)}/{ticket.CHECKS}"
-        )
-        warnings = []
-        for r in results:
-            description = f"{r.detail}, {r.duration_s:.1f} s"[:_STATUS_DESCRIPTION_MAX]
-            try:
-                self.tracker.set_commit_status(
-                    sha,
-                    f"ariane/{r.name}",
-                    "success" if r.passed else "failure",
-                    description,
-                    report,
-                )
-            except TrackerError as exc:
-                warnings.append(f"- `ariane/{r.name}`: {exc}")
-        if warnings:
-            self.folder.log("Warning: commit statuses refused", "\n".join(warnings))
-            with contextlib.suppress(*_FAILURES):
-                self._commit_record(f"#{self.number}: record the refused statuses")
-
-    def _pull_request_body(self, results: list[checks.CheckResult]) -> str:
-        report = f"{ticket.relative_folder(self.number)}/{ticket.CHECKS}"
-        return (
-            f"Closes #{self.number}\n\n"
-            f"Implemented by an Ariane implementer session; checks replayed by Ariane.\n\n"
-            f"{checks.summary_table(results)}\n\n{checks.summary_line(results)}\n\n"
-            f"Full report: [{report}]({self.tracker.file_url(self.branch, report)}). "
-            f"Journal: `{ticket.relative_folder(self.number)}/{ticket.JOURNAL}`.\n"
+            f"Opened pull request {done.pull_url} for issue #{self.number}, checks replayed green"
+            f"{done.note}. Next: review and merge it.",
         )
 
     def _commit_record(self, message: str) -> None:
