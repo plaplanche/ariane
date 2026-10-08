@@ -1,6 +1,6 @@
 # Status
 
-- State: delivering
-- Updated: 2026-10-08 04:35:34Z
-- Detail: checks green, pushing the branch
-- Next: wait
+- State: delivered
+- Updated: 2026-10-08 04:35:38Z
+- Detail: pull request https://github.com/plaplanche/ariane/pull/17
+- Next: review and merge the pull request
