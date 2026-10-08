@@ -1,6 +1,6 @@
 # 0009. Slice 2 plan: tickets, order and gate evidence
 
-- Status: accepted
+- Status: superseded by 0020
 - Date: 2026-10-07
 - Capabilities: C10, C18, C19, C21 (basic), C9
 

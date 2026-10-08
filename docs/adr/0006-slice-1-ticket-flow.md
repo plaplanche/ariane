@@ -1,6 +1,6 @@
 # 0006. Slice 1 ticket flow: folder, working tree, delivery
 
-- Status: accepted
+- Status: accepted; where checks run amended by 0018, records amended by 0019
 - Date: 2026-10-06
 - Capabilities: C1, C8, C9, C11, C23
 

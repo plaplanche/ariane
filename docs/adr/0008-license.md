@@ -1,6 +1,6 @@
 # 0008. License
 
-- Status: accepted
+- Status: accepted; complemented by 0021
 - Date: 2026-10-06
 - Capabilities: none (project decision)
 

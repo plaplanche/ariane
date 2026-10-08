@@ -1,6 +1,6 @@
 # 0010. Reviewer session and fix rounds
 
-- Status: accepted
+- Status: superseded by 0016
 - Date: 2026-10-07
 - Capabilities: C10, C5, C21
 

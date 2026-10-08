@@ -2,6 +2,8 @@
 
 One file per decision, numbered in order: `0001-short-title.md`, `0002-...`. A decision that is
 replaced is not edited: a new ADR supersedes it and the old one gets `Status: superseded by NNNN`.
+When only part of it is replaced, the old one keeps `accepted` and names the part and the new
+ADR (for example `accepted; push guard part superseded by 0017`).
 
 Template:
 
