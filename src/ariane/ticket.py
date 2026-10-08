@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ariane.redact import redact
 from ariane.tracker import Issue
 
 WORK_DIR = "work"
@@ -47,7 +48,7 @@ class TicketFolder:
 
     Ariane keeps every record in memory and rewrites it whole, so an agent that edits,
     deletes, replaces with a link, or adds files in the folder cannot alter what Ariane
-    records. Known secrets are masked in everything written.
+    records. Known secrets and token formats are masked in everything written.
     """
 
     def __init__(self, root: Path, number: int, secrets: Sequence[str] = ()) -> None:
@@ -79,7 +80,7 @@ class TicketFolder:
         )
 
     def write(self, name: str, text: str) -> None:
-        self._records[name] = self._redact(text)
+        self._records[name] = redact(text, self._secrets)
         self._ensure_folder()
         target = self.path / name
         if target.is_symlink() or target.is_dir():
@@ -104,11 +105,6 @@ class TicketFolder:
             if current.is_symlink() or (current.exists() and not current.is_dir()):
                 _remove(current)
             current.mkdir(exist_ok=True)
-
-    def _redact(self, text: str) -> str:
-        for secret in self._secrets:
-            text = text.replace(secret, "***")
-        return text
 
 
 def _remove(path: Path) -> None:

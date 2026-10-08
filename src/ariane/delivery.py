@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ariane import checks, git, process, ticket
+from ariane.redact import redact
 from ariane.tracker import Issue, Tracker, TrackerError
 
 _STATUS_DESCRIPTION_MAX = 140
@@ -42,6 +43,7 @@ class Delivery:
     base_branch: str
     url: str
     commit_record: Callable[[str], None]
+    secrets: list[str] = field(default_factory=list)
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
@@ -53,8 +55,8 @@ class Delivery:
             pull = self.tracker.open_pull_request(
                 head=self.branch,
                 base=self.base_branch,
-                title=self.issue.title,
-                body=self._pull_request_body(results),
+                title=redact(self.issue.title, self.secrets),
+                body=redact(self._pull_request_body(results), self.secrets),
             )
         except TrackerError as exc:
             raise PullRequestRefused(
@@ -85,7 +87,8 @@ class Delivery:
         )
         warnings = []
         for r in results:
-            description = f"{r.detail}, {r.duration_s:.1f} s"[:_STATUS_DESCRIPTION_MAX]
+            description = redact(f"{r.detail}, {r.duration_s:.1f} s", self.secrets)
+            description = description[:_STATUS_DESCRIPTION_MAX]
             try:
                 self.tracker.set_commit_status(
                     sha,

@@ -119,8 +119,8 @@ class _TicketRun:
         self.branch = branch
         self.url = url
         self.number = issue.number
-        token = environ.get(config.tracker.token_env, "")
-        self.folder = ticket.TicketFolder(worktree, issue.number, secrets=[token])
+        self.secrets = context.known_secrets(environ, config.tracker.token_env)
+        self.folder = ticket.TicketFolder(worktree, issue.number, secrets=self.secrets)
         remotes = git.remotes(worktree)
         token_env = config.tracker.token_env
         # Agent sessions and anything running code an agent wrote get no credential.
@@ -322,6 +322,7 @@ class _TicketRun:
             self.config.base_branch,
             self.url,
             self._commit_record,
+            self.secrets,
         )
         try:
             done = delivery.deliver(results)
