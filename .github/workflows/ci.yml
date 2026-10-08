@@ -19,23 +19,44 @@ jobs:
         python: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python }}
+      - name: Detect documentation-only pull request
+        id: docs
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            git diff --name-only "$BASE" "$HEAD" | uv run --no-project python scripts/docs_only.py >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Install
+        if: steps.docs.outputs.docs_only != 'true'
         run: uv sync --locked
       - name: Lint
+        if: steps.docs.outputs.docs_only != 'true'
         run: uv run ruff check .
       - name: Format
+        if: steps.docs.outputs.docs_only != 'true'
         run: uv run ruff format --check .
       - name: Types
+        if: steps.docs.outputs.docs_only != 'true'
         run: uv run mypy
       - name: Tests
+        if: steps.docs.outputs.docs_only != 'true'
         run: uv run pytest
       - name: File length
+        if: steps.docs.outputs.docs_only != 'true'
         run: uv run python scripts/check_file_length.py
       - name: Smoke test in Windows PowerShell 5.1
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.docs.outputs.docs_only != 'true'
         shell: powershell
         run: |
           uv run ariane --version
@@ -52,7 +73,7 @@ jobs:
           if (-not ($out | Select-Object -Last 1).StartsWith("Refused configuration:")) { exit 1 }
           exit 0
       - name: Smoke test in PowerShell 7
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.docs.outputs.docs_only != 'true'
         shell: pwsh
         run: |
           uv run ariane --version
