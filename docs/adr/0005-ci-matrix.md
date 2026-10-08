@@ -24,6 +24,12 @@ Windows (PowerShell 5.1 and 7), macOS and Linux are each tested in CI from slice
   statuses (`contents: read`, `statuses: write`). It exists because a cloud session's GitHub
   proxy refuses the statuses endpoint, while a workflow runs on GitHub's side. It does not
   re-run the checks.
+- The ruleset requires the six checks by name, so the workflow cannot be skipped (`[skip ci]`
+  or a `paths` filter would leave them waiting forever). Instead, on pull requests a step after
+  checkout lists the files changed between the base and head commits and runs
+  `scripts/docs_only.py`; when every path is documentation (under `docs/`, or a `.md` file
+  outside `work/`), all later steps are skipped and each job still ends green. Pushes to `main`
+  always run everything.
 
 ## Consequences
 Six jobs per pull request update or push to `main`, a few minutes each. Platform bugs (paths, encodings, process trees) show up
