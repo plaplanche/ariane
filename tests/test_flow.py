@@ -310,3 +310,20 @@ def test_c11_a_ticket_already_started_is_refused(
     assert not worktree(project).exists()
     assert runtime.sessions == []
     assert start(project, tracker, runtime, number=7).exit_code == 1
+
+
+def test_c21_redact_published_token_reaches_neither_tracker_nor_branch(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    leak = "ghp_" + "Zy9Xw8Vu7T" * 4
+    tracker.add_issue(8, f"Fix {leak}", "Body.")
+    checks = (CheckConfig("leaky", (PY, "-c", f"print('{leak}')"), True, 1),)
+    runtime = FakeRuntime(summary=f"done with {leak}")
+    assert start(project, tracker, runtime, make_config(checks=checks), number=8).exit_code == 0
+    assert leak in runtime.sessions[0].prompt  # the agent saw it; nothing is published with it
+    pull = tracker.opened[0]
+    published = [pull["title"], pull["body"], *(s["description"] for s in tracker.statuses)]
+    assert tracker.statuses
+    assert all(leak not in text for text in published)
+    for name in ticket.RECORDS:
+        assert leak not in project.show("ariane/8", f"work/8/{name}")

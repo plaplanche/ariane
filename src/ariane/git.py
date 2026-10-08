@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import os
-import re
 from collections.abc import Mapping
 from pathlib import Path
 
 from ariane import process
+from ariane.redact import redact
 
 # The push URL an agent's git sees: any plain `git push` from its environment fails.
 BLOCKED_PUSH_URL = "ariane-blocked://agents-never-push"
@@ -25,16 +25,10 @@ _SAFE_OPTIONS = [
 ]
 # Listings `git update-server-info` regenerates for the dumb HTTP transport: not part of the guard.
 _GENERATED_LISTINGS = frozenset({"info/refs", "info/packs"})
-_USERINFO = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@")
 
 
 class GitError(Exception):
     """A git command failed."""
-
-
-def redact(text: str) -> str:
-    """Hide credentials embedded in URLs (`https://user:token@host`)."""
-    return _USERINFO.sub(r"\1***@", text)
 
 
 def git(

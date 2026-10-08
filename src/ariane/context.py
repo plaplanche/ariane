@@ -45,6 +45,19 @@ Title: {_escape(issue.title)}
 """
 
 
+def known_secrets(environ: Mapping[str, str], token_env: str) -> list[str]:
+    """The tracker token and the value of every variable `untrusted_environment` withholds."""
+    token_name = token_env.upper()
+    values = [
+        value
+        for name, value in environ.items()
+        if name.upper() == token_name
+        or name.upper() in _CREDENTIAL_CHANNELS
+        or _SECRET_NAME.search(name.upper())
+    ]
+    return [v for v in values if v]
+
+
 def untrusted_environment(
     base: Mapping[str, str],
     *,
