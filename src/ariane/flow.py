@@ -204,7 +204,15 @@ class _TicketRun:
         )
         result = self.runtime.run(session)
         cost = "not reported" if result.cost_usd is None else f"{result.cost_usd:.4f} USD"
-        tokens = f"{result.input_tokens} in, {result.output_tokens} out"
+        tokens = ", ".join(
+            f"{'not reported' if n is None else n} {label}"
+            for n, label in (
+                (result.input_tokens, "in"),
+                (result.cache_read_tokens, "cache read"),
+                (result.cache_write_tokens, "cache write"),
+                (result.output_tokens, "out"),
+            )
+        )
         denials = "\n".join(f"- {d}" for d in result.permission_denials) or "none"
         self.folder.log(
             f"Implementer session stopped: {result.stop_reason.value}",

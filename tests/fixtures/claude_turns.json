@@ -11,6 +11,8 @@
   ],
   "usage": {
     "input_tokens": 9,
+    "cache_creation_input_tokens": 1800,
+    "cache_read_input_tokens": 20500,
     "output_tokens": 243
   },
   "permission_denials": [],

@@ -64,10 +64,12 @@ class ClaudeCodeRuntime:
                 input_text=session.prompt,
             )
         except process.CommandNotFoundError as exc:
-            return SessionResult(StopReason.ERROR, None, None, None, str(exc))
+            return SessionResult(StopReason.ERROR, None, None, None, None, None, str(exc))
         if completed.timed_out:
             return SessionResult(
                 StopReason.TIMEOUT,
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -89,6 +91,8 @@ def parse_result(stdout: str, stderr: str, returncode: int | None) -> SessionRes
             None,
             None,
             None,
+            None,
+            None,
             f"no structured result (exit {returncode}): {tail}",
         )
     reason = _SUBTYPES.get(str(data.get("subtype")), StopReason.ERROR)
@@ -107,6 +111,8 @@ def parse_result(stdout: str, stderr: str, returncode: int | None) -> SessionRes
         cost_usd=_number(data.get("total_cost_usd")),
         input_tokens=_int(usage.get("input_tokens")),
         output_tokens=_int(usage.get("output_tokens")),
+        cache_read_tokens=_int(usage.get("cache_read_input_tokens")),
+        cache_write_tokens=_int(usage.get("cache_creation_input_tokens")),
         summary=summary,
         permission_denials=tuple(_denial(d) for d in denials if isinstance(d, dict))
         if isinstance(denials, list)

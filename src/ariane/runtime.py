@@ -35,6 +35,8 @@ class SessionResult:
     cost_usd: float | None  # as reported by the agent, never estimated
     input_tokens: int | None
     output_tokens: int | None
+    cache_read_tokens: int | None  # as reported, apart from input_tokens
+    cache_write_tokens: int | None
     summary: str  # the agent's final message, or the error
     permission_denials: tuple[str, ...] = field(default_factory=tuple)
 
