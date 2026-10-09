@@ -20,10 +20,11 @@ Windows (PowerShell 5.1 and 7), macOS and Linux are each tested in CI from slice
 - Pushing the workflow file is impossible from a cloud session (no `workflow` scope): it is
   left uncommitted there and the owner commits it from their machine.
 - A second workflow, `.github/workflows/check-statuses.yml`, runs on pull requests from `ariane/*`
-  branches of this repository and publishes the committed `work/<n>/checks.md` as commit
-  statuses (`contents: read`, `statuses: write`). It exists because a cloud session's GitHub
-  proxy refuses the statuses endpoint, while a workflow runs on GitHub's side. It does not
-  re-run the checks.
+  branches of this repository, checks out the head commit, runs the setup command and every check
+  declared in `ariane.toml` through Ariane's own code, and publishes one `ariane/<check>` commit
+  status per result, linked to the workflow run (`contents: read`, `statuses: write`). It exists because a cloud
+  session's GitHub proxy refuses the statuses endpoint, while a workflow runs on GitHub's side.
+  It never reads `work/<n>/checks.md`: a status comes from a replay, not from a file in the branch.
 - The ruleset requires the six checks by name, so the workflow cannot be skipped (`[skip ci]`
   or a `paths` filter would leave them waiting forever). Instead, on pull requests a step after
   checkout lists the files changed between the base and head commits and runs
