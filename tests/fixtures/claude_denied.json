@@ -9,6 +9,8 @@
   "result": "The command `git push --dry-run origin main .` has been denied by the permission system. This is a push command (even though it's a dry-run), which requires user approval. Would you like me to proceed with running this command?",
   "usage": {
     "input_tokens": 17,
+    "cache_creation_input_tokens": 2100,
+    "cache_read_input_tokens": 15300,
     "output_tokens": 402
   },
   "permission_denials": [

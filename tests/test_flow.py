@@ -83,7 +83,14 @@ def test_c5_context_is_assembled_by_ariane_journaled_and_marks_the_issue_untrust
     assert session.role == "implementer"
     assert "GH_TOKEN" not in session.env
     assert session.env["GIT_TERMINAL_PROMPT"] == "0"
-    assert "Cost 0.4200 USD (as reported), tokens 10 in, 20 out" in journal(project)
+    assert "Cost 0.4200 USD (as reported), tokens 10 in, " in journal(project)
+
+
+def test_c5_tokens_cache_journal_line_counts_cached_tokens(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    assert start(project, tracker, FakeRuntime()).exit_code == 0
+    assert "tokens 10 in, 30 cache read, 40 cache write, 20 out." in journal(project)
 
 
 def test_c5_budget_stop_keeps_the_work_on_the_branch_and_delivers_nothing(

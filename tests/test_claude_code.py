@@ -118,3 +118,19 @@ def test_c5_recorded_fixture_round_trips_through_the_runtime(tmp_path: Path) -> 
 def test_c6_no_user_plugins_setting_sources_are_project_and_local(tmp_path: Path) -> None:
     argv = ClaudeCodeRuntime().command(session(tmp_path))
     assert argv[argv.index("--setting-sources") + 1] == "project,local"
+
+
+def test_c5_tokens_cache_values_are_parsed_from_the_fixture() -> None:
+    raw = (FIXTURES / "claude_success.json").read_text(encoding="utf-8")
+    usage = json.loads(raw)["usage"]
+    result = parse_result(raw, "", 0)
+    assert result.cache_read_tokens == usage["cache_read_input_tokens"] > 0
+    assert result.cache_write_tokens == usage["cache_creation_input_tokens"] > 0
+
+
+def test_c5_tokens_cache_absent_fields_are_none() -> None:
+    raw = '{"type": "result", "subtype": "success", "usage": {"input_tokens": 3}}'
+    result = parse_result(raw, "", 0)
+    assert result.input_tokens == 3
+    assert result.cache_read_tokens is None
+    assert result.cache_write_tokens is None

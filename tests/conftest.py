@@ -126,7 +126,7 @@ class FakeRuntime:
     def run(self, session: Session) -> SessionResult:
         self.sessions.append(session)
         self.action(session)
-        return SessionResult(self.stop_reason, 0.42, 10, 20, self.summary)
+        return SessionResult(self.stop_reason, 0.42, 10, 20, 30, 40, self.summary)
 
 
 @pytest.fixture
