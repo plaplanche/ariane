@@ -10,6 +10,7 @@ from pathlib import Path
 from ariane import checks, context, git, process, ticket
 from ariane.config import Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
+from ariane.redact import redact
 from ariane.runtime import AgentRuntime, Session, SessionResult, StopReason
 from ariane.tracker import Issue, Tracker, TrackerError
 
@@ -283,7 +284,7 @@ class _TicketRun:
         if git.commit(
             self.worktree,
             [".", exclude],
-            f"#{self.number}: {self.issue.title}",
+            redact(f"#{self.number}: {self.issue.title}", self.secrets),
             env=self.untrusted_env,
         ):
             self.folder.log("Agent work committed", "\n".join(f"- `{p}`" for p in changed))
@@ -330,14 +331,14 @@ class _TicketRun:
             raise Stop(exc.reason, exc.next_action) from None
         return Outcome(
             EXIT_OK,
-            f"Opened pull request {done.pull_url} for issue #{self.number}, checks replayed green"
-            f"{done.note}. Next: review and merge it.",
+            f"Opened pull request {done.pull_url} for issue #{self.number}, checks replayed green."
+            " Next: review and merge it.",
         )
 
     def _commit_record(self, message: str) -> None:
         self.folder.restore()
         folder = ticket.relative_folder(self.number)
-        git.commit(self.worktree, [folder], message, env=self.untrusted_env)
+        git.commit(self.worktree, [folder], redact(message, self.secrets), env=self.untrusted_env)
 
     def _stopped(self, exc: BaseException) -> Outcome:
         reason, next_action = _describe(exc)
