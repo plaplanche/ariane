@@ -57,7 +57,7 @@ def test_c1_start_creates_ticket_folder_with_brief_prefilled_from_the_issue(
     assert "Approved:" not in brief
     assert "Set app.txt to version 2." in brief
     assert "# Journal of ticket #7" in project.show("ariane/7", "work/7/journal.md")
-    assert "State: delivered" in project.show("ariane/7", "work/7/status.md")
+    assert "Last action: delivered" in project.show("ariane/7", "work/7/status.md")
 
 
 def test_c1_records_brief_has_no_approval_lines(project: Project, tracker: InMemoryTracker) -> None:

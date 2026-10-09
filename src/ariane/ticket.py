@@ -75,7 +75,7 @@ class TicketFolder:
     def set_status(self, state: str, detail: str, next_action: str) -> None:
         self.write(
             STATUS,
-            f"# Status\n\n- State: {state}\n- Updated: {now()}\n- Detail: {detail}\n"
+            f"# Status\n\n- Last action: {state}\n- At: {now()}\n- Detail: {detail}\n"
             f"- Next: {next_action}\n",
         )
 
@@ -126,9 +126,22 @@ def brief(issue: Issue) -> str:
 
 def read_status(path: Path) -> dict[str, str]:
     """Parse `status.md` into its fields (State, Updated, Detail, Next)."""
+    return parse_status((path / STATUS).read_text(encoding="utf-8"))
+
+
+def parse_status(text: str) -> dict[str, str]:
+    """Parse status text in the current wording (Last action, At) or the old one (State, Updated).
+
+    Both wordings are returned under every name, so earlier tickets still read.
+    """
     fields = {}
-    for line in (path / STATUS).read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         if line.startswith("- ") and ": " in line:
             key, _, value = line[2:].partition(": ")
             fields[key] = value
+    for new, old in (("Last action", "State"), ("At", "Updated")):
+        if new in fields:
+            fields.setdefault(old, fields[new])
+        elif old in fields:
+            fields[new] = fields[old]
     return fields

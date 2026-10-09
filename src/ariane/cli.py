@@ -8,7 +8,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ariane import __version__, config, flow, git, ticket
+from ariane import __version__, config, flow, git, process, ticket
 from ariane.claude_code import ClaudeCodeRuntime
 from ariane.github import GitHubTracker
 
@@ -87,17 +87,49 @@ def _start(root: Path, number: int) -> int:
 
 
 def _status(root: Path, number: int) -> int:
+    fields: dict[str, str] | None = None
+    where = ""
     for base in (flow.worktree_path(root, number), root):
         folder = ticket.folder_path(base, number)
         if (folder / ticket.STATUS).is_file():
-            fields = ticket.read_status(folder)
-            return _say(
-                EXIT_OK,
-                f"Ticket #{number} is {fields.get('State', 'unknown')}"
-                f" ({fields.get('Detail', 'no detail')}), read from {folder}."
-                f" Next: {fields.get('Next', 'see its journal')}.",
-            )
-    return _say(EXIT_STOPPED, f"No ticket folder for #{number}. Next: run ariane start {number}.")
+            fields, where = ticket.read_status(folder), f", read from {folder}"
+            break
+    merged, problem = _merged(root, number)
+    relative = ticket.relative_folder(number)
+    if merged is not None and fields is None:
+        fields = ticket.parse_status(
+            git.show_on_branch(root, flow.REMOTE, merged, relative + "/status.md")
+        )
+        where = f", read from {flow.REMOTE}/{merged}"
+    if fields is None:
+        return _say(
+            EXIT_STOPPED, f"No ticket folder for #{number}. Next: run ariane start {number}."
+        )
+    action = fields.get("Last action", "unknown")
+    at = fields.get("At", "unknown time")
+    if merged is not None:
+        return _say(
+            EXIT_OK,
+            f"Ticket #{number}: merged into {merged} (last action: {action}, {at}). Next: nothing.",
+        )
+    note = f" Could not read the remote ({problem}), so a merge is not shown." if problem else ""
+    return _say(
+        EXIT_OK,
+        f"Ticket #{number} is {action} ({fields.get('Detail', 'no detail')}){where}.{note}"
+        f" Next: {fields.get('Next', 'see its journal')}.",
+    )
+
+
+def _merged(root: Path, number: int) -> tuple[str | None, str]:
+    """The base branch holding the ticket's folder on the remote, or why that is unknown."""
+    try:
+        base = config.load(root).base_branch
+        git.fetch(root, flow.REMOTE, base)
+    except (config.ConfigError, git.GitError, process.CommandNotFoundError) as exc:
+        return None, str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+    if git.path_exists_on_branch(root, flow.REMOTE, base, ticket.relative_folder(number)):
+        return base, ""
+    return None, ""
 
 
 def _say(code: int, line: str) -> int:
