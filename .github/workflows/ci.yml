@@ -33,7 +33,7 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           if [ "$EVENT" = "pull_request" ]; then
-            git diff --name-only "$BASE" "$HEAD" | uv run --no-project python scripts/docs_only.py >> "$GITHUB_OUTPUT"
+            git diff --name-only --no-renames "$BASE" "$HEAD" | uv run --no-project python scripts/docs_only.py >> "$GITHUB_OUTPUT"
           else
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
           fi
