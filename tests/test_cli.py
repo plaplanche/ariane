@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,7 +12,7 @@ import pytest
 
 from ariane import __version__, flow, ticket
 
-from conftest import PY, Project
+from conftest import PY, Project, sh
 
 VALID_TOML = """
 [project]
@@ -126,3 +127,65 @@ def test_c23_no_command_still_ends_with_one_summary_line(tmp_path: Path) -> None
     assert done.stdout.splitlines()[-1] == (
         "Did nothing: no command given. Next: run ariane start <issue>."
     )
+
+
+def _with_config(project: Project) -> None:
+    (project.root / "ariane.toml").write_text(VALID_TOML, encoding="utf-8")
+
+
+def _deliver(project: Project, number: int) -> None:
+    """Push branch `ariane/<n>` holding the ticket folder, as a delivery does."""
+    sh(["git", "checkout", "--quiet", "-b", f"ariane/{number}"], project.root)
+    folder = ticket.TicketFolder(project.root, number)
+    folder.set_status("delivered", "pull request https://x/1", "review and merge")
+    sh(["git", "add", "--all"], project.root)
+    sh(["git", "commit", "--quiet", "-m", "ticket"], project.root)
+    sh(["git", "push", "--quiet", "origin", f"ariane/{number}"], project.root)
+    sh(["git", "checkout", "--quiet", "main"], project.root)
+
+
+def test_c23_status_merged_reads_merged_also_after_the_branch_is_deleted(project: Project) -> None:
+    _with_config(project)
+    _deliver(project, 5)
+    sh(["git", "merge", "--quiet", "--no-ff", "-m", "merge", "ariane/5"], project.root)
+    sh(["git", "push", "--quiet", "origin", "main"], project.root)
+    sh(["git", "push", "--quiet", "origin", "--delete", "ariane/5"], project.root)
+    sh(["git", "branch", "-D", "ariane/5"], project.root)
+    shutil.rmtree(project.root / "work")
+    line = one_line(ariane(project.root, "status", "5"))
+    assert line.startswith("Ticket #5: merged into main (last action: delivered, ")
+    assert line.endswith("). Next: nothing.")
+
+
+def test_c23_status_merged_reads_the_last_action_when_not_merged(project: Project) -> None:
+    _deliver(project, 5)
+    _with_config(project)
+    ticket.TicketFolder(project.root, 5).set_status(
+        "delivered", "pull request https://x/1", "review and merge"
+    )
+    line = one_line(ariane(project.root, "status", "5"))
+    assert line.startswith("Ticket #5 is delivered (pull request https://x/1)")
+    assert "merged into" not in line
+
+
+def test_c23_status_merged_says_when_the_remote_cannot_be_read(project: Project) -> None:
+    _with_config(project)
+    ticket.TicketFolder(project.root, 5).set_status("delivered", "pull request", "merge it")
+    sh(["git", "remote", "set-url", "origin", str(project.root / "missing.git")], project.root)
+    line = one_line(ariane(project.root, "status", "5"))
+    assert line.startswith("Ticket #5 is delivered (pull request)")
+    assert "Could not read the remote" in line
+    assert line.endswith("Next: merge it.")
+
+
+def test_c23_status_merged_reads_an_old_format_status_file(project: Project) -> None:
+    _with_config(project)
+    folder = ticket.folder_path(project.root, 5)
+    folder.mkdir(parents=True)
+    (folder / "status.md").write_text(
+        "# Status\n\n- State: delivered\n- Updated: 2026-10-08 06:48Z\n- Detail: old\n- Next: go\n",
+        encoding="utf-8",
+    )
+    line = one_line(ariane(project.root, "status", "5"))
+    assert line.startswith("Ticket #5 is delivered (old)")
+    assert line.endswith("Next: go.")

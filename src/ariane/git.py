@@ -67,6 +67,16 @@ def fetch(cwd: Path, remote: str, branch: str) -> None:
     git(["fetch", "--quiet", remote, f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}"], cwd)
 
 
+def path_exists_on_branch(cwd: Path, remote: str, branch: str, path: str) -> bool:
+    """Whether `path` is in the last fetched `remote/branch`."""
+    ref = f"refs/remotes/{remote}/{branch}:{path}"
+    return git(["cat-file", "-e", ref], cwd, check=False).ok
+
+
+def show_on_branch(cwd: Path, remote: str, branch: str, path: str) -> str:
+    return out(["show", f"refs/remotes/{remote}/{branch}:{path}"], cwd)
+
+
 def local_branch_exists(cwd: Path, branch: str) -> bool:
     return git(["rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"], cwd, check=False).ok
 
