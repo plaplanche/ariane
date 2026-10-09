@@ -30,7 +30,9 @@ Windows (PowerShell 5.1 and 7), macOS and Linux are each tested in CI from slice
   because a cloud session's GitHub proxy refuses the statuses endpoint, while a workflow runs on
   GitHub's side. Its limit: on `pull_request`, the workflow, the publishing script and
   `ariane.toml` come from the branch, and the branch's code runs as the same runner user as the
-  publisher, so the statuses are as trustworthy as the human review of those files in the diff.
+  publisher, so the statuses are as trustworthy as the human review of those files in the diff. What runs
+  with the workflow's token is therefore not only the workflow, the script and `ariane.toml`:
+  the branch's `src/ariane`, `pyproject.toml` and `uv.lock` run with it too.
 - The ruleset requires the six checks by name, so the workflow cannot be skipped (`[skip ci]`
   or a `paths` filter would leave them waiting forever). Instead, on pull requests a step after
   checkout lists the files changed between the base and head commits and runs

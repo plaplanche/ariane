@@ -49,7 +49,9 @@ class Delivery:
         number = self.issue.number
         self.folder.log("Delivering", f"Pushing {self.branch} and opening the pull request.")
         self.folder.set_status(
-            "delivered", f"pull request from {self.branch}", "review and merge the pull request"
+            "pushed",
+            f"{self.branch} pushed; opening the pull request",
+            "see the pull request, or run ariane status <n>".replace("<n>", str(number)),
         )
         self.commit_record(f"#{number}: record the checks and the delivery")
         pushed = git.head(self.worktree)

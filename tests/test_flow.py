@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -57,7 +58,7 @@ def test_c1_start_creates_ticket_folder_with_brief_prefilled_from_the_issue(
     assert "Approved:" not in brief
     assert "Set app.txt to version 2." in brief
     assert "# Journal of ticket #7" in project.show("ariane/7", "work/7/journal.md")
-    assert "Last action: delivered" in project.show("ariane/7", "work/7/status.md")
+    assert "Last action: pushed" in project.show("ariane/7", "work/7/status.md")
 
 
 def test_c1_records_brief_has_no_approval_lines(project: Project, tracker: InMemoryTracker) -> None:
@@ -73,7 +74,7 @@ def test_c1_records_journal_points_to_the_brief_instead_of_the_issue_body(
     runtime = FakeRuntime()
     assert start(project, tracker, runtime).exit_code == 0
     text = journal(project)
-    assert "(issue #7 title and body: see brief.md)" in text
+    assert "(issue #7 title and body: see brief.md, read at " in text
     assert "Set app.txt to version 2." not in text
     assert "<untrusted-ticket" not in text
     assert "Checks Ariane will replay" in text
@@ -100,7 +101,7 @@ def test_c5_context_is_assembled_by_ariane_journaled_and_marks_the_issue_untrust
     session = runtime.sessions[0]
     assert '<untrusted-ticket number="7">' in session.prompt
     assert "Set app.txt to version 2." in session.prompt
-    assert "(issue #7 title and body: see brief.md)" in journal(project)
+    assert "(issue #7 title and body: see brief.md, read at " in journal(project)
     assert "Set app.txt to version 2." not in journal(project)
     assert session.role == "implementer"
     assert "GH_TOKEN" not in session.env
@@ -412,3 +413,22 @@ def test_c9_clean_replay_tree_is_removed_after_delivery_and_after_a_stop(
     assert outcome.exit_code == 1
     assert not replay(project, 8).exists()
     assert "8-replay" not in sh(["git", "worktree", "list"], project.root)
+
+
+def test_c1_records_pointer_has_read_time_in_the_journal(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    assert start(project, tracker, FakeRuntime()).exit_code == 0
+    journal = project.show("ariane/7", "work/7/journal.md")
+    assert re.search(r"see brief\.md, read at \d{4}-\d\d-\d\d \d\d:\d\d:\d\dZ\)", journal)
+
+
+def test_c11_pushed_status_does_not_claim_a_pull_request(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    assert start(project, tracker, FakeRuntime()).exit_code == 0
+    status = project.show("ariane/7", "work/7/status.md")
+    assert "Last action: pushed" in status
+    assert "ariane/7 pushed; opening the pull request" in status
+    assert "see the pull request, or run ariane status 7" in status
+    assert "delivered" not in status

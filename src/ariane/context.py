@@ -21,11 +21,18 @@ _AGENT_RUNTIME_PREFIXES = ("ANTHROPIC_", "CLAUDE_")
 
 
 def implementer_prompt(
-    issue: Issue, branch: str, checks: Sequence[CheckConfig], *, recorded: bool = False
+    issue: Issue,
+    branch: str,
+    checks: Sequence[CheckConfig],
+    *,
+    recorded: bool = False,
+    read_at: str = "",
 ) -> str:
-    """The implementer prompt; `recorded` swaps the ticket block for a pointer to brief.md."""
+    """The implementer prompt; `recorded` swaps the ticket block for a pointer to brief.md,
+    with `read_at`, the time the issue was read."""
     if recorded:
-        block = f"(issue #{issue.number} title and body: see brief.md)"
+        when = f", read at {read_at}" if read_at else ""
+        block = f"(issue #{issue.number} title and body: see brief.md{when})"
     else:
         block = f"""<{UNTRUSTED_TAG} number="{issue.number}">
 Title: {_escape(issue.title)}

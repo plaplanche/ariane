@@ -98,3 +98,13 @@ def test_c21_the_tracker_token_never_passes_whatever_its_name_or_case() -> None:
             is_root=False,
         )
         assert "s3cret" not in env.values(), name
+
+
+def test_c1_records_pointer_has_read_time_when_given() -> None:
+    issue = Issue(3, "Title", "Body", "u")
+    checks = (CheckConfig("t", ("pytest",), True, 1),)
+    prompt = context.implementer_prompt(
+        issue, "ariane/3", checks, recorded=True, read_at="2026-10-09 10:00:00Z"
+    )
+    assert "(issue #3 title and body: see brief.md, read at 2026-10-09 10:00:00Z)" in prompt
+    assert "Body" not in prompt
