@@ -342,3 +342,29 @@ def test_c21_redact_commit_messages_a_token_in_the_issue_title_is_masked(
     assert outcome.exit_code == 0, outcome.line
     log = sh(["git", "log", "--format=%B", "main..ariane/8"], worktree(project, 8))
     assert leaked not in log and "#8: Rotate ***" in log
+
+
+def test_c11_guard_message_for_a_changed_remote(project: Project, tracker: InMemoryTracker) -> None:
+    sh(["git", "push", "--quiet", "origin", "main:refs/heads/other"], project.root)
+
+    def delete_branch(session: Session) -> None:
+        edit_app(session)
+        sh(["git", "push", "--quiet", str(project.remote), ":refs/heads/other"], session.cwd)
+
+    outcome = start(project, tracker, FakeRuntime(action=delete_branch))
+    assert "nobody runs git commands in the repository or pushes to it while a ticket runs" in (
+        outcome.line
+    )
+
+
+def test_c11_guard_message_for_changed_git_configuration(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    def reroute(session: Session) -> None:
+        edit_app(session)
+        sh(["git", "config", "url.https://elsewhere.invalid/.insteadOf", "x"], session.cwd)
+
+    outcome = start(project, tracker, FakeRuntime(action=reroute))
+    assert "nobody runs git commands in the repository or pushes to it while a ticket runs" in (
+        outcome.line
+    )

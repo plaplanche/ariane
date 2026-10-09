@@ -28,6 +28,9 @@ class Outcome:
     detail: str = ""  # shown before the line, for example a failing setup's output
 
 
+QUIET = "nobody runs git commands in the repository or pushes to it while a ticket runs"
+
+
 class Stop(Exception):
     """The ticket stops here; `reason` and `next_action` go to the user and the journal."""
 
@@ -247,7 +250,7 @@ class _TicketRun:
         if changes:
             raise Stop(
                 f"{after} changed git configuration, hooks or local branches",
-                "inspect .git/config, .git/hooks and the branches; Ariane pushed nothing",
+                f"inspect .git/config, .git/hooks and the branches; Ariane pushed nothing; {QUIET}",
                 "\n".join(f"- {line}" for line in changes),
             )
         refs = git.remote_refs(self.worktree, self.url)
@@ -255,7 +258,7 @@ class _TicketRun:
             changed = sorted(r for r in {*refs, *refs_before} if refs.get(r) != refs_before.get(r))
             raise Stop(
                 f"the remote changed during {after} ({', '.join(changed)})",
-                "check it was not the agent; if a person pushed, start the ticket again",
+                f"check it was not the agent; if a person pushed, start the ticket again; {QUIET}",
             )
         self.folder.log(
             f"Verified after {after}", "Same branch and history, git unchanged, remote unchanged."

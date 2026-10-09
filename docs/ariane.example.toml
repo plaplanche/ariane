@@ -1,0 +1,39 @@
+# Example configuration of Ariane for another Python project (ADR 0003).
+# Copy this file to the root of your repository as `ariane.toml` and adapt it.
+
+[project]
+# Branch the pull requests target and the ticket branches start from.
+base_branch = "main"
+# Command run once in the ticket's working tree before the agent starts (list of arguments).
+setup = ["uv", "sync"]
+
+[tracker]
+# Tracker kind; only "github" exists today.
+kind = "github"
+# Your repository, as "owner/name".
+repository = "your-account/your-repository"
+# Name of the environment variable that holds the access token.
+token_env = "GH_TOKEN"
+
+[agents.implementer]
+# Agent runtime that runs the implementer session.
+runtime = "claude-code"
+# Model the session uses.
+model = "claude-sonnet-5-5"
+# Tools the agent may use.
+tools = ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
+# Spending limit of one session, in US dollars.
+max_budget_usd = 5.0
+# Time limit of one session, in minutes.
+timeout_minutes = 30
+
+# Each [[checks]] entry is a check Ariane replays on the result before opening the pull request.
+[[checks]]
+# Name of the check, shown in the pull request statuses.
+name = "lint"
+# Command to run (list of arguments, run from the repository root).
+command = ["uv", "run", "ruff", "check", "."]
+
+[[checks]]
+name = "tests"
+command = ["uv", "run", "pytest", "-q"]
