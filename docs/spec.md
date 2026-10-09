@@ -1,6 +1,6 @@
 # Ariane — vision and specification
 
-Version of 6 October 2026. This file is the reference specification; ADRs in `docs/adr/` record the decisions taken while implementing it.
+Version of 8 October 2026 (revised after an outside review: ADRs 0014 to 0021). This file is the reference specification; ADRs in `docs/adr/` record the decisions taken while implementing it.
 
 Ariane turns tickets into reviewed pull requests with AI coding agents, while the human keeps deciding, understanding and approving. It spends the human's attention before the code and at a few checkpoints, instead of on a 2,000-line review at the end; the name comes from Ariadne's thread (*le fil d'Ariane*): you never lose the thread of your own code.
 
@@ -36,6 +36,8 @@ Agents write the code; the human keeps the decisions and the understanding. Aria
 - **Short, targeted context.** Each agent gets the minimum it needs, as files in the repository, not a long conversation.
 - **Learn from every failure.** Each failure becomes a rule, a test or a check so that it does not happen again.
 - **Work on the real bottleneck.** Ariane exists to deliver value, not to optimise itself.
+- **Gates in code.** Ariane is an orchestrator written in code: a gate enforced by code cannot be skipped; an instruction to an agent can (ADR 0014).
+- **No single vendor.** Ariane must not depend on one model vendor: the agent runtime contract is runtime-neutral, and a second runtime follows it (C5, ADR 0014).
 
 ## Ideas taken from Dex Horthy's podcast
 
@@ -101,11 +103,12 @@ Twenty-four capabilities in six groups, each with acceptance criteria. A criteri
 
 #### C1. The ticket folder and format
 
-Each ticket has a folder in the repository (for example `work/<id>/`) holding all its documents: product brief, architecture, design, plan, journal, review findings. The tracker is the entry point and the notification channel; the truth is in the files. Ariane talks to the tracker only through one interface (read a ticket, comment, set labels, claim, open a pull request): GitHub first, GitLab later, and an in-memory tracker for tests.
+Each ticket has a folder in the repository (for example `work/<id>/`) holding all its documents: product brief, architecture, design, plan, journal, review findings. The tracker is the entry point and the notification channel; the truth is in the files. Ariane talks to the tracker only through one interface (read a ticket, comment, set labels, claim, open a pull request): GitHub first, and an in-memory tracker for tests. GitLab is frozen until a user works on GitLab.
 
 - Creating a ticket from an issue creates its folder, with the product brief prefilled from the issue.
 - The issue body follows a format (a project can declare its own required sections, C22), by default: Context, Current state (verified, with `file:line` references), Decided spec, Release note, Acceptance criteria, Acceptance checklist, Out of scope, Related, and an optional Budget. Agents read the title and the body, never the comments: anything decided in a comment must be moved into the body.
-- Each document has a readable status (`draft`, `to approve`, `approved`) and its approval date.
+- Each document has a readable status (`draft`, `to approve`, `approved`) and its approval date, once stages and approvals (C2) exist; before that, documents carry no approval line.
+- The issue body is stored once in the folder (in the product brief); the journal refers to it instead of copying it. The ticket's status file records Ariane's last action and its date, never a state Ariane cannot know; `ariane status` adds what git shows now, such as `merged` (ADR 0019).
 - An agent reads only the folder's files and the repository, never a conversation history.
 
 #### C2. Stages and human approvals
@@ -137,11 +140,16 @@ The plan splits the work into slices. Each slice has a goal, an executable done 
 
 #### C5. Agent sessions
 
-Each stage runs a fresh agent session with a role (writer, implementer, reviewer, rules judge, analyst), a model, a tool allowlist, a budget and a time limit. Sessions run through one agent runtime interface: Claude Code first, opencode second, and each role can use a different runtime and model provider. A runtime that cannot honour a role's needs (tool allowlist, structured output with stop reason and cost, declared skills) is refused for that role at start-up, with the missing feature named.
+Each stage runs a fresh agent session with a role (writer, implementer, reviewer, rules judge, analyst), a model, a tool allowlist, a budget and a time limit. Sessions run through one runtime-neutral agent runtime interface: Claude Code first, opencode second (starting with the reviewer role), and each role can use a different runtime and model provider; Ariane must not depend on one model vendor. A runtime that cannot honour a role's needs (tool allowlist, usage reported so that the budget can be enforced, a stop reason, declared skills only) is refused for that role at start-up, with the missing feature named.
 
 - Ariane assembles the session's context itself (approved documents, rules, relevant learnings, files named in the plan) and records it in the journal. Ticket text, diffs, test output and tracker comments enter the context as clearly delimited untrusted data.
 - Only the allowlisted tools are available; no extra tool server is reachable unless the project declares it.
-- Ariane classifies why a session stopped (finished, budget, turn limit, timeout, error) from the agent's structured output, and records cost and tokens as the agent reports them, never as estimates.
+- Ariane itself enforces what the guarantees need; a runtime's native feature (a budget flag, a schema option) is an optimisation, never the guarantee (ADR 0015):
+  - **Budget**: where the runtime reports usage while it runs, Ariane stops the session when the reported cost, or the reported tokens when no cost is reported, reach the cap; where usage comes only at the end, the runtime's own cap is required for that role, and the journal says which applied.
+  - **Structured answers** (for example the reviewer's verdict) are validated by Ariane against the role's schema, whatever the runtime.
+  - **Stop reason**: Ariane classifies why a session stopped (finished, budget, turn limit, timeout, error) from the runtime's own signals.
+- Cost and tokens are recorded as the runtime reports them, never as estimates; tokens include cache reads and writes when the runtime reports them separately.
+- Each runtime declares the environment variables it keeps for its own login; every other variable that can carry a credential is withheld (C21).
 - A session stopped by budget, turns or timeout leaves its work saved on the ticket branch and a clear status; the next run resumes it, with a larger budget after a budget stop, capped by the configuration.
 - A ticket can declare its own budget (cost and duration per role); the configuration caps it, and the applied cap is written in the journal.
 
@@ -155,6 +163,8 @@ The project declares, role by role, which agent skills a session may use (for ex
 - The skills actually loaded by a session are recorded in the ticket's journal.
 
 #### C7. Agent teams
+
+*Frozen* until a ticket's plan has two independent slices worth running in parallel (ADR 0020).
 
 A stage can hand its work to a team of specialised agents, coordinated by Ariane, instead of one generalist.
 
@@ -177,18 +187,20 @@ The project declares a setup command (for example `uv sync`, `npm ci`, `cargo fe
 
 The project declares named checks (lint, types, tests, complexity, file size, coverage), each blocking or advisory. Ariane runs them itself; it never believes an agent that says they pass.
 
+- Checks run in a clean working tree created at the commit to deliver, after the setup command, never in the working tree an agent used; only that replay counts (ADR 0018).
 - Checks run after each slice and before delivery, all of them even when one fails, and the report has one section per check plus a final summary line. Each check declares when it runs (after each slice, before delivery, or both), so a slow full suite can run only before delivery. Before a ticket starts, the checks run once on the base branch: a check already failing there is recorded and not blamed on the ticket. A project can declare a guard command that postpones work while the machine is busy (for example a long GPU job).
 - Tests added by a slice are replayed on the code before the slice: a test that already passes there is flagged as "tests nothing".
 - A ticket can carry a mechanical acceptance checklist (a file exists, a line matches a pattern, a section is unchanged), checked by Ariane without a model.
 - The project can set a total coverage threshold and a threshold on the lines the ticket changed, read from a standard report (Cobertura or LCOV); a command also measures the main branch's coverage on demand, in a throwaway working tree.
 - A failing blocking check prevents delivery.
-- Ariane publishes each check's result as a status on the pull request's head commit (a GitHub commit status; the equivalent on other trackers), so the results show next to the pull request and branch protection can require them.
+- Ariane publishes each check's result as a status on the pull request's head commit (a GitHub commit status; the equivalent on other trackers), so the results show next to the pull request and branch protection can require them. A status always comes from a replay, never from a report file in the branch (ADR 0018).
 
 #### C10. Review
 
 Before delivery, two independent reviews: an adversarial review by a different model from the implementer's, and a rules judge that checks the project's quality rules one by one.
 
-- The reviewer gives a verdict and findings marked blocking or minor; a positive verdict that lists a blocking finding counts as negative.
+- The reviewer gives a verdict and findings marked blocking or minor; a positive verdict that lists a blocking finding counts as negative. Ariane validates the answer's structure itself (C5); the reviewer reads the clean working tree of the delivered commit.
+- A branch finished by hand (after the fix rounds, or for a ticket Ariane cannot run) gets the same verification before its pull request: clean replay of the checks, one review, the review record (`ariane verify`, ADR 0016).
 - The judge answers yes or no for each rule, with the line concerned.
 - At most two automatic fix rounds; after that the ticket goes to the human.
 - Findings are posted to the tracker (inline when short, as an attachment otherwise, never at a URL readable by anyone who has it), redacted (C21), and kept in the ticket folder with the commit they reviewed.
@@ -201,9 +213,11 @@ Each ticket works in its own git working tree and branch. Ariane never touches t
 
 - Delivery is the pushed branch plus an open pull request (or merge request); the human merges. If the base branch moved, Ariane rebases the ticket branch, runs the project's regeneration command if one is declared, and replays every check; a conflict goes to the human.
 - Two tickets never share a working tree. A project can declare environment variables that redirect the application's data into the working tree, so no agent writes to real data.
-- An agent cannot push, switch branches or rewrite history. Changes left by the project's formatter or commit hooks are committed by Ariane, not treated as an unexplained dirty tree.
+- An agent cannot push, switch branches or rewrite history: agents hold no git credential and only Ariane pushes, with its own token. Where the network itself supplies credentials (some cloud sandboxes), an agent's push is detected after the session and stops the ticket, until the sandbox of C21 prevents it (ADR 0017). Changes left by the project's formatter or commit hooks are committed by Ariane, not treated as an unexplained dirty tree.
 
 #### C12. Autonomous mode and notifications
+
+*Frozen* until the owner decides, on the numbers of Measuring Ariane, that tickets may run without a person starting them (ADR 0020).
 
 Ariane can watch the tracker and process tickets marked for it, started by the system scheduler (Task Scheduler on Windows, launchd on macOS, systemd or cron on Linux).
 
@@ -213,6 +227,8 @@ Ariane can watch the tracker and process tickets marked for it, started by the s
 
 #### C13. Several machines
 
+*Frozen* until a second machine runs tickets for the same repository (ADR 0020).
+
 Several machines can watch the same tracker without processing the same ticket twice.
 
 - A machine claims a ticket on the tracker before working on it and releases it at the end. An abandoned claim expires after a delay longer than the longest silent step: the maximum session time is therefore capped below that delay.
@@ -221,12 +237,16 @@ Several machines can watch the same tracker without processing the same ticket t
 
 #### C14. Control by labels
 
+*Frozen* until C12 is unfrozen (ADR 0020).
+
 The human steers a ticket from the tracker, without opening Ariane.
 
 - Control labels: hold, do not deliver, force full review, force security review.
 - Status labels kept by Ariane (in progress, approval awaited, needs a human, delivered), always consistent with the ticket folder.
 
 #### C15. Post-deployment monitoring
+
+*Frozen* until a user project that Ariane delivers goes to production (ADR 0020).
 
 Ariane does not deploy: deployment stays the project's (CI or human). After each deployment of a pull request Ariane delivered, it checks that production is healthy and turns a problem into a documented ticket.
 
@@ -238,6 +258,8 @@ Ariane does not deploy: deployment stays the project's (CI or human). After each
 - Acceptance: a failing blocking probe creates an incident ticket naming the probe, the measurement, the threshold, the pull request and the original ticket; a failing advisory probe is reported without an incident; nothing Ariane does can change production.
 
 #### C16. Release notes
+
+*Frozen* until a project that uses Ariane publishes releases (ADR 0020).
 
 Each ticket carries a one-sentence release note (Added, Changed, Fixed, Removed, Security, or none). A command assembles a changelog and release draft from the tickets delivered since the last version.
 
@@ -272,6 +294,8 @@ Ariane measures, per ticket and per step: agent duration, human waiting time, co
 
 #### C20. Periodic reviews
 
+*Frozen* until fifty tickets are delivered by Ariane on one project (ADR 0020).
+
 Every N delivered tickets, Ariane runs a read-only review in depth and proposes tickets, without creating them.
 
 - Refactoring review: files that are too long, duplication, coupling, against the project's thresholds.
@@ -298,12 +322,14 @@ One configuration file in the repository describes the tracker, the ticket forma
 
 #### C23. Command line
 
-One command-line tool, usable on Windows (PowerShell), macOS and Linux: create a ticket, show its status, approve or revise a stage, run the next stage, list tickets, verify a checklist, produce reports.
+One command-line tool, usable on Windows (PowerShell), macOS and Linux: create a ticket, show its status, approve or revise a stage, run the next stage, list tickets, verify a checklist, verify a branch finished by hand (`ariane verify`), produce reports.
 
 - Each command says in one line what it did and what the next possible action is.
 - A ticket's state is readable without Ariane, by opening its folder.
 
 #### C24. Setup assistant
+
+*Frozen* until a third user installs Ariane (ADR 0020).
 
 A command guides the installation on a new project: it asks what it needs (tracker, checks, setup command, models, budgets), proposes defaults suited to the detected language, then writes and validates the configuration.
 
@@ -323,6 +349,7 @@ A command guides the installation on a new project: it asks what it needs (track
 | Observability | One human-readable journal per ticket: which step ran, with which context, for which result and cost |
 | Maintainability of Ariane | Short single-purpose modules; a file-length limit checked from slice 1 (no file over 600 lines); every capability tested; refactors done as pure moves first, behaviour changes after |
 | Dependencies | As few as possible; each added dependency is justified in an ADR |
+| Vendors | No dependency on one model vendor: Ariane's guarantees never rely on one runtime's flags (C5); from slice 3 the reviewer runs on two runtimes, and a role that requires one runtime says so and why |
 
 ## Roadmap
 
@@ -330,26 +357,29 @@ The order follows two rules: use Ariane on itself as early as possible, and lear
 
 ```mermaid
 flowchart TB
-  S1["1. Walking skeleton (wk 1)"] --> S2["2. Dogfooding, learnings, review (wk 2)"] --> S3["3. Approved stages and slices (wk 3-4)"] --> S4["4. Stronger checks (wk 5)"] --> S5["5. Autonomous mode (wk 6-7)"]
-  S5 --> S6["6. Mastery and skills (wk 8)"] --> S7["7. Security (wk 9-10)"] --> S8["8. Agent teams (wk 11-12)"] --> S9["9. Releases and periodic reviews (wk 13)"] --> S10["10. Post-deployment monitoring (wk 14-15)"]
+  S1["1. Walking skeleton"] --> S2["2. Dogfooding"] --> S3["3. Review, vendor-neutral"] --> S4["4. Measurement and shadow"]
+  S4 --> S5["5. Approved stages and slices"] --> S6["6. Stronger checks"] --> S7["7. Mastery"] --> S8["8. Learnings and skills"] --> S9["9. Security"]
 ```
 
-Weeks are estimates from 5 October 2026, revised at every gate.
+Revised on 8 October 2026 (ADR 0020); estimates are revised at every gate. Frozen capabilities (GitLab, C7, C12 to C16, C20, C24) are not scheduled; each one names the condition that unfreezes it.
 
 | Slice | Capabilities | Gate (checked before the next slice starts) |
 | --- | --- | --- |
 | 1. Walking skeleton | C1, C5, C8, C9, C11 and C22 in minimal form; C23 to start a ticket; CI on Windows, macOS and Linux | A real issue becomes a pull request whose checks Ariane replayed green |
-| 2. Dogfooding, learnings, review | C18 (file store), C10 (one reviewer), C19 (cost, rounds, first-pass verdict), redaction of everything posted (C21, basic), check results as commit statuses (C9) | Ariane's own tickets go through Ariane |
-| 3. Approved stages and slices | C2, C4, per-ticket budget (C5), approve and revise commands (C23) | No stage starts without human approval |
-| 4. Stronger checks | C9 complete (pre-change replay, checklist, coverage), rules judge (C10), C3 | A test that tests nothing is flagged; the rules judge runs |
-| 5. Autonomous mode | C12, C13, C14, resume after interruption (C5) | A killed session resumes; two machines never work on the same ticket |
-| 6. Mastery and skills | C17, C6, project instructions (C22), pluggable learning stores (C18), opencode as a second agent runtime (C5) | A quiz follows every delivery; only pinned, declared skills load |
-| 7. Security | C21 complete (security review, forbidden terms), C24 | No secret reaches an agent's context or anything Ariane posts |
-| 8. Agent teams | C7 | Two parallel slices are integrated with every check green |
-| 9. Releases and periodic reviews | C16, C20 | A release draft is produced, and a review runs every N tickets |
-| 10. Post-deployment monitoring | C15 | A simulated outage creates a documented incident ticket and an alert |
+| 2. Dogfooding | Redaction of everything posted (C21, basic), check results as commit statuses from a replay (C9), one push per ticket, clean-tree replay (C9), cache tokens counted (C5), shorter records and live status (C1, C23), installation for a second user | Ariane's own tickets go through Ariane, each pushed once with checks replayed in a clean tree; a second user installs Ariane on macOS |
+| 3. Review, vendor-neutral | Runtime-neutral contract and login variables per runtime (C5), one reviewer with fix rounds (C10), `ariane verify` (C23), the reviewer on opencode (C5) | A ticket is reviewed on a second runtime; a branch finished by hand is verified |
+| 4. Measurement and shadow | C19 (cost, tokens, rounds, first-pass verdict, human time), shadow mode (no push), `ariane report` | The second user's first tickets are measured in shadow mode |
+| 5. Approved stages and slices | C2, C4, C3, per-ticket budget (C5), approve and revise commands (C23) | No stage starts without human approval |
+| 6. Stronger checks | C9 complete (pre-change replay, checklist, coverage), rules judge (C10) | A test that tests nothing is flagged; the rules judge runs |
+| 7. Mastery | C17 | A quiz follows every delivery |
+| 8. Learnings and skills | C18 (ADR 0011), C6, project instructions (C22), resume after interruption (C5) | An accepted rule reaches a later ticket; only pinned, declared skills load |
+| 9. Security | C21 complete (security review, forbidden terms, operating-system sandbox) | No secret reaches an agent's context or anything Ariane posts; an agent cannot push even where the network supplies credentials |
 
 A missed gate is fixed before the next slice starts.
+
+## Measuring Ariane
+
+Ariane is measured against the way of working it replaces. Over the second user's first 10 tickets, in shadow mode (step 2 below), Ariane and that user's current process (agent instructions, skills, CI) are compared on two numbers: human time per merged pull request, and the count of steps skipped or gates bypassed. Ariane's numbers come from `ariane report` (C19); the current process's from a short log the user keeps. The owner decides on the numbers; there is no automatic stop rule (ADR 0020).
 
 ## Adopting Ariane on an existing project
 
@@ -370,8 +400,8 @@ All nine founding choices were made on 5 October 2026.
 | Language | Python |
 | Language of the repository, documents and prompts | English |
 | Platforms | Windows, macOS, Linux |
-| Tracker | An abstraction from day one; GitHub by default, GitLab later |
+| Tracker | An abstraction from day one; GitHub by default; GitLab frozen (ADR 0020) |
 | Models | One model per role; implementer and reviewer always different |
-| Agent runtime | An abstraction from day one (C5); Claude Code by default, opencode second (slice 6) |
-| Agent teams | Yes (C7): team review first, then parallel construction |
+| Agent runtime | A runtime-neutral abstraction (C5, ADR 0015); Claude Code by default, opencode second (slice 3), starting with the reviewer |
+| Agent teams | Yes (C7), frozen until needed (ADR 0020) |
 | Delivery | Pull request, merged by the human |

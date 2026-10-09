@@ -1,6 +1,6 @@
 # 0007. Tracker and agent runtime interfaces
 
-- Status: accepted
+- Status: accepted; agent runtime part superseded by 0015, push guard part superseded by 0017
 - Date: 2026-10-06
 - Capabilities: C1, C5, C11, C22, C21 (basic)
 

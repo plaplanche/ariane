@@ -1,6 +1,6 @@
 # 0005. Continuous integration matrix
 
-- Status: accepted
+- Status: accepted; the `check-statuses.yml` paragraph amended by 0018
 - Date: 2026-10-06
 - Capabilities: platform requirement ("each tested in CI from slice 1")
 

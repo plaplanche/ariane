@@ -49,6 +49,21 @@ rules 1, 9 and 10 below:
    Ariane only: no third-party organisation, employer, colleague or other project of the owner.
 10. **English everywhere** in the repository: code, docs, prompts, commits, tickets.
 
+## Developing Ariane with Ariane
+
+The repository has no hooks of its own: Ariane runs on its own tickets as soon as each
+capability exists, so the gates are Ariane's, not the session's (ADR 0020).
+
+- When a capability ships, every rule above that it enforces is removed or marked "enforced by
+  Ariane (Cn)" in the same pull request, and the next ticket uses it.
+- Today, for tickets Ariane runs: the checks of rule 6 are enforced by Ariane (C9); redaction of
+  what Ariane posts (rule 8) is enforced by Ariane (C21, basic). For a session's own commits and
+  posts, both rules stay manual.
+- A hand takeover (after a second `no-go`, or a ticket Ariane cannot run, such as a workflow
+  file pushed from the owner's machine) runs `ariane verify <branch>` before its pull request
+  once that command exists (slice 3); until then, run the checks and the independent review of
+  rule 5 by hand.
+
 ## The owner's machine
 
 The owner works on **Windows, in PowerShell 5.1**. Any command they are to run is given in
