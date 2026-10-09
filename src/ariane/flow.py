@@ -166,12 +166,15 @@ class _TicketRun:
             return self._stopped(exc)
 
     def _setup(self, cwd: Path) -> Stop | None:
-        """Run the setup command (C8) in `cwd`; an error is journaled once the folder exists."""
+        """Run the setup command (C8) in `cwd` without credentials (it may run agent-written code).
+
+        An error is journaled once the folder exists.
+        """
         if not self.config.setup:
             return None
         command = self.config.setup
         try:
-            done = process.run(command, cwd=cwd, timeout_s=SETUP_TIMEOUT_S)
+            done = process.run(command, cwd=cwd, timeout_s=SETUP_TIMEOUT_S, env=self.untrusted_env)
         except process.CommandNotFoundError as exc:
             return Stop(f"setup failed: {exc}", "install it or fix project.setup")
         if not done.ok:
