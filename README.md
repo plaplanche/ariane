@@ -49,10 +49,19 @@ read and write"), on top of reading issues and writing pull requests.
 
 ## While a ticket runs
 
-Nobody runs git commands in the repository or pushes to it while a ticket runs. Ariane checks
-that the agent changed nothing outside the ticket branch (git configuration, hooks, local
-branches, the remote); it cannot tell a person from the agent, so any such change stops the
-ticket (ADR 0017). Wait for the ticket to finish, or start it again after a stop.
+Nobody runs git commands in the repository while a ticket runs. Ariane checks that the agent
+changed nothing outside the ticket branch (git configuration, hooks, local branches, the
+remote). A merge on the base branch (a fast-forward) does not stop the ticket; any other remote
+change does: a created, deleted or rewritten branch or tag, a base branch that did not
+fast-forward, or any change to the ticket's branch. The stop line names the refs (ADR 0017).
+
+Only Ariane pushes, with the tracker token sent as an HTTP authorization header for that one push
+(the machine's credential helpers are off). Without a token, or if that push is refused for
+authentication, Ariane pushes once more without the header and journals which way it went.
+
+In a cloud sandbox whose proxy supplies its own credentials, an agent's push is detected after
+the session, not prevented (ADR 0017). To check what your proxy does, run `git push --dry-run`
+or a push of a throwaway branch from a session without the token and see whether it is accepted.
 
 ## License
 

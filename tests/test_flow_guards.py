@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -298,9 +299,9 @@ def _count_pushes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     pushed: list[str] = []
     real = git.push
 
-    def counting(cwd: Path, url: str, sha: str, branch: str) -> None:
+    def counting(cwd: Path, url: str, sha: str, branch: str, **kwargs: Any) -> str:
         pushed.append(sha)
-        real(cwd, url, sha, branch)
+        return real(cwd, url, sha, branch, **kwargs)
 
     monkeypatch.setattr(git, "push", counting)
     return pushed
