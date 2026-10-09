@@ -18,8 +18,10 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@v6
+      - name: Install without the token
+        run: uv sync --locked
       - name: Replay the checks and publish statuses
-        run: uv run python scripts/publish_check_statuses.py
+        run: uv run --no-sync python scripts/publish_check_statuses.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

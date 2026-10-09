@@ -20,11 +20,17 @@ Windows (PowerShell 5.1 and 7), macOS and Linux are each tested in CI from slice
 - Pushing the workflow file is impossible from a cloud session (no `workflow` scope): it is
   left uncommitted there and the owner commits it from their machine.
 - A second workflow, `.github/workflows/check-statuses.yml`, runs on pull requests from `ariane/*`
-  branches of this repository, checks out the head commit, runs the setup command and every check
-  declared in `ariane.toml` through Ariane's own code, and publishes one `ariane/<check>` commit
-  status per result, linked to the workflow run (`contents: read`, `statuses: write`). It exists because a cloud
-  session's GitHub proxy refuses the statuses endpoint, while a workflow runs on GitHub's side.
-  It never reads `work/<n>/checks.md`: a status comes from a replay, not from a file in the branch.
+  branches of this repository, checks out the head commit without persisting credentials,
+  installs the project without the token, runs the setup command and every check declared in
+  `ariane.toml` through Ariane's own code, in an environment without the token, and publishes
+  one `ariane/<check>` commit status per result, linked to the workflow run
+  (`contents: read`, `statuses: write`). It never reads `work/<n>/checks.md`: a status comes
+  from a replay, not from a file in the branch. Failing checks give failing statuses; the job
+  itself fails only when the configuration cannot be read or a status is refused. It exists
+  because a cloud session's GitHub proxy refuses the statuses endpoint, while a workflow runs on
+  GitHub's side. Its limit: on `pull_request`, the workflow, the publishing script and
+  `ariane.toml` come from the branch, and the branch's code runs as the same runner user as the
+  publisher, so the statuses are as trustworthy as the human review of those files in the diff.
 - The ruleset requires the six checks by name, so the workflow cannot be skipped (`[skip ci]`
   or a `paths` filter would leave them waiting forever). Instead, on pull requests a step after
   checkout lists the files changed between the base and head commits and runs
