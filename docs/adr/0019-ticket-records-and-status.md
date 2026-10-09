@@ -22,7 +22,12 @@ Records stay in `work/<n>/` on the ticket branch and reach `main` with the merge
   check is cut to its last 20 lines, a failing check's output stays whole.
 - **`status.md` records Ariane's last action and its date**, worded as such ("Last action:
   delivered, pull request opened from ariane/<n>"). `ariane status <n>` adds what git knows
-  now: `merged` when the ticket branch's head is contained in the base branch on the remote.
+  now: `merged` when `work/<n>/` is on the remote base branch. Records travel with the pull
+  request, so this holds after any merge, squash merges included, where the branch's head is
+  never contained in the base branch.
+- **The pushed `status.md` is written before the pull request exists**, so it says only what
+  is known: "Last action: pushed", "ariane/<n> pushed; opening the pull request", next "see
+  the pull request, or run ariane status <n>".
 
 This decision amends ADR 0006 (records) and ADR 0011's expectations of the journal.
 

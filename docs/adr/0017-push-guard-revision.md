@@ -21,6 +21,10 @@ accepted. Removing credentials from the agent's environment is therefore not eno
   (`tracker.token_env`), passed to its own git through `GIT_CONFIG_*` variables as an HTTP
   authorization header for that push only, never in the URL, the argument list or a file. It no
   longer depends on the machine's credential helper.
+- **One fallback push.** When the push with the token header is refused for authentication, or
+  no token is set, Ariane pushes once more, once only, without the header: a cloud sandbox's
+  proxy may supply credentials. The credential helpers stay disabled for that push, and the
+  journal says which way the push went.
 - **Branch rules on the repository.** The owner adds a ruleset on all branches that blocks
   deletions and force pushes (free on a public repository); `main` keeps its protection.
 - **Narrower remote check (layer 3).** After a session and after the checks, Ariane compares

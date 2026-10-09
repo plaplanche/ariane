@@ -198,7 +198,7 @@ class _TicketRun:
         agent = self.config.implementer
         prompt = context.implementer_prompt(self.issue, self.branch, self.config.checks)
         recorded = context.implementer_prompt(
-            self.issue, self.branch, self.config.checks, recorded=True
+            self.issue, self.branch, self.config.checks, recorded=True, read_at=ticket.now()
         )
         session = Session(
             role="implementer",
