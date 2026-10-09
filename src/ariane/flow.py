@@ -134,7 +134,7 @@ class _TicketRun:
 
     def execute(self, refs_before: dict[str, str]) -> Outcome:
         try:
-            setup_error = self._setup()
+            setup_error = self._setup(self.worktree)
             self.folder.create(self.issue)
             self.folder.log(
                 "Ticket started",
@@ -157,14 +157,13 @@ class _TicketRun:
         except (Stop, *_FAILURES) as exc:
             return self._stopped(exc)
 
-    def _setup(self) -> Stop | None:
-        """Run the setup command (C8) on the base code; an error is journaled once the folder
-        exists."""
+    def _setup(self, cwd: Path) -> Stop | None:
+        """Run the setup command (C8) in `cwd`; an error is journaled once the folder exists."""
         if not self.config.setup:
             return None
         command = self.config.setup
         try:
-            done = process.run(command, cwd=self.worktree, timeout_s=SETUP_TIMEOUT_S)
+            done = process.run(command, cwd=cwd, timeout_s=SETUP_TIMEOUT_S)
         except process.CommandNotFoundError as exc:
             return Stop(f"setup failed: {exc}", "install it or fix project.setup")
         if not done.ok:
@@ -174,7 +173,7 @@ class _TicketRun:
                 "fix the setup command, then start the ticket again",
                 ticket.fenced(done.output),
             )
-        leftovers = git.untracked(self.worktree)
+        leftovers = git.untracked(cwd)
         if leftovers:
             listing = "\n".join(f"- `{path}`" for path in leftovers)
             return Stop(
@@ -300,8 +299,7 @@ class _TicketRun:
         self, start_commit: str, guard: dict[str, str], refs_before: dict[str, str]
     ) -> Outcome:
         checked = git.head(self.worktree)
-        results = checks.run_checks(self.config.checks, self.worktree, self.untrusted_env)
-        self._verify("the checks", start_commit, guard, refs_before, expected_head=checked)
+        results = self._replay(checked, start_commit, guard, refs_before)
         self.folder.write(ticket.CHECKS, checks.report(results, checked))
         self.folder.log(
             "Checks replayed by Ariane",
@@ -334,6 +332,39 @@ class _TicketRun:
             f"Opened pull request {done.pull_url} for issue #{self.number}, checks replayed green."
             " Next: review and merge it.",
         )
+
+    def _replay(
+        self, checked: str, start_commit: str, guard: dict[str, str], refs_before: dict[str, str]
+    ) -> list[checks.CheckResult]:
+        """C9: set up and run every check in a clean working tree at the delivered commit."""
+        replay = self.worktree.with_name(f"{self.number}-replay")
+        if replay.exists():
+            raise Stop(
+                f"the replay working tree already exists at {replay}", "remove it, then retry"
+            )
+        git.add_detached_worktree(self.worktree, replay, checked)
+        try:
+            self.folder.log(
+                "Checks working tree",
+                f"Setup and checks run in a clean working tree `{replay}` at `{checked}`,"
+                f" not in `{self.worktree}`.",
+            )
+            setup_error = self._setup(replay)
+            if setup_error is not None:
+                raise setup_error
+            results = checks.run_checks(self.config.checks, replay, self.untrusted_env)
+            if git.current_branch(replay) or git.head(replay) != checked:
+                raise Stop("the checks moved the replay working tree's head", "inspect it")
+        finally:
+            self._remove_replay(replay)
+        self._verify("the checks", start_commit, guard, refs_before, expected_head=checked)
+        return results
+
+    def _remove_replay(self, replay: Path) -> None:
+        try:
+            git.remove_worktree(self.worktree, replay)
+        except _FAILURES as exc:
+            self.folder.log("Warning: replay working tree not removed", f"`{replay}`: {exc}")
 
     def _commit_record(self, message: str) -> None:
         self.folder.restore()
