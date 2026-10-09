@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,7 +27,6 @@ class PullRequestRefused(Exception):
 @dataclass(frozen=True)
 class Delivered:
     pull_url: str
-    note: str  # appended to the outcome line, empty when everything was pushed
 
 
 @dataclass(frozen=True)
@@ -47,10 +45,14 @@ class Delivery:
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
-        self.folder.set_status("delivering", "checks green, pushing the branch", "wait")
-        self.commit_record(f"#{number}: record the checks")
-        first_pushed = git.head(self.worktree)
-        git.push(self.worktree, self.url, first_pushed, self.branch)
+        self.folder.log("Delivering", f"Pushing {self.branch} and opening the pull request.")
+        self.folder.set_status(
+            "delivered", f"pull request from {self.branch}", "review and merge the pull request"
+        )
+        self.commit_record(f"#{number}: record the checks and the delivery")
+        pushed = git.head(self.worktree)
+        git.push(self.worktree, self.url, pushed, self.branch)
+        # Nothing is committed from here on: the pushed commit is the one CI runs on.
         try:
             pull = self.tracker.open_pull_request(
                 head=self.branch,
@@ -65,23 +67,12 @@ class Delivery:
                 " and start again",
             ) from None
         self.folder.log("Delivered", f"Pull request #{pull.number}: {pull.url}")
-        self.folder.set_status(
-            "delivered", f"pull request {pull.url}", "review and merge the pull request"
-        )
-        self.commit_record(f"#{number}: record the delivery")
-        note = ""
-        pushed = git.head(self.worktree)
-        try:
-            git.push(self.worktree, self.url, pushed, self.branch)
-        except git.GitError:
-            note = " (the delivery record stays local: its push failed)"
-            pushed = first_pushed
         self._publish_statuses(results, pushed)
-        return Delivered(pull.url, note)
+        return Delivered(pull.url)
 
     def _publish_statuses(self, results: list[checks.CheckResult], sha: str) -> None:
         """C9: one commit status per check on the pull request's head commit. A refusal is a
-        journaled warning; the journal stays local so that the head commit does not move."""
+        journaled warning; the journal stays local so that the pushed commit does not move."""
         report = self.tracker.file_url(
             self.branch, f"{ticket.relative_folder(self.issue.number)}/{ticket.CHECKS}"
         )
@@ -101,8 +92,6 @@ class Delivery:
                 warnings.append(f"- `ariane/{r.name}`: {exc}")
         if warnings:
             self.folder.log("Warning: commit statuses refused", "\n".join(warnings))
-            with contextlib.suppress(*FAILURES):
-                self.commit_record(f"#{self.issue.number}: record the refused statuses")
 
     def _pull_request_body(self, results: list[checks.CheckResult]) -> str:
         number = self.issue.number

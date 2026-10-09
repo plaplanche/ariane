@@ -276,3 +276,53 @@ def test_c11_an_agent_that_writes_info_attributes_is_still_stopped(
 def test_c11_ariane_git_commands_carry_no_background_housekeeping(project: Project) -> None:
     assert git.out(["config", "--get", "gc.auto"], project.root) == "0"
     assert git.out(["config", "--get", "maintenance.auto"], project.root) == "false"
+
+
+def _count_pushes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    pushed: list[str] = []
+    real = git.push
+
+    def counting(cwd: Path, url: str, sha: str, branch: str) -> None:
+        pushed.append(sha)
+        real(cwd, url, sha, branch)
+
+    monkeypatch.setattr(git, "push", counting)
+    return pushed
+
+
+def test_c11_one_push_a_delivered_ticket_updates_the_remote_branch_once(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pushed = _count_pushes(monkeypatch)
+    outcome = start(project, tracker, FakeRuntime())
+    assert outcome.exit_code == 0, outcome.line
+    assert pushed == [project.remote_branches()["ariane/7"]]
+    assert "State: delivered" in project.show("ariane/7", "work/7/status.md")
+    assert "Summary: 1 passed" in project.show("ariane/7", "work/7/checks.md")
+    assert sh(["git", "rev-parse", "HEAD"], worktree(project)) == pushed[0]
+
+
+def test_c11_one_push_refused_pull_request_leaves_one_push_and_a_stopped_status(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(**_: str) -> None:
+        raise TrackerError("HTTP 422")
+
+    monkeypatch.setattr(tracker, "open_pull_request", refuse)
+    pushed = _count_pushes(monkeypatch)
+    outcome = start(project, tracker, FakeRuntime())
+    assert outcome.exit_code == 1
+    assert len(pushed) == 1
+    assert project.remote_branches()["ariane/7"] == pushed[0]
+    assert ticket.read_status(worktree(project) / "work/7")["State"] == "stopped"
+
+
+def test_c21_redact_commit_messages_a_token_in_the_issue_title_is_masked(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    leaked = "ghp_" + "a1B2c3D4e5" * 4
+    tracker.add_issue(8, f"Rotate {leaked}", "Set app.txt to version 2.")
+    outcome = start(project, tracker, FakeRuntime(), number=8)
+    assert outcome.exit_code == 0, outcome.line
+    log = sh(["git", "log", "--format=%B", "main..ariane/8"], worktree(project, 8))
+    assert leaked not in log and "#8: Rotate ***" in log
