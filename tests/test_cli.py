@@ -168,6 +168,23 @@ def test_c23_status_merged_reads_the_last_action_when_not_merged(project: Projec
     assert "merged into" not in line
 
 
+def test_c23_status_merged_without_status_file_answers_in_one_line(project: Project) -> None:
+    _with_config(project)
+    folder = ticket.folder_path(project.root, 5)
+    folder.mkdir(parents=True)
+    (folder / "journal.md").write_text("# Journal\n", encoding="utf-8")
+    sh(["git", "add", "--all"], project.root)
+    sh(["git", "commit", "--quiet", "-m", "records"], project.root)
+    sh(["git", "push", "--quiet", "origin", "main"], project.root)
+    shutil.rmtree(project.root / "work")
+    done = ariane(project.root, "status", "5")
+    assert done.returncode == 0
+    assert "Traceback" not in done.stderr
+    line = one_line(done)
+    assert line.startswith("Ticket #5: merged into main (last action unknown")
+    assert line.endswith("Next: nothing.")
+
+
 def test_c23_status_merged_says_when_the_remote_cannot_be_read(project: Project) -> None:
     _with_config(project)
     ticket.TicketFolder(project.root, 5).set_status("delivered", "pull request", "merge it")

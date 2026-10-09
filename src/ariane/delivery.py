@@ -44,6 +44,7 @@ class Delivery:
     secrets: list[str] = field(default_factory=list)
     token: str = field(default="", repr=False)
     environ: Mapping[str, str] | None = field(default=None, repr=False)
+    checked: str = ""
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
@@ -54,6 +55,7 @@ class Delivery:
             "see the pull request, or run ariane status <n>".replace("<n>", str(number)),
         )
         self.commit_record(f"#{number}: record the checks and the delivery")
+        self._require_replayed()
         pushed = git.head(self.worktree)
         way = git.push(
             self.worktree, self.url, pushed, self.branch, token=self.token, environ=self.environ
@@ -76,6 +78,20 @@ class Delivery:
         self.folder.log("Delivered", f"Pull request #{pull.number}: {pull.url}")
         self._publish_statuses(results, pushed)
         return Delivered(pull.url)
+
+    def _require_replayed(self) -> None:
+        """The head differs from the replayed commit only by this ticket's records."""
+        if not self.checked:
+            return
+        own = ticket.relative_folder(self.issue.number) + "/"
+        listing = git.out(["diff", "--name-only", self.checked, "HEAD"], self.worktree)
+        outside = [p for p in listing.splitlines() if p and not p.startswith(own)]
+        if outside:
+            raise PullRequestRefused(
+                f"the head to push differs from the replayed commit outside {own}"
+                f" ({', '.join(outside)})",
+                "inspect the branch; Ariane pushed nothing",
+            )
 
     def _publish_statuses(self, results: list[checks.CheckResult], sha: str) -> None:
         """C9: one commit status per check on the pull request's head commit. A refusal is a

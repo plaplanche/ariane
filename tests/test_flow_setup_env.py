@@ -11,7 +11,7 @@ from ariane import flow, process
 from ariane.tracker import InMemoryTracker
 
 from conftest import PY, FakeRuntime, Project, make_config
-from test_flow import start
+from test_flow import TOKEN, start
 
 PROBE = """
 import json, os, subprocess, sys
@@ -27,6 +27,12 @@ with open(sys.argv[1], "a", encoding="utf-8") as out:
 
 def records(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+@pytest.fixture(autouse=True)
+def token_in_process_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tracker token is in the process environment, so a setup given it would see it."""
+    monkeypatch.setenv("GH_TOKEN", TOKEN)
 
 
 def probe_config(out: Path):  # type: ignore[no-untyped-def]

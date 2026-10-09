@@ -97,9 +97,15 @@ def _status(root: Path, number: int) -> int:
     merged, problem = _merged(root, number)
     relative = ticket.relative_folder(number)
     if merged is not None and fields is None:
-        fields = ticket.parse_status(
-            git.show_on_branch(root, flow.REMOTE, merged, relative + "/status.md")
-        )
+        try:
+            text = git.show_on_branch(root, flow.REMOTE, merged, relative + "/" + ticket.STATUS)
+        except git.GitError:
+            return _say(
+                EXIT_OK,
+                f"Ticket #{number}: merged into {merged} (last action unknown: no readable"
+                f" {ticket.STATUS}). Next: nothing.",
+            )
+        fields = ticket.parse_status(text)
         where = f", read from {flow.REMOTE}/{merged}"
     if fields is None:
         return _say(
