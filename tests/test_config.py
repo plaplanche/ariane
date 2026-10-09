@@ -117,3 +117,10 @@ def test_c22_ariane_own_configuration_is_valid() -> None:
     cfg = config.load(Path(__file__).resolve().parent.parent)
     assert cfg.tracker.repository == "plaplanche/ariane"
     assert "Skill" not in cfg.implementer.tools
+
+
+def test_c22_example_config_is_accepted() -> None:
+    import tomllib
+
+    path = Path(__file__).parent.parent / "docs" / "ariane.example.toml"
+    config.parse(tomllib.loads(path.read_text(encoding="utf-8")))
