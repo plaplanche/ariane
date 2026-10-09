@@ -95,6 +95,11 @@ def _prepare(
     return url, refs
 
 
+def _token(environ: Mapping[str, str], token_env: str) -> str:
+    name = token_env.upper()
+    return next((v for k, v in environ.items() if k.upper() == name and v), "")
+
+
 def _describe(exc: BaseException) -> tuple[str, str]:
     if isinstance(exc, Stop):
         return exc.reason, exc.next_action
@@ -253,9 +258,8 @@ class _TicketRun:
                 f"inspect .git/config, .git/hooks and the branches; Ariane pushed nothing; {QUIET}",
                 "\n".join(f"- {line}" for line in changes),
             )
-        refs = git.remote_refs(self.worktree, self.url)
-        if refs != refs_before:
-            changed = sorted(r for r in {*refs, *refs_before} if refs.get(r) != refs_before.get(r))
+        changed = self._remote_changes(refs_before)
+        if changed:
             raise Stop(
                 f"the remote changed during {after} ({', '.join(changed)})",
                 f"check it was not the agent; if a person pushed, start the ticket again; {QUIET}",
@@ -263,6 +267,22 @@ class _TicketRun:
         self.folder.log(
             f"Verified after {after}", "Same branch and history, git unchanged, remote unchanged."
         )
+
+    def _remote_changes(self, refs_before: dict[str, str]) -> list[str]:
+        """Refs that differ from the start, except a fast-forward of the base branch (a merge)."""
+        refs = git.remote_refs(self.worktree, self.url)
+        base = f"refs/heads/{self.config.base_branch}"
+        changed = sorted(r for r in {*refs, *refs_before} if refs.get(r) != refs_before.get(r))
+        if (
+            base in changed
+            and base in refs
+            and base in refs_before
+            and git.fast_forwarded(
+                self.worktree, REMOTE, self.config.base_branch, refs_before[base], refs[base]
+            )
+        ):
+            changed.remove(base)
+        return changed
 
     def _warn_ignored(self, before: set[str]) -> None:
         """Ignored files the agent created can make checks pass without being delivered."""
@@ -336,6 +356,8 @@ class _TicketRun:
             self.url,
             self._commit_record,
             self.secrets,
+            _token(self.environ, self.config.tracker.token_env),
+            self.environ,
         )
         try:
             done = delivery.deliver(results)

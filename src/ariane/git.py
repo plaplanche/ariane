@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 from collections.abc import Mapping
@@ -24,6 +25,17 @@ _SAFE_OPTIONS = [
     *("-c", "maintenance.auto=false"),
 ]
 # Listings `git update-server-info` regenerates for the dumb HTTP transport: not part of the guard.
+# Markers of a push refused for authentication, in git's output (lowercase).
+_AUTH_REFUSALS = (
+    "authentication failed",
+    "could not read username",
+    "invalid username or password",
+    "error: 401",
+    "error: 403",
+    "returned error: 401",
+    "returned error: 403",
+    "permission denied",
+)
 _GENERATED_LISTINGS = frozenset({"info/refs", "info/packs"})
 
 
@@ -228,6 +240,82 @@ def commit(cwd: Path, pathspec: list[str], message: str, *, env: Mapping[str, st
     return True
 
 
-def push(cwd: Path, url: str, sha: str, branch: str) -> None:
-    """Push exactly commit `sha` to `branch`, whatever the local branch points at now."""
-    git(["push", "--quiet", url, f"{sha}:refs/heads/{branch}"], cwd)
+def _with_config(base: Mapping[str, str], pairs: list[tuple[str, str]]) -> dict[str, str]:
+    env = dict(base)
+    try:
+        count = max(0, int(env.get("GIT_CONFIG_COUNT", "0") or "0"))
+    except ValueError:
+        count = 0
+    for key, value in pairs:
+        env[f"GIT_CONFIG_KEY_{count}"] = key
+        env[f"GIT_CONFIG_VALUE_{count}"] = value
+        count += 1
+    env["GIT_CONFIG_COUNT"] = str(count)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
+def push_env(base: Mapping[str, str], token: str) -> dict[str, str]:
+    """The environment of Ariane's push: the token as an HTTP header for this push only.
+
+    The machine's credential helpers are disabled; nothing is written to a file or an argument.
+    """
+    pairs = [("credential.helper", "")]
+    if token:
+        basic = base64.b64encode(f"x-access-token:{token}".encode()).decode("ascii")
+        pairs.append(("http.extraHeader", f"Authorization: Basic {basic}"))
+    return _with_config(base, pairs)
+
+
+def _refused_for_authentication(output: str) -> bool:
+    lowered = output.lower()
+    return any(marker in lowered for marker in _AUTH_REFUSALS)
+
+
+def push(
+    cwd: Path,
+    url: str,
+    sha: str,
+    branch: str,
+    *,
+    token: str = "",
+    environ: Mapping[str, str] | None = None,
+) -> str:
+    """Push exactly commit `sha` to `branch`, whatever the local branch points at now.
+
+    With a token, the push carries it as an authorization header. Without one, or when that push
+    is refused for authentication, Ariane pushes once more without the header (a cloud sandbox's
+    proxy may supply credentials). Returns how the push went, for the journal.
+    """
+    base = os.environ if environ is None else environ
+    args = ["push", "--quiet", url, f"{sha}:refs/heads/{branch}"]
+    secrets = [token] if token else []
+    if token:
+        basic = base64.b64encode(f"x-access-token:{token}".encode()).decode("ascii")
+        secrets.append(basic)
+        first = git(args, cwd, env=push_env(base, token), check=False)
+        if first.ok:
+            return "with the tracker token as an authorization header"
+        if not _refused_for_authentication(first.output):
+            raise GitError(redact(f"git push failed:\n{first.output.strip()}", secrets))
+        how = "without a header, after the push with the token header was refused"
+    else:
+        how = "without a header (no tracker token set)"
+    second = git(args, cwd, env=push_env(base, ""), check=False)
+    if not second.ok:
+        raise GitError(redact(f"git push failed:\n{second.output.strip()}", secrets))
+    return how
+
+
+def fast_forwarded(cwd: Path, remote: str, branch: str, old: str, new: str) -> bool:
+    """Whether the remote `branch` moved from `old` to `new` by a fast-forward (fetches `new`)."""
+    if git(["cat-file", "-e", f"{old}^{{commit}}"], cwd, check=False).ok is False:
+        return False
+    fetched = git(
+        ["fetch", "--quiet", remote, f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}"],
+        cwd,
+        check=False,
+    )
+    if not fetched.ok:
+        return False
+    return is_ancestor(cwd, old, new)

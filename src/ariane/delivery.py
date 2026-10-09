@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -42,6 +42,8 @@ class Delivery:
     url: str
     commit_record: Callable[[str], None]
     secrets: list[str] = field(default_factory=list)
+    token: str = field(default="", repr=False)
+    environ: Mapping[str, str] | None = field(default=None, repr=False)
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
@@ -51,7 +53,10 @@ class Delivery:
         )
         self.commit_record(f"#{number}: record the checks and the delivery")
         pushed = git.head(self.worktree)
-        git.push(self.worktree, self.url, pushed, self.branch)
+        way = git.push(
+            self.worktree, self.url, pushed, self.branch, token=self.token, environ=self.environ
+        )
+        self.folder.log("Pushed", f"Pushed `{self.branch}` {way}.")
         # Nothing is committed from here on: the pushed commit is the one CI runs on.
         try:
             pull = self.tracker.open_pull_request(
