@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-from ariane import checks, config, process
+from ariane import checks, config, context, process
 from ariane.github import GitHubTracker
 from ariane.tracker import TrackerError
 
@@ -17,12 +17,19 @@ DESCRIPTION_LIMIT = 140
 SETUP_TIMEOUT_S = 1800.0
 
 
-def setup_failure(cfg: config.Config, cwd: Path) -> str | None:
+def without_credentials() -> dict[str, str]:
+    """The environment for the branch's code: no token, so it cannot publish statuses itself."""
+    return context.untrusted_environment(
+        os.environ, token_env="GITHUB_TOKEN", remotes=[], keep_agent_login=False, is_root=False
+    )
+
+
+def setup_failure(cfg: config.Config, cwd: Path, env: dict[str, str]) -> str | None:
     """Run the declared setup command; return why it failed, or None."""
     if not cfg.setup:
         return None
     try:
-        done = process.run(cfg.setup, cwd=cwd, timeout_s=SETUP_TIMEOUT_S)
+        done = process.run(cfg.setup, cwd=cwd, timeout_s=SETUP_TIMEOUT_S, env=env)
     except process.CommandNotFoundError as exc:
         return str(exc)
     if done.ok:
@@ -42,9 +49,10 @@ def main() -> int:
     except config.ConfigError as exc:
         print(f"Cannot publish statuses: {exc}")
         return 1
-    failed_setup = setup_failure(cfg, root)
+    clean = without_credentials()
+    failed_setup = setup_failure(cfg, root, clean)
     if failed_setup is None:
-        results = checks.run_checks(cfg.checks, root)
+        results = checks.run_checks(cfg.checks, root, clean)
     else:
         print(f"Setup failed: {failed_setup}")
         results = [

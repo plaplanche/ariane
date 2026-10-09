@@ -155,7 +155,26 @@ def test_c9_workflow_trigger_condition_and_permissions() -> None:
     assert "contents: read" in text
     assert "statuses: write" in text
     assert "astral-sh/setup-uv@v6" in text
+    assert "persist-credentials: false" in text
 
 
 def test_c9_script_never_reads_work_folder() -> None:
     assert "work/" not in SCRIPT.read_text(encoding="utf-8")
+
+
+def test_c9_statuses_from_replay_checks_run_without_the_token(
+    stub: tuple[Stub, str],  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    state, url = stub
+    state.responses[("POST", STATUS_PATH)] = (201, {})
+    write_config(tmp_path, lint_ok=True)
+    probe = "import os, sys; sys.exit(1 if 'GITHUB_TOKEN' in os.environ else 0)"
+    text = (tmp_path / "ariane.toml").read_text(encoding="utf-8")
+    text = text.replace(
+        'name = "tests"\ncommand = ',
+        f'name = "tests"\ncommand = ["{Path(sys.executable).as_posix()}", "-c", "{probe}"]\n# ',
+    )
+    (tmp_path / "ariane.toml").write_text(text, encoding="utf-8")
+    assert run_script(tmp_path, url, "ariane/8").returncode == 0
+    assert published(state) == [("ariane/lint", "success"), ("ariane/tests", "success")]
