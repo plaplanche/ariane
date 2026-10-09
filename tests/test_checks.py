@@ -58,3 +58,26 @@ def test_c9_parse_summary_table_reads_passing_and_failing_rows() -> None:
 def test_c9_parse_summary_table_without_table_is_empty() -> None:
     assert checks.parse_summary_table("# Checks\n\nNothing here.\n") == []
     assert checks.parse_summary_table("") == []
+
+
+def _result(passed: bool, lines: int) -> checks.CheckResult:
+    output = "\n".join(f"line {i}" for i in range(1, lines + 1))
+    return checks.CheckResult("c", ("x",), True, passed, "exit 0", output, 0.1)
+
+
+def test_c1_records_passing_check_keeps_its_last_20_lines() -> None:
+    report = checks.report([_result(True, 50)], "abc")
+    assert "(30 earlier lines omitted)" in report
+    assert "line 30\n" not in report
+    assert "line 31\n" in report and "line 50\n" in report
+
+
+def test_c1_records_failing_check_keeps_all_its_lines() -> None:
+    report = checks.report([_result(False, 50)], "abc")
+    assert "omitted" not in report
+    assert "line 1\n" in report and "line 50\n" in report
+
+
+def test_c1_records_short_passing_output_is_unchanged() -> None:
+    report = checks.report([_result(True, 20)], "abc")
+    assert "omitted" not in report and "line 1\n" in report

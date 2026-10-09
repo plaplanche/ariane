@@ -53,10 +53,31 @@ def test_c1_start_creates_ticket_folder_with_brief_prefilled_from_the_issue(
     assert outcome.exit_code == 0, outcome.line
     brief = project.show("ariane/7", "work/7/brief.md")
     assert "# Product brief: Bump the app version" in brief
-    assert "- Status: draft" in brief
+    assert "Status:" not in brief
+    assert "Approved:" not in brief
     assert "Set app.txt to version 2." in brief
     assert "# Journal of ticket #7" in project.show("ariane/7", "work/7/journal.md")
     assert "State: delivered" in project.show("ariane/7", "work/7/status.md")
+
+
+def test_c1_records_brief_has_no_approval_lines(project: Project, tracker: InMemoryTracker) -> None:
+    assert start(project, tracker, FakeRuntime()).exit_code == 0
+    brief = project.show("ariane/7", "work/7/brief.md")
+    assert "Approved" not in brief and "Status" not in brief
+    assert "- Source: issue #7" in brief
+
+
+def test_c1_records_journal_points_to_the_brief_instead_of_the_issue_body(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    runtime = FakeRuntime()
+    assert start(project, tracker, runtime).exit_code == 0
+    text = journal(project)
+    assert "(issue #7 title and body: see brief.md)" in text
+    assert "Set app.txt to version 2." not in text
+    assert "<untrusted-ticket" not in text
+    assert "Checks Ariane will replay" in text
+    assert "Set app.txt to version 2." in runtime.sessions[0].prompt
 
 
 def test_c1_pull_request_number_is_refused_before_anything_is_created(
@@ -79,7 +100,8 @@ def test_c5_context_is_assembled_by_ariane_journaled_and_marks_the_issue_untrust
     session = runtime.sessions[0]
     assert '<untrusted-ticket number="7">' in session.prompt
     assert "Set app.txt to version 2." in session.prompt
-    assert session.prompt in journal(project)
+    assert "(issue #7 title and body: see brief.md)" in journal(project)
+    assert "Set app.txt to version 2." not in journal(project)
     assert session.role == "implementer"
     assert "GH_TOKEN" not in session.env
     assert session.env["GIT_TERMINAL_PROMPT"] == "0"

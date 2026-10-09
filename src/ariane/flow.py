@@ -186,6 +186,9 @@ class _TicketRun:
     def _implement(self) -> SessionResult:
         agent = self.config.implementer
         prompt = context.implementer_prompt(self.issue, self.branch, self.config.checks)
+        recorded = context.implementer_prompt(
+            self.issue, self.branch, self.config.checks, recorded=True
+        )
         session = Session(
             role="implementer",
             model=agent.model,
@@ -200,7 +203,7 @@ class _TicketRun:
             "Implementer session started",
             f"Runtime {self.runtime.name}, model {agent.model}, tools {', '.join(agent.tools)},"
             f" budget {agent.max_budget_usd:g} USD, time limit {agent.timeout_minutes:g} min.\n\n"
-            f"Context given to the agent:\n\n{ticket.fenced(prompt)}",
+            f"Context given to the agent:\n\n{ticket.fenced(recorded)}",
         )
         result = self.runtime.run(session)
         cost = "not reported" if result.cost_usd is None else f"{result.cost_usd:.4f} USD"

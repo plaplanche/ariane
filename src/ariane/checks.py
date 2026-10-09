@@ -10,6 +10,8 @@ from ariane import process
 from ariane.config import CheckConfig
 from ariane.ticket import fenced
 
+PASSING_OUTPUT_LINES = 20
+
 
 @dataclass(frozen=True)
 class CheckResult:
@@ -63,6 +65,16 @@ def summary_table(results: Sequence[CheckResult]) -> str:
     return "\n".join(lines)
 
 
+def _shown_output(r: CheckResult) -> str:
+    """A passing check keeps its last lines only; a failing check keeps everything."""
+    lines = r.output.splitlines()
+    if not r.passed or len(lines) <= PASSING_OUTPUT_LINES:
+        return r.output
+    omitted = len(lines) - PASSING_OUTPUT_LINES
+    kept = lines[-PASSING_OUTPUT_LINES:]
+    return "\n".join([f"({omitted} earlier lines omitted)", *kept])
+
+
 def report(results: Sequence[CheckResult], commit: str) -> str:
     """The full report: one section per check with its complete output, then a summary line."""
     parts = [f"# Checks\n\nReplayed by Ariane on commit `{commit}`.\n", summary_table(results), ""]
@@ -73,7 +85,7 @@ def report(results: Sequence[CheckResult], commit: str) -> str:
             f"- Command: `{' '.join(r.command)}`",
             f"- Blocking: {'yes' if r.blocking else 'no'}",
             f"- Result: {verdict} ({r.detail}, {r.duration_s:.1f} s)\n",
-            fenced(r.output) + "\n",
+            fenced(_shown_output(r)) + "\n",
         ]
     parts.append(summary_line(results))
     return "\n".join(parts) + "\n"

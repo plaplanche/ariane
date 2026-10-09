@@ -117,8 +117,6 @@ def _remove(path: Path) -> None:
 def brief(issue: Issue) -> str:
     return (
         f"# Product brief: {issue.title}\n\n"
-        "- Status: draft\n"
-        "- Approved: not yet\n"
         f"- Source: issue #{issue.number} ({issue.url})\n\n"
         "## Issue\n\n"
         "Prefilled from the issue title and body (never its comments).\n\n"
