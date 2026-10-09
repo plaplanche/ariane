@@ -8,7 +8,9 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "docs_only.py"
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts" / "docs_only.py"
+WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def load_script() -> ModuleType:
@@ -52,3 +54,11 @@ def test_ci_docs_only_script_prints_the_decision() -> None:
 
     assert run("docs/a.md\nREADME.md\n") == "docs_only=true"
     assert run("") == "docs_only=false"
+
+
+def test_ci_docs_only_detection_lists_renamed_paths_on_both_sides() -> None:
+    """A rename of code into docs must show the old path, or it would skip every check."""
+    lines = [
+        line for line in WORKFLOW.read_text(encoding="utf-8").splitlines() if "docs_only.py" in line
+    ]
+    assert lines and all("git diff --name-only --no-renames" in line for line in lines)
