@@ -20,7 +20,18 @@ _CREDENTIAL_CHANNELS = ("SSH_AUTH_SOCK", "SSH_ASKPASS", "GIT_ASKPASS", "SUDO_ASK
 _AGENT_RUNTIME_PREFIXES = ("ANTHROPIC_", "CLAUDE_")
 
 
-def implementer_prompt(issue: Issue, branch: str, checks: Sequence[CheckConfig]) -> str:
+def implementer_prompt(
+    issue: Issue, branch: str, checks: Sequence[CheckConfig], *, recorded: bool = False
+) -> str:
+    """The implementer prompt; `recorded` swaps the ticket block for a pointer to brief.md."""
+    if recorded:
+        block = f"(issue #{issue.number} title and body: see brief.md)"
+    else:
+        block = f"""<{UNTRUSTED_TAG} number="{issue.number}">
+Title: {_escape(issue.title)}
+
+{_escape(issue.body.strip()) or "(empty body)"}
+</{UNTRUSTED_TAG}>"""
     check_lines = "\n".join(f"- {c.name}: `{' '.join(c.command)}`" for c in checks)
     return f"""You are the implementer of ticket #{issue.number}, started by Ariane.
 
@@ -37,11 +48,7 @@ Rules:
 Checks Ariane will replay on your work:
 {check_lines}
 
-<{UNTRUSTED_TAG} number="{issue.number}">
-Title: {_escape(issue.title)}
-
-{_escape(issue.body.strip()) or "(empty body)"}
-</{UNTRUSTED_TAG}>
+{block}
 """
 
 
