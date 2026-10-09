@@ -232,7 +232,11 @@ def committed_paths(cwd: Path, since: str, pathspec: str) -> list[str]:
 
 
 def commit(cwd: Path, pathspec: list[str], message: str, *, env: Mapping[str, str]) -> bool:
-    """Stage and commit `pathspec`; return False when it holds no change."""
+    """Commit the changes under `pathspec` only; return False when it holds none.
+
+    The index is reset to HEAD first: whatever an agent or a check staged does not ride along.
+    """
+    git(["reset", "--quiet"], cwd, env=env)
     git(["add", "--all", "--", *pathspec], cwd, env=env)
     if git(["diff", "--cached", "--quiet"], cwd, env=env, check=False).ok:
         return False

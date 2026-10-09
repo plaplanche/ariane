@@ -361,6 +361,7 @@ class _TicketRun:
             self.secrets,
             _token(self.environ, self.config.tracker.token_env),
             self.environ,
+            checked,
         )
         try:
             done = delivery.deliver(results)
