@@ -366,9 +366,9 @@ Revised on 8 October 2026 (ADR 0020); estimates are revised at every gate. Froze
 | Slice | Capabilities | Gate (checked before the next slice starts) |
 | --- | --- | --- |
 | 1. Walking skeleton | C1, C5, C8, C9, C11 and C22 in minimal form; C23 to start a ticket; CI on Windows, macOS and Linux | A real issue becomes a pull request whose checks Ariane replayed green |
-| 2. Dogfooding | Redaction of everything posted (C21, basic), check results as commit statuses from a replay (C9), one push per ticket, clean-tree replay (C9), cache tokens counted (C5), shorter records and live status (C1, C23), installation for a second user | Ariane's own tickets go through Ariane, each pushed once with checks replayed in a clean tree; a second user installs Ariane on macOS |
+| 2. Dogfooding | Redaction of everything posted (C21, basic), check results as commit statuses from a replay (C9), one push per ticket, clean-tree replay (C9), cache tokens counted (C5), shorter records and live status (C1, C23), installation for a second user | Ariane's own tickets go through Ariane, each pushed once with checks replayed in a clean tree (a hand takeover allowed by CLAUDE.md, such as a workflow file, is the exception) |
 | 3. Review, vendor-neutral | Runtime-neutral contract and login variables per runtime (C5), one reviewer with fix rounds (C10), `ariane verify` (C23), the reviewer on opencode (C5) | A ticket is reviewed on a second runtime; a branch finished by hand is verified |
-| 4. Measurement and shadow | C19 (cost, tokens, rounds, first-pass verdict, human time), shadow mode (no push), `ariane report` | The second user's first tickets are measured in shadow mode |
+| 4. Measurement and shadow | C19 (cost, tokens, rounds, first-pass verdict, human time), shadow mode (no push), `ariane report` | A second user installs Ariane on macOS, and their first tickets are measured in shadow mode |
 | 5. Approved stages and slices | C2, C4, C3, per-ticket budget (C5), approve and revise commands (C23) | No stage starts without human approval |
 | 6. Stronger checks | C9 complete (pre-change replay, checklist, coverage), rules judge (C10) | A test that tests nothing is flagged; the rules judge runs |
 | 7. Mastery | C17 | A quiz follows every delivery |
