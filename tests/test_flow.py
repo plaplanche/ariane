@@ -327,3 +327,59 @@ def test_c21_redact_published_token_reaches_neither_tracker_nor_branch(
     assert all(leak not in text for text in published)
     for name in ticket.RECORDS:
         assert leak not in project.show("ariane/8", f"work/8/{name}")
+
+
+def replay(project: Project, number: int = 7) -> Path:
+    return worktree(project, number).with_name(f"{number}-replay")
+
+
+def hide_helper(session: Session) -> None:
+    (session.cwd / "app.txt").write_text("version 2\n", encoding="utf-8")
+    (session.cwd / "ignored-by-git").mkdir()
+    (session.cwd / "ignored-by-git/helper.py").write_text("OK = 1\n", encoding="utf-8")
+
+
+def test_c9_clean_replay_does_not_see_files_the_agent_ignored(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    probe = "import os, sys; sys.exit(0 if os.path.exists('ignored-by-git/helper.py') else 1)"
+    checks = (CheckConfig("needs helper", (PY, "-c", probe), True, 1),)
+    config = make_config(checks=checks)
+    outcome = start(project, tracker, FakeRuntime(action=hide_helper), config)
+    assert outcome.exit_code == 1
+    assert "blocking checks failed: needs helper" in outcome.line
+    assert (worktree(project) / "ignored-by-git/helper.py").exists()
+    assert "Checks working tree" in journal(project)
+    assert tracker.opened == []
+
+
+def test_c9_clean_replay_setup_failure_stops_the_ticket_with_the_setup_output(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    # Passes on the base code (the agent's tree), fails in the replay tree.
+    setup = (
+        PY,
+        "-c",
+        "import os, sys; sys.exit(0) if not os.path.exists('app.txt') or"
+        " open('app.txt').read() != 'version 2\\n' else (print('replay setup exploded'),"
+        " sys.exit(4))",
+    )
+    outcome = start(project, tracker, FakeRuntime(), make_config(setup=setup))
+    assert outcome.exit_code == 1
+    assert "setup" in outcome.line and "exit 4" in outcome.line
+    assert "replay setup exploded" in outcome.detail
+    assert "replay setup exploded" in journal(project)
+    assert not replay(project).exists()
+    assert tracker.opened == []
+
+
+def test_c9_clean_replay_tree_is_removed_after_delivery_and_after_a_stop(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    assert start(project, tracker, FakeRuntime()).exit_code == 0
+    assert not replay(project).exists()
+    failing = (CheckConfig("fails", (PY, "-c", "raise SystemExit(1)"), True, 1),)
+    outcome = start(project, tracker, FakeRuntime(), make_config(checks=failing), number=8)
+    assert outcome.exit_code == 1
+    assert not replay(project, 8).exists()
+    assert "8-replay" not in sh(["git", "worktree", "list"], project.root)

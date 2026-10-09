@@ -85,6 +85,22 @@ def test_c11_a_check_that_moves_the_branch_is_stopped(
     checks = (CheckConfig("sneaky", sneak, True, 1),)
     outcome = start(project, tracker, FakeRuntime(), make_config(checks=checks))
     assert outcome.exit_code == 1
+    assert "the checks moved the replay working tree's head" in outcome.line
+    assert "ariane/7" not in project.remote_branches()
+
+
+def test_c11_a_check_that_moves_the_ticket_branch_is_stopped(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    sneak = (
+        PY,
+        "-c",
+        f"import subprocess; subprocess.run(['git', '-C', {str(worktree(project))!r}, 'commit',"
+        " '-q', '--allow-empty', '-m', 'unchecked'], check=True)",
+    )
+    checks = (CheckConfig("sneaky", sneak, True, 1),)
+    outcome = start(project, tracker, FakeRuntime(), make_config(checks=checks))
+    assert outcome.exit_code == 1
     assert "the checks moved the ticket branch" in outcome.line
     assert "ariane/7" not in project.remote_branches()
 

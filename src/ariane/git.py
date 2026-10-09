@@ -86,6 +86,15 @@ def add_worktree(cwd: Path, path: Path, branch: str, start: str) -> None:
     git(["worktree", "add", "--quiet", "-b", branch, str(path), start], cwd)
 
 
+def add_detached_worktree(cwd: Path, path: Path, commit: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    git(["worktree", "add", "--quiet", "--detach", str(path), commit], cwd)
+
+
+def remove_worktree(cwd: Path, path: Path) -> None:
+    git(["worktree", "remove", "--force", str(path)], cwd)
+
+
 def config_snapshot(worktree: Path, *, ignore_ref: str) -> dict[str, str]:
     """Everything that makes git run code or reroute a push, by part.
 
