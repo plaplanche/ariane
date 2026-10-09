@@ -47,6 +47,8 @@ class ClaudeCodeRuntime:
             "--permission-mode",
             "bypassPermissions",
             "--strict-mcp-config",
+            "--setting-sources",
+            "project,local",
             "--max-budget-usd",
             f"{session.max_budget_usd:g}",
             "--no-session-persistence",
