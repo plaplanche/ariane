@@ -113,3 +113,8 @@ def test_c5_a_crashing_or_missing_runtime_is_an_error(tmp_path: Path) -> None:
 def test_c5_recorded_fixture_round_trips_through_the_runtime(tmp_path: Path) -> None:
     result = fake("fixture", str(FIXTURES / "claude_budget.json")).run(session(tmp_path))
     assert result.stop_reason is StopReason.BUDGET
+
+
+def test_c6_no_user_plugins_setting_sources_are_project_and_local(tmp_path: Path) -> None:
+    argv = ClaudeCodeRuntime().command(session(tmp_path))
+    assert argv[argv.index("--setting-sources") + 1] == "project,local"

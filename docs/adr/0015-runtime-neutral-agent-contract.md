@@ -76,6 +76,23 @@ validation of the reviewer's answer.
 This decision supersedes the "Agent runtime" part of ADR 0007 and the structured-answer part
 of ADR 0010; the rest of ADR 0007 stands.
 
+### Plugins and mods
+Probe on Claude Code 2.1.292 (2026-10-09): a plugin installed at user level
+(`claude plugin install marker-probe@probe-market --scope user`, in a temporary home) whose
+`SessionStart` and `UserPromptSubmit` hooks create marker files, in a project whose `CLAUDE.md`
+asks to answer "PINEAPPLE", run with `claude -p --output-format json --tools ""
+--no-session-persistence`:
+- no extra flag: both markers created, answer "PINEAPPLE" (the plugin's hooks run in the
+  agent session);
+- `--setting-sources project,local`: no marker, answer "PINEAPPLE", login kept;
+- `--setting-sources project`: no marker, answer "PINEAPPLE";
+- `--setting-sources ""`: no marker, but `CLAUDE.md` is not read;
+- `--bare` skips plugin hooks but also `CLAUDE.md` discovery and OAuth login: not used.
+
+So the Claude Code adapter passes `--setting-sources project,local` for every session: nothing
+installed at user level (settings, plugins, mods, hooks) loads, while the project's `CLAUDE.md`,
+its own settings and the login are kept.
+
 ## Consequences
 Adding a runtime means writing an adapter (command, event parser, login variables, ways to
 restrict tools and skills) and recorded fixtures; the flow does not change. A cost cap on
