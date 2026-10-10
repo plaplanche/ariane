@@ -30,6 +30,13 @@ tools = ["Read"]
 max_budget_usd = 1
 timeout_minutes = 1
 
+[agents.reviewer]
+runtime = "claude-code"
+model = "r"
+tools = ["Read"]
+max_budget_usd = 1
+timeout_minutes = 1
+
 [[checks]]
 name = "t"
 command = ["pytest"]

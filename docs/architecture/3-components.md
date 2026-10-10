@@ -24,6 +24,7 @@ flowchart TD
   context --> config
   context --> tracker
   delivery --> checks
+  delivery --> review
   delivery --> git
   delivery --> process
   delivery --> ticket
@@ -37,8 +38,14 @@ flowchart TD
   flow --> config
   flow --> delivery
   flow --> redact
+  flow --> review
   flow --> runtime
   flow --> tracker
+  git --> process
+  review --> checks
+  review --> config
+  review --> context
+  review --> tracker
   git --> process
   git --> redact
   github --> tracker
@@ -77,6 +84,10 @@ sequenceDiagram
   F->>G: add a clean replay tree
   F->>C: replay the checks
   C-->>F: results
+  F->>R: run a read-only reviewer session in the replay tree
+  R-->>F: answer (validated by review, one retry)
+  F->>G: verify git, the tree and the remote did not change
+  F->>F: review-0.md; go continues, no-go stops (needs a human)
   F->>D: deliver
   D->>G: one push
   D->>T: open the pull request

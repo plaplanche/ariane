@@ -35,6 +35,7 @@ class ClaudeCodeRuntime:
         self.executable = tuple(executable)
 
     def command(self, session: Session) -> list[str]:
+        schema = ["--json-schema", json.dumps(session.json_schema)] if session.json_schema else []
         return [
             *self.executable,
             "-p",
@@ -55,6 +56,7 @@ class ClaudeCodeRuntime:
             "--max-budget-usd",
             f"{session.max_budget_usd:g}",
             "--no-session-persistence",
+            *schema,
         ]
 
     def run(self, session: Session) -> SessionResult:
@@ -179,6 +181,7 @@ def parse_result(stdout: str, stderr: str, returncode: int | None) -> SessionRes
         cache_read_tokens=_int(usage.get("cache_read_input_tokens")),
         cache_write_tokens=_int(usage.get("cache_creation_input_tokens")),
         summary=summary,
+        structured_output=data.get("structured_output"),
         permission_denials=tuple(_denial(d) for d in denials if isinstance(d, dict))
         if isinstance(denials, list)
         else (),

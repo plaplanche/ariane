@@ -5,7 +5,7 @@ Delivers a ticket whose blocking checks passed: one push, the pull request and t
 ## Main types and functions
 
 - `Delivery`: performs the delivery.
-- `Delivered`: the pull request and the statuses published.
+- `Delivered`: the pull request and the statuses published. The pull request body carries the review's verdict and definition-of-done results.
 - `PullRequestRefused`: raised when the tracker refuses the pull request.
 
 ## Collaborations
@@ -15,6 +15,7 @@ Arrows go from the caller to the callee.
 ```mermaid
 flowchart LR
   delivery --> checks
+  delivery --> review
   delivery --> git
   delivery --> process
   delivery --> ticket

@@ -226,6 +226,16 @@ def changed_paths(cwd: Path, since: str) -> list[str]:
     return sorted({*committed, *untracked(cwd)} - {""})
 
 
+def diff(cwd: Path, since: str, until: str, exclude: str) -> str:
+    """The diff from `since` to `until`, without the paths under `exclude`."""
+    return out(["diff", since, until, "--", ".", f":(exclude){exclude}"], cwd)
+
+
+def status(cwd: Path) -> str:
+    """What git reports as changed or untracked (ignored files left out)."""
+    return out(["status", "--porcelain", "--untracked-files=all"], cwd)
+
+
 def committed_paths(cwd: Path, since: str, pathspec: str) -> list[str]:
     """Paths under `pathspec` changed by commits since `since`."""
     listing = out(["diff", "--name-only", since, "HEAD", "--", pathspec], cwd)

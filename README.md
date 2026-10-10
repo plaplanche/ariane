@@ -5,7 +5,8 @@ deciding, understanding and approving. The name comes from Ariadne's thread (*le
 you never lose the thread of your own code.
 
 **Status:** slice 1 (walking skeleton): `ariane start <issue>` takes a GitHub issue to a pull
-request whose checks Ariane replayed. Approvals, reviews and the rest of the roadmap come next.
+request whose checks Ariane replayed and that a read-only reviewer on a different model approved
+(`[agents.reviewer]` in `ariane.toml`). Approvals and the rest of the roadmap come next.
 
 ## Try it
 

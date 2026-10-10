@@ -70,7 +70,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "implementer"
+        "implementer",
+        "reviewer"
       ],
       "properties": {
         "implementer": {
@@ -116,6 +117,51 @@
               "exclusiveMinimum": 0
             }
           }
+        },
+        "reviewer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "runtime",
+            "model",
+            "tools",
+            "max_budget_usd",
+            "timeout_minutes"
+          ],
+          "properties": {
+            "runtime": {
+              "enum": [
+                "claude-code"
+              ]
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tools": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "Tools the agent may use (not Skill)."
+            },
+            "max_budget_usd": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "max_tokens": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Optional cap on tokens counted by Ariane per session."
+            },
+            "timeout_minutes": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "description": "Read-only reviewer (C10); model differs from the implementer."
         }
       }
     },

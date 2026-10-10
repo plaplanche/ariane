@@ -29,6 +29,15 @@ max_budget_usd = 5.0
 # Time limit of one session, in minutes.
 timeout_minutes = 30
 
+# The reviewer reads the result after the checks pass (C10). Its model must differ from the
+# implementer's; give it read-only tools.
+[agents.reviewer]
+runtime = "claude-code"
+model = "claude-opus-5-5"
+tools = ["Read", "Glob", "Grep"]
+max_budget_usd = 3.0
+timeout_minutes = 20
+
 # Each [[checks]] entry is a check Ariane replays on the result before opening the pull request.
 [[checks]]
 # Name of the check, shown in the pull request statuses.

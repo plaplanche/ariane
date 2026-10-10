@@ -7,6 +7,7 @@ Loads and validates `ariane.toml`. Every error names the faulty key.
 - `Config`, `TrackerConfig`, `AgentConfig`, `CheckConfig`, `DoneItem`: the validated settings; `Config.definition_of_done` holds the
   definition of done (C26), `DEFAULT_DEFINITION_OF_DONE` when the table is absent.
 - `AgentConfig.max_tokens`: optional `[agents.<role>] max_tokens`, a positive integer, Ariane's own token cap per session.
+- `Config.reviewer`: the required `[agents.reviewer]` table (same keys as the implementer's); `parse` refuses a reviewer model equal to the implementer's, naming `agents.reviewer.model` (C10).
 - `load`: read the file at the repository root.
 - `parse`: validate a parsed TOML mapping.
 - `ConfigError`: raised for any invalid key.
@@ -29,4 +30,4 @@ See the generated [JSON Schema of `ariane.toml`](../../reference/ariane.toml.sch
 
 ## Serves
 
-C22, C26; ADR 0003, ADR 0023. See [the component view](../3-components.md).
+C10, C22, C26; ADR 0003, ADR 0023, ADR 0016. See [the component view](../3-components.md).
