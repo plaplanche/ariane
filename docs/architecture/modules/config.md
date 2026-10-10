@@ -21,6 +21,10 @@ flowchart LR
   flow --> config
 ```
 
+## Reference
+
+See the generated [JSON Schema of `ariane.toml`](../../reference/ariane.toml.schema.json), generated from the code (`scripts/generate_docs.py`).
+
 ## Serves
 
 C22; ADR 0003. See [the component view](../3-components.md).

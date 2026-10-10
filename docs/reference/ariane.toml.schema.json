@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ariane.toml",
+  "description": "Configuration of Ariane for one repository.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project",
+    "tracker",
+    "agents",
+    "checks"
+  ],
+  "properties": {
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base_branch"
+      ],
+      "properties": {
+        "base_branch": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Branch the pull requests target."
+        },
+        "setup": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Command run once in the working tree (list of arguments)."
+        }
+      }
+    },
+    "tracker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "repository",
+        "token_env"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "github"
+          ]
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "description": "owner/name"
+        },
+        "token_env": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Environment variable holding the token."
+        },
+        "api_url": {
+          "type": "string",
+          "minLength": 1,
+          "default": "https://api.github.com",
+          "description": "https URL (plain http only to the local machine)."
+        }
+      }
+    },
+    "agents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "implementer"
+      ],
+      "properties": {
+        "implementer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "runtime",
+            "model",
+            "tools",
+            "max_budget_usd",
+            "timeout_minutes"
+          ],
+          "properties": {
+            "runtime": {
+              "enum": [
+                "claude-code"
+              ]
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tools": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "Tools the agent may use (not Skill)."
+            },
+            "max_budget_usd": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "timeout_minutes": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "command"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Unique name of the check."
+          },
+          "command": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Command to run (list of arguments)."
+          },
+          "blocking": {
+            "type": "boolean",
+            "default": true
+          },
+          "timeout_minutes": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "default": 15
+          }
+        }
+      }
+    }
+  }
+}
