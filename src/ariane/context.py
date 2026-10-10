@@ -8,7 +8,13 @@ import sys
 from collections.abc import Mapping, Sequence
 
 from ariane import git
-from ariane.config import DEFAULT_DEFINITION_OF_DONE, CheckConfig, DoneItem
+from ariane.config import (
+    DEFAULT_DEFINITION_OF_DONE,
+    NO_DOCUMENTATION,
+    CheckConfig,
+    Documentation,
+    DoneItem,
+)
 from ariane.tracker import Issue
 
 UNTRUSTED_TAG = "untrusted-ticket"
@@ -23,6 +29,7 @@ def implementer_prompt(
     branch: str,
     checks: Sequence[CheckConfig],
     definition_of_done: Sequence[DoneItem] = DEFAULT_DEFINITION_OF_DONE,
+    documentation: Documentation = NO_DOCUMENTATION,
     *,
     recorded: bool = False,
     read_at: str = "",
@@ -40,6 +47,7 @@ Title: {_escape(issue.title)}
 </{UNTRUSTED_TAG}>"""
     check_lines = "\n".join(f"- {c.name}: `{' '.join(c.command)}`" for c in checks)
     done_lines = "\n".join(f"- {item.label}" for item in definition_of_done)
+    docs_section = _documentation_section(documentation)
     return f"""You are the implementer of ticket #{issue.number}, started by Ariane.
 
 Your working directory is a dedicated git working tree on branch `{branch}`.
@@ -57,9 +65,19 @@ Checks Ariane will replay on your work:
 
 Definition of done:
 {done_lines}
-
+{docs_section}
 {block}
 """
+
+
+def _documentation_section(documentation: Documentation) -> str:
+    lines = [f"- `{e.source}`: {', '.join(f'`{d}`' for d in e.docs)}" for e in documentation.map]
+    lines += [f"- generated, checked by Ariane: {g.name}" for g in documentation.generated]
+    if not lines:
+        return ""
+    return "\nDocumentation (update the documents that cover the files you change):\n" + (
+        "\n".join(lines) + "\n"
+    )
 
 
 def known_secrets(environ: Mapping[str, str], token_env: str) -> list[str]:

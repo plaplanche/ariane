@@ -7,6 +7,7 @@
 - `start`: the whole flow for one ticket number.
 - `Outcome`: the result reported to the command line.
 - `Stop`: ends the flow early with a recorded reason.
+- Documentation upkeep (C25): after the agent's work is committed, mapped documents of changed files that the ticket did not change are journaled (`ticket.docs.not_updated`) and given to the reviewer; the `generated` documentation commands run in the clean replay as blocking checks `docs: <name>`, in `checks.md` and the statuses.
 - `worktree_path`, `branch_name`: where a ticket lives.
 
 ## Collaborations
@@ -32,4 +33,4 @@ flowchart LR
 
 ## Serves
 
-C1, C5, C9, C10, C11; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025. See [the component view](../3-components.md).
+C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026. See [the component view](../3-components.md).

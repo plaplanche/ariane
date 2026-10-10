@@ -209,6 +209,76 @@
         }
       }
     },
+    "documentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The project's documentation (C25); optional.",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Documentation files and folders, for `ariane docs-review`."
+        },
+        "map": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "docs"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Glob of source files."
+              },
+              "docs": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Documents covering them; {stem} is the matched file's name without extension."
+              }
+            }
+          }
+        },
+        "generated": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "check"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Unique name; the check is `docs: <name>`."
+              },
+              "check": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Command exiting non-zero when a generated document is stale (list of arguments)."
+              }
+            }
+          }
+        }
+      }
+    },
     "checks": {
       "type": "array",
       "minItems": 1,

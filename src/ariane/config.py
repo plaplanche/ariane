@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import ipaddress
 import math
+import re
 import tomllib
 import urllib.parse
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -116,6 +118,52 @@ SCHEMA: dict[str, Any] = {
                 }
             },
         },
+        "documentation": {
+            "type": "object",
+            "additionalProperties": False,
+            "description": "The project's documentation (C25); optional.",
+            "properties": {
+                "paths": {
+                    **_ARGV,
+                    "description": "Documentation files and folders, for `ariane docs-review`.",
+                },
+                "map": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["source", "docs"],
+                        "properties": {
+                            "source": {**_STR, "description": "Glob of source files."},
+                            "docs": {
+                                **_ARGV,
+                                "description": "Documents covering them; {stem} is the matched"
+                                " file's name without extension.",
+                            },
+                        },
+                    },
+                },
+                "generated": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["name", "check"],
+                        "properties": {
+                            "name": {
+                                **_STR,
+                                "description": "Unique name; the check is `docs: <name>`.",
+                            },
+                            "check": {
+                                **_ARGV,
+                                "description": "Command exiting non-zero when a generated"
+                                " document is stale (list of arguments).",
+                            },
+                        },
+                    },
+                },
+            },
+        },
         "checks": {
             "type": "array",
             "minItems": 1,
@@ -177,6 +225,75 @@ class DoneItem:
         return f"check {self.check} passes" if self.check is not None else str(self.text)
 
 
+@dataclass(frozen=True)
+class DocMapEntry:
+    """Source files (a glob) and the documents that cover them."""
+
+    source: str
+    docs: tuple[str, ...]
+
+    def documents_for(self, path: str) -> tuple[str, ...]:
+        """The documents covering `path`, `{stem}` expanded; none if the glob does not match."""
+        if not _glob_regex(self.source).fullmatch(path):
+            return ()
+        stem = path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        return tuple(d.replace("{stem}", stem) for d in self.docs)
+
+
+@dataclass(frozen=True)
+class GeneratedDoc:
+    name: str
+    check: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Documentation:
+    paths: tuple[str, ...] = ()
+    map: tuple[DocMapEntry, ...] = ()
+    generated: tuple[GeneratedDoc, ...] = ()
+
+    def documents_for(self, path: str) -> list[str]:
+        found: list[str] = []
+        for entry in self.map:
+            found += [d for d in entry.documents_for(path) if d not in found]
+        return found
+
+    def not_updated(self, changed: Sequence[str]) -> list[str]:
+        """Documents covering the `changed` files that are not themselves changed (a folder
+        counts as changed when a file under it is)."""
+        touched = set(changed)
+        missing: list[str] = []
+        for path in changed:
+            for doc in self.documents_for(path):
+                folder = doc.rstrip("/") + "/"
+                under = any(t.startswith(folder) for t in touched)
+                if doc not in touched and doc not in missing and not under:
+                    missing.append(doc)
+        return missing
+
+    def checks(self) -> tuple[CheckConfig, ...]:
+        """The generated documents' commands as blocking checks named `docs: <name>`."""
+        return tuple(CheckConfig(f"docs: {g.name}", g.check, True, 15) for g in self.generated)
+
+
+NO_DOCUMENTATION = Documentation()
+
+
+def _glob_regex(glob: str) -> re.Pattern[str]:
+    """`*` and `?` stay within a path segment, `**` crosses segments."""
+    out = []
+    i = 0
+    while i < len(glob):
+        if glob.startswith("**", i):
+            out.append(".*")
+            i += 2
+            continue
+        c = glob[i]
+        out.append("[^/]*" if c == "*" else "[^/]" if c == "?" else re.escape(c))
+        i += 1
+    return re.compile("".join(out))
+
+
 DEFAULT_DEFINITION_OF_DONE = (
     DoneItem(text="Every blocking check passes."),
     DoneItem(text="The change is covered by tests that fail without it."),
@@ -193,6 +310,7 @@ class Config:
     reviewer: AgentConfig
     checks: tuple[CheckConfig, ...]
     definition_of_done: tuple[DoneItem, ...] = DEFAULT_DEFINITION_OF_DONE
+    documentation: Documentation = NO_DOCUMENTATION
 
 
 def load(repo_root: Path) -> Config:
@@ -209,7 +327,9 @@ def load(repo_root: Path) -> Config:
 
 
 def parse(data: dict[str, Any]) -> Config:
-    _only(data, "", {"project", "tracker", "agents", "checks", "definition_of_done"})
+    _only(
+        data, "", {"project", "tracker", "agents", "checks", "definition_of_done", "documentation"}
+    )
     project = _table(data, "project")
     _only(project, "project", {"base_branch", "setup"})
     tracker = _table(data, "tracker")
@@ -258,6 +378,7 @@ def parse(data: dict[str, Any]) -> Config:
         reviewer=reviewer,
         checks=(checks := _checks(raw_checks)),
         definition_of_done=_definition_of_done(data, {c.name for c in checks}),
+        documentation=_documentation(data),
     )
 
 
@@ -357,6 +478,37 @@ def _definition_of_done(data: dict[str, Any], check_names: set[str]) -> tuple[Do
         else:
             items.append(DoneItem(text=_str(item, "text", where + ".")))
     return tuple(items)
+
+
+def _documentation(data: dict[str, Any]) -> Documentation:
+    if "documentation" not in data:
+        return NO_DOCUMENTATION
+    table = _table(data, "documentation")
+    _only(table, "documentation", {"paths", "map", "generated"})
+    paths = _str_list(table, "paths", "documentation.") if "paths" in table else ()
+    entries = []
+    for index, item in enumerate(_table_list(table, "map")):
+        where = f"documentation.map[{index}]"
+        _only(item, where, {"source", "docs"})
+        entries.append(
+            DocMapEntry(_str(item, "source", where + "."), _str_list(item, "docs", where + "."))
+        )
+    generated: list[GeneratedDoc] = []
+    for index, item in enumerate(_table_list(table, "generated")):
+        where = f"documentation.generated[{index}]"
+        _only(item, where, {"name", "check"})
+        name = _str(item, "name", where + ".")
+        if any(g.name == name for g in generated):
+            raise ConfigError(f"{CONFIG_FILE}: {where}.name: duplicate name {name!r}")
+        generated.append(GeneratedDoc(name, _str_list(item, "check", where + ".")))
+    return Documentation(paths, tuple(entries), tuple(generated))
+
+
+def _table_list(table: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    value = table.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(v, dict) for v in value):
+        raise ConfigError(f"{CONFIG_FILE}: documentation.{key}: expected a list of tables")
+    return value
 
 
 def _only(table: dict[str, Any], where: str, allowed: set[str]) -> None:

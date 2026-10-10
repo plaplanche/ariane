@@ -53,6 +53,11 @@ FUNCTIONAL_TYPES = _declare(
             "Nothing escaped the ticket branch after untrusted code.",
         ),
         ("ticket.work.committed", "info", "The agent's work was committed on the ticket branch."),
+        (
+            "ticket.docs.not_updated",
+            "info",
+            "Documents mapped to changed files that the ticket left untouched.",
+        ),
         ("ticket.checks.worktree", "info", "The clean working tree used to replay the checks."),
         ("ticket.checks.replayed", "info", "The checks were replayed by Ariane, with the result."),
         ("ticket.review.started", "info", "A reviewer session started, with its model and limits."),

@@ -58,3 +58,17 @@ items = [
   { check = "tests" },
   { text = "The change is covered by tests that fail without it." },
 ]
+
+# Optional: the project's documentation (C25). `paths` are the documentation files and folders.
+# Each map entry says which documents cover which source files ({stem} is the file's name
+# without extension); the implementer is told, and documents left untouched are flagged to the
+# reviewer. Each generated entry is a command that exits non-zero when a generated document is
+# stale; it runs in the replay as a blocking check named "docs: <name>".
+[documentation]
+paths = ["docs/", "README.md"]
+map = [
+  { source = "src/app/*.py", docs = ["docs/modules/{stem}.md"] },
+]
+generated = [
+  { name = "references", check = ["python", "scripts/generate_docs.py", "--check"] },
+]

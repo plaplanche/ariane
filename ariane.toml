@@ -43,6 +43,16 @@ command = ["uv", "run", "pytest", "-q"]
 name = "file length"
 command = ["uv", "run", "python", "scripts/check_file_length.py"]
 
+# Documentation (C25): which documents cover which files; generated ones are checked in the replay.
+[documentation]
+paths = ["docs/", "README.md"]
+map = [
+  { source = "src/ariane/*.py", docs = ["docs/architecture/modules/{stem}.md"] },
+]
+generated = [
+  { name = "references", check = ["uv", "run", "python", "scripts/generate_docs.py", "--check"] },
+]
+
 # Definition of done (C26): given to the implementer; the reviewer answers each sentence.
 [definition_of_done]
 items = [
