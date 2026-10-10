@@ -4,9 +4,12 @@ Ariane turns tickets into reviewed pull requests with AI coding agents, while th
 deciding, understanding and approving. The name comes from Ariadne's thread (*le fil d'Ariane*):
 you never lose the thread of your own code.
 
-**Status:** slice 1 (walking skeleton): `ariane start <issue>` takes a GitHub issue to a pull
-request whose checks Ariane replayed and that a read-only reviewer on a different model approved
-(`[agents.reviewer]` in `ariane.toml`). Approvals and the rest of the roadmap come next.
+**Status:** slice 3 (review, vendor-neutral): `ariane start <issue>` takes a GitHub issue to a
+pull request whose checks Ariane replayed in a clean tree and that a read-only reviewer on a
+different model approved, after up to two fix rounds (`[agents.reviewer]` in `ariane.toml`; the
+reviewer can run on Claude Code or opencode). `ariane verify <branch>` gives a branch finished by
+hand the same checks and review. Measurement and approvals come next (see the roadmap in
+[`docs/spec.md`](docs/spec.md)).
 
 ## Try it
 
