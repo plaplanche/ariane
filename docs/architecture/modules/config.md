@@ -6,6 +6,7 @@ Loads and validates `ariane.toml`. Every error names the faulty key.
 
 - `Config`, `TrackerConfig`, `AgentConfig`, `CheckConfig`, `DoneItem`: the validated settings; `Config.definition_of_done` holds the
   definition of done (C26), `DEFAULT_DEFINITION_OF_DONE` when the table is absent.
+- `AgentConfig.max_tokens`: optional `[agents.<role>] max_tokens`, a positive integer, Ariane's own token cap per session.
 - `load`: read the file at the repository root.
 - `parse`: validate a parsed TOML mapping.
 - `ConfigError`: raised for any invalid key.

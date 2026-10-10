@@ -204,11 +204,13 @@ class _TicketRun:
         recorded = context.implementer_prompt(
             self.issue, self.branch, self.config.checks, done, recorded=True, read_at=ticket.now()
         )
+        tokens_cap = "none" if agent.max_tokens is None else f"{agent.max_tokens} tokens"
         session = Session(
             role="implementer",
             model=agent.model,
             tools=agent.tools,
             max_budget_usd=agent.max_budget_usd,
+            max_tokens=agent.max_tokens,
             timeout_s=agent.timeout_minutes * 60,
             cwd=self.worktree,
             prompt=prompt,
@@ -218,7 +220,8 @@ class _TicketRun:
             "ticket.session.started",
             "Implementer session started",
             f"Runtime {self.runtime.name}, model {agent.model}, tools {', '.join(agent.tools)},"
-            f" budget {agent.max_budget_usd:g} USD, time limit {agent.timeout_minutes:g} min.\n\n"
+            f" runtime cost cap {agent.max_budget_usd:g} USD, Ariane token cap {tokens_cap},"
+            f" time limit {agent.timeout_minutes:g} min.\n\n"
             f"Context given to the agent:\n\n{ticket.fenced(recorded)}",
         )
         result = self.runtime.run(session)
@@ -233,10 +236,12 @@ class _TicketRun:
             )
         )
         denials = "\n".join(f"- {d}" for d in result.permission_denials) or "none"
+        cap = f"Cap reached: {result.cap}.\n\n" if result.cap else ""
         self.folder.log(
             "ticket.session.stopped",
             f"Implementer session stopped: {result.stop_reason.value}",
-            f"Cost {cost} (as reported), tokens {tokens}.\n\nRefused tool calls:\n{denials}\n\n"
+            f"{cap}Cost {cost} (as reported), tokens {tokens}.\n\n"
+            f"Refused tool calls:\n{denials}\n\n"
             f"Agent summary:\n\n{ticket.fenced(result.summary)}",
         )
         return result

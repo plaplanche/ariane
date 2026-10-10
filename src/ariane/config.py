@@ -68,6 +68,11 @@ SCHEMA: dict[str, Any] = {
                         "model": _STR,
                         "tools": {**_ARGV, "description": "Tools the agent may use (not Skill)."},
                         "max_budget_usd": _POSITIVE,
+                        "max_tokens": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "description": "Optional cap on tokens counted by Ariane per session.",
+                        },
                         "timeout_minutes": _POSITIVE,
                     },
                 }
@@ -143,6 +148,7 @@ class AgentConfig:
     tools: tuple[str, ...]
     max_budget_usd: float
     timeout_minutes: float
+    max_tokens: int | None = None
 
 
 @dataclass(frozen=True)
@@ -207,7 +213,7 @@ def parse(data: dict[str, Any]) -> Config:
     _only(
         implementer,
         "agents.implementer",
-        {"runtime", "model", "tools", "max_budget_usd", "timeout_minutes"},
+        {"runtime", "model", "tools", "max_budget_usd", "timeout_minutes", "max_tokens"},
     )
     raw_checks = data.get("checks")
     if not isinstance(raw_checks, list) or not raw_checks:
@@ -258,6 +264,7 @@ def parse(data: dict[str, Any]) -> Config:
             tools=tools,
             max_budget_usd=_positive(implementer, "max_budget_usd", "agents.implementer."),
             timeout_minutes=_positive(implementer, "timeout_minutes", "agents.implementer."),
+            max_tokens=_max_tokens(implementer),
         ),
         checks=(checks := _checks(raw_checks)),
         definition_of_done=_definition_of_done(data, {c.name for c in checks}),
@@ -372,6 +379,17 @@ def _str_list(table: dict[str, Any], key: str, prefix: str) -> tuple[str, ...]:
             " (an argument list, never a shell string)"
         )
     return tuple(value)
+
+
+def _max_tokens(table: dict[str, Any]) -> int | None:
+    value = table.get("max_tokens")
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ConfigError(
+            f"{CONFIG_FILE}: agents.implementer.max_tokens: expected a positive integer"
+        )
+    return value
 
 
 def _positive(table: dict[str, Any], key: str, prefix: str, default: float | None = None) -> float:

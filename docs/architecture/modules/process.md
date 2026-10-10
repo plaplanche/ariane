@@ -6,6 +6,7 @@ Runs external commands from argument lists: PATH resolution, UTF-8 output, timeo
 
 - `run`: run a command and return a `Completed`.
 - `resolve`: find an executable.
+- `stream`: like `run`, but passes each standard output line to a callback while the command runs; the callback returns True to stop the whole process tree (`Completed.stopped`).
 - `kill_tree`: stop a process and its children.
 - `CommandNotFoundError`: raised for an unknown command.
 
