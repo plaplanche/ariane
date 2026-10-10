@@ -1,0 +1,24 @@
+# Module `ariane.runtime`
+
+The agent runtime interface: one fresh session per stage, whatever the agent CLI. Claude Code implements it; opencode will.
+
+## Main types and functions
+
+- `AgentRuntime`: the protocol of a runtime.
+- `Session`: what to run.
+- `SessionResult`: what came back.
+- `StopReason`: why a session ended.
+
+## Collaborations
+
+Arrows go from the caller to the callee.
+
+```mermaid
+flowchart LR
+  claude_code --> runtime
+  flow --> runtime
+```
+
+## Serves
+
+C5; ADR 0007, ADR 0014, ADR 0015. See [the component view](../3-components.md).
