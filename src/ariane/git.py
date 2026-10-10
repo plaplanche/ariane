@@ -8,7 +8,7 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
-from ariane import process
+from ariane import logs, process
 from ariane.redact import redact
 
 # The push URL an agent's git sees: any plain `git push` from its environment fails.
@@ -46,6 +46,7 @@ class GitError(Exception):
 def git(
     args: list[str], cwd: Path, *, env: Mapping[str, str] | None = None, check: bool = True
 ) -> process.Completed:
+    logs.emit("git.command", "git " + " ".join(args))
     completed = process.run(["git", *_SAFE_OPTIONS, *args], cwd=cwd, timeout_s=_TIMEOUT_S, env=env)
     if check and not completed.ok:
         raise GitError(redact(f"git {' '.join(args)} failed:\n{completed.output.strip()}"))

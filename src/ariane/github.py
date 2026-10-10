@@ -8,6 +8,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from ariane import logs
 from ariane.tracker import Issue, PullRequest, TrackerError
 
 _TIMEOUT_S = 30
@@ -93,13 +94,16 @@ class GitHubTracker:
         try:
             with _OPENER.open(request, timeout=_TIMEOUT_S) as response:
                 body = response.read().decode("utf-8", errors="replace")
+                logs.emit("github.request", f"{method} {path}: HTTP {response.status}")
         except urllib.error.HTTPError as exc:
+            logs.emit("github.request", f"{method} {path}: HTTP {exc.code}")
             detail = exc.read().decode("utf-8", errors="replace")
             raise TrackerError(
                 f"GitHub API {method} {path}: HTTP {exc.code} {_message(detail)}"
             ) from None
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             reason = getattr(exc, "reason", exc)
+            logs.emit("github.request", f"{method} {path}: failed ({reason})")
             raise TrackerError(f"GitHub API {method} {path}: {reason}") from None
         try:
             result = json.loads(body)

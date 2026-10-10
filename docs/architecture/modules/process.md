@@ -21,6 +21,7 @@ flowchart LR
   delivery --> process
   flow --> process
   git --> process
+  process --> logs
 ```
 
 ## Serves

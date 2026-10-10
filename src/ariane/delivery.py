@@ -48,7 +48,11 @@ class Delivery:
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
-        self.folder.log("Delivering", f"Pushing {self.branch} and opening the pull request.")
+        self.folder.log(
+            "ticket.delivering",
+            "Delivering",
+            f"Pushing {self.branch} and opening the pull request.",
+        )
         self.folder.set_status(
             "pushed",
             f"{self.branch} pushed; opening the pull request",
@@ -60,7 +64,7 @@ class Delivery:
         way = git.push(
             self.worktree, self.url, pushed, self.branch, token=self.token, environ=self.environ
         )
-        self.folder.log("Pushed", f"Pushed `{self.branch}` {way}.")
+        self.folder.log("ticket.pushed", "Pushed", f"Pushed `{self.branch}` {way}.")
         # Nothing is committed from here on: the pushed commit is the one CI runs on.
         try:
             pull = self.tracker.open_pull_request(
@@ -75,7 +79,7 @@ class Delivery:
                 f"open the pull request from {self.branch} by hand, or delete that branch"
                 " and start again",
             ) from None
-        self.folder.log("Delivered", f"Pull request #{pull.number}: {pull.url}")
+        self.folder.log("ticket.delivered", "Delivered", f"Pull request #{pull.number}: {pull.url}")
         self._publish_statuses(results, pushed)
         return Delivered(pull.url)
 
@@ -114,7 +118,11 @@ class Delivery:
             except TrackerError as exc:
                 warnings.append(f"- `ariane/{r.name}`: {exc}")
         if warnings:
-            self.folder.log("Warning: commit statuses refused", "\n".join(warnings))
+            self.folder.log(
+                "ticket.warning.statuses_refused",
+                "Warning: commit statuses refused",
+                "\n".join(warnings),
+            )
 
     def _pull_request_body(self, results: list[checks.CheckResult]) -> str:
         number = self.issue.number

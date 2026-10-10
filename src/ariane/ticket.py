@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ariane import logs
 from ariane.redact import redact
 from ariane.tracker import Issue
 
@@ -66,7 +67,11 @@ class TicketFolder:
     def exists(self) -> bool:
         return JOURNAL in self._records
 
-    def log(self, step: str, detail: str = "") -> None:
+    def log(self, kind: str, step: str, detail: str = "") -> None:
+        """Journal an entry of the declared functional type `kind`; `step` is its title."""
+        declared = logs.functional(kind)
+        if declared.level == "warning":
+            logs.emit("journal.warning", f"{kind}: {step}")
         entry = f"\n## {now()} {step}\n"
         if detail:
             entry += f"\n{detail.rstrip()}\n"

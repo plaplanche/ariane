@@ -17,6 +17,7 @@ Arrows go from the caller to the callee.
 ```mermaid
 flowchart LR
   ticket --> redact
+  ticket --> logs
   ticket --> tracker
   checks --> ticket
   cli --> ticket

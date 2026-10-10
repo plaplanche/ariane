@@ -14,6 +14,7 @@ Arrows go from the caller to the callee.
 ```mermaid
 flowchart LR
   github --> tracker
+  github --> logs
   cli --> github
 ```
 
