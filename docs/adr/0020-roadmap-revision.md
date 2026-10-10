@@ -75,3 +75,8 @@ The owner postponed the second user to slice 4 to build features first: the inst
 from slice 2's gate to slice 4's. Slice 2 closed with #25 (a hand takeover for a workflow file,
 pushed by bundle) and #29 (a second hand commit on the README, at the owner's request) as
 documented exceptions to "pushed once".
+
+## Amendment (2026-10-10)
+Before the reviewer work of slice 3, tickets create Ariane's documentation baseline, generated
+references and technical logs (ADR 0022); the definition of done (ADR 0023) joins slice 3 with
+the reviewer, and `ariane docs-review` joins slice 6.
