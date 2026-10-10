@@ -162,8 +162,10 @@ def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:
     shown = f"{CONFIG_ENV} ({chosen})" if chosen else CONFIG_FILE
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError:
+    except FileNotFoundError:
         raise ConfigError(f"{shown}: file not found in {repo_root}") from None
+    except OSError as exc:
+        raise ConfigError(f"{shown}: cannot be read: {exc}") from None
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:

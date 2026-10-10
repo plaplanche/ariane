@@ -165,6 +165,22 @@ def test_c5_opencode_the_implementer_role_is_refused() -> None:
         config.parse(data)
 
 
+def test_c5_opencode_a_too_long_prompt_ends_as_error_not_a_crash(tmp_path: Path) -> None:
+    long = session(tmp_path)
+    object.__setattr__(long, "prompt", "x" * 300_000)
+    result = OpenCodeRuntime((PY, "-c", "pass")).run(long)
+    assert result.stop_reason is StopReason.ERROR
+    assert "command line" in result.summary
+
+
+def test_c5_opencode_an_unstartable_executable_ends_as_error(tmp_path: Path) -> None:
+    broken = tmp_path / "opencode"
+    broken.write_text("not a program", encoding="utf-8")
+    broken.chmod(0o755)
+    result = OpenCodeRuntime((str(broken),)).run(session(tmp_path))
+    assert result.stop_reason is StopReason.ERROR
+
+
 def test_c5_opencode_describe_gives_the_version_and_the_title_note(tmp_path: Path) -> None:
     fake = HERE / "fake_opencode.py"
     adapter = OpenCodeRuntime((PY, str(fake), "-", "-", "0", "end"))
@@ -180,9 +196,9 @@ def test_c5_opencode_login_variables_are_the_providers_keys() -> None:
 
 
 def test_c5_opencode_roles_are_routed_to_their_runtime(tmp_path: Path) -> None:
-    claude = OpenCodeRuntime(model="openai/m")
-    routed = runtime.RoutedRuntime({"implementer": runtime_stub(), "reviewer": claude})
-    assert runtime.for_role(routed, "reviewer") is claude
+    reviewer = OpenCodeRuntime(model="openai/m")
+    routed = runtime.RoutedRuntime({"implementer": runtime_stub(), "reviewer": reviewer})
+    assert runtime.for_role(routed, "reviewer") is reviewer
     assert routed.name == "stub, opencode"
     assert "OPENAI_API_KEY" in routed.login_variables and "STUB_" in routed.login_variables
 

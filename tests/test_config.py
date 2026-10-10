@@ -206,3 +206,9 @@ def test_c22_config_path_the_opencode_example_is_accepted() -> None:
     root = Path(__file__).resolve().parent.parent
     cfg = config.load(root, {"ARIANE_CONFIG": "docs/ariane.opencode-reviewer.example.toml"})
     assert cfg.reviewer.runtime == "opencode" and cfg.implementer.runtime == "claude-code"
+
+
+def test_c22_config_path_a_folder_is_not_reported_as_missing(tmp_path: Path) -> None:
+    (tmp_path / "dir.toml").mkdir()
+    with pytest.raises(config.ConfigError, match="cannot be read"):
+        config.load(tmp_path, {"ARIANE_CONFIG": "dir.toml"})

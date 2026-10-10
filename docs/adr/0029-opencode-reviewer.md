@@ -11,7 +11,7 @@ ADR 0014 requires vendor independence and ADR 0015 records how opencode 1.18.35 
 - `[agents.<role>] runtime` is `claude-code` or `opencode`; opencode is refused for the implementer with a message naming the role. An opencode agent's model is `<provider>/<model>` and its tools are among `read`, `glob`, `grep`.
 - A `RoutedRuntime` gives each role its runtime; `flow` and `verify` still take one runtime. Login variables are the union of the runtimes' ones. For opencode they are the provider's key (`<PROVIDER>_API_KEY`, with a short table for providers that differ).
 - The turn cap is a constant, `steps = 20`, in the inline configuration: the configuration has no key for it yet.
-- The prompt is passed as the message argument, as the issue decided. opencode has no schema option, so the schema is appended to the message and the answer is the last fenced `json` block of the last text part.
+- The prompt is passed as the message argument, as the issue decided. A command line over the system's limit (32,000 characters on Windows, about 127 KiB per argument elsewhere) ends the session with `error` before it starts, and an `OSError` at start is also `error`. The log shows each argument cut at 200 characters. opencode has no schema option, so the schema is appended to the message and the answer is the last fenced `json` block of the last text part.
 - Caps: the token cap (`max_tokens`) and, when opencode reports a cost above 0, the cost cap (`max_budget_usd`), both checked after each `step_finish`.
 - `ARIANE_CONFIG`, a path relative to the repository root (or absolute), replaces `ariane.toml` for one run; its errors name `ARIANE_CONFIG (<file>)`.
 

@@ -115,6 +115,11 @@ def stream(
     return _execute(argv, cwd, timeout_s, env, input_text, False, on_line)
 
 
+def _shown(arg: str, limit: int = 200) -> str:
+    """An argument for the log, cut when long (a prompt can be 200 KB)."""
+    return arg if len(arg) <= limit else f"{arg[:limit]}... ({len(arg)} characters)"
+
+
 def _execute(
     argv: Sequence[str],
     cwd: Path,
@@ -132,7 +137,7 @@ def _execute(
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         kwargs["start_new_session"] = True
-    logs.emit("process.started", " ".join(args))
+    logs.emit("process.started", " ".join(_shown(arg) for arg in args))
     start = time.monotonic()
     proc = subprocess.Popen(
         args,

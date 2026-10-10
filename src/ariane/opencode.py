@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,10 @@ _PROVIDER_KEYS = {
     "azure": ("AZURE_API_KEY", "AZURE_RESOURCE_NAME"),
     "amazon-bedrock": ("AWS_",),
 }
+
+# What the operating system accepts: a whole command line on Windows, one argument elsewhere.
+WINDOWS_COMMAND_LIMIT = 32_000
+POSIX_ARGUMENT_LIMIT = 128 * 1024 - 1024
 
 _FENCE = re.compile(r"```(?:json)?[ \t]*\n(.*?)\n[ \t]*```", re.DOTALL)
 TITLE_NOTE = "the title call's usage is not reported by opencode"
@@ -96,15 +101,19 @@ class OpenCodeRuntime:
 
     def run(self, session: Session) -> SessionResult:
         events = Events(session.max_tokens, session.max_budget_usd)
+        command = self.command(session)
+        too_long = _too_long(command)
+        if too_long:
+            return SessionResult(StopReason.ERROR, None, None, None, None, None, too_long)
         try:
             completed = process.stream(
-                self.command(session),
+                command,
                 cwd=session.cwd,
                 on_line=events.add_line,
                 timeout_s=session.timeout_s,
                 env=self.environment(session),
             )
-        except process.CommandNotFoundError as exc:
+        except (process.CommandNotFoundError, OSError) as exc:
             return SessionResult(StopReason.ERROR, None, None, None, None, None, str(exc))
         if completed.stopped:
             return events.result(StopReason.BUDGET, events.stop_text, cap=events.cap)
@@ -120,6 +129,17 @@ class OpenCodeRuntime:
         if not events.stopped_normally:
             return events.result(StopReason.ERROR, "no final step (reason stop) in the events")
         return events.result(StopReason.FINISHED, events.text, structured=events.answer())
+
+
+def _too_long(command: Sequence[str]) -> str:
+    """A message when the command line exceeds what the operating system accepts, else ""."""
+    if sys.platform == "win32":
+        size, limit = sum(len(part) + 1 for part in command), WINDOWS_COMMAND_LIMIT
+    else:
+        size, limit = max(len(part.encode()) for part in command), POSIX_ARGUMENT_LIMIT
+    if size <= limit:
+        return ""
+    return f"the opencode command line is {size} characters, over the {limit} the system accepts"
 
 
 def _message(session: Session) -> str:
