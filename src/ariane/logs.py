@@ -122,8 +122,8 @@ def resolve_level(option: str | None, environ: Mapping[str, str]) -> int:
     return parse_level(environ.get(LEVEL_VARIABLE) or DEFAULT_LEVEL)
 
 
-def log_path(repo_root: Path, number: int) -> Path:
-    """The ticket's log file, beside the repository's working trees, outside the repository."""
+def log_path(repo_root: Path, number: int | str) -> Path:
+    """The log file of a ticket (or of `verify-<branch>`), beside the working trees."""
     return repo_root.parent / f"{repo_root.name}.ariane" / "logs" / f"{number}.log"
 
 

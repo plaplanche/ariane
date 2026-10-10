@@ -68,9 +68,8 @@ capability exists, so the gates are Ariane's, not the session's (ADR 0020).
   then a draft pull request). For a session's own commits and
   posts, both rules stay manual.
 - A hand takeover (after a second `no-go`, or a ticket Ariane cannot run, such as a workflow
-  file pushed from the owner's machine) runs `ariane verify <branch>` before its pull request
-  once that command exists (slice 3); until then, run the checks and the independent review of
-  rule 5 by hand.
+  file pushed from the owner's machine) runs `ariane verify <branch>` before its pull request: it
+  replays the checks, runs one review and commits the records on the branch (C23).
 
 ## The owner's machine
 

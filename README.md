@@ -21,6 +21,7 @@ uv tool install git+https://github.com/plaplanche/ariane
 $env:GH_TOKEN = "<a token with access to the repository>"
 ariane start 12
 ariane status 12
+ariane verify my-branch --issue 12
 ```
 
 bash:
@@ -30,6 +31,7 @@ uv tool install git+https://github.com/plaplanche/ariane
 export GH_TOKEN="<a token with access to the repository>"
 ariane start 12
 ariane status 12
+ariane verify my-branch --issue 12
 ```
 
 For a project other than Ariane, start from [`docs/ariane.example.toml`](docs/ariane.example.toml):
@@ -41,6 +43,10 @@ then pushes the branch, opens the pull request and publishes each check's result
 status (`ariane/<check name>`) on its head commit. The ticket's records are in `work/12/`.
 A GitHub Actions workflow (`check-statuses.yml`) also publishes these statuses from the committed
 report, including when Ariane cannot (for example from a cloud session).
+`ariane verify <branch> [--issue N]` checks and reviews a local branch finished by hand: a clean
+replay of the checks, one review, then `work/verify/<branch>/review.md` and `checks.md` committed
+on the branch (never pushed). It exits 0 only on a `go` with green blocking checks; the issue's
+text goes to the reviewer with `--issue`, else the branch's commit messages.
 The token needs permission to write commit statuses (for a fine-grained token, "Commit statuses:
 read and write"), on top of reading issues and writing pull requests.
 

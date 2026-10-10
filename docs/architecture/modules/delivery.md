@@ -1,6 +1,6 @@
 # Module `ariane.delivery`
 
-Delivers a ticket whose blocking checks passed: one push, the pull request and the commit statuses.
+Delivers a ticket: one push, the pull request (a draft that can carry failing blocking checks, after the fix rounds) and the commit statuses.
 
 ## Main types and functions
 

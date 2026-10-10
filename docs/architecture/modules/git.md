@@ -6,6 +6,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 
 - `git`, `out`: run git and return output.
 - `add_worktree`, `add_detached_worktree`, `remove_worktree`: ticket and replay trees.
+- `worktree_of`, `merge_base`, `commit_messages`: where a branch is checked out, and what `ariane verify` reads of a branch (ADR 0028).
 - `config_snapshot`, `snapshot_changes`: detect configuration tampering.
 - `blocked_push_env`, `push_env`, `push`: push only from Ariane.
 - `commit`, `head`, `changed_paths`, `committed_paths`, `is_ancestor`, `fast_forwarded`: history queries.

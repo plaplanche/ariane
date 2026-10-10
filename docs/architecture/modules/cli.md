@@ -4,7 +4,7 @@ The `ariane` command line. It parses arguments, wires the configuration, tracker
 
 ## Main types and functions
 
-- `main`: the entry point, returns the exit code.
+- `main`: the entry point, returns the exit code. Commands: `start`, `status`, and `verify <branch> [--issue N]` (checks and reviews a local branch finished by hand, C23, ADR 0028).
 
 ## Collaborations
 
@@ -14,6 +14,7 @@ Arrows go from the caller to the callee.
 flowchart LR
   cli --> config
   cli --> flow
+  cli --> verify
   cli --> git
   cli --> process
   cli --> ticket

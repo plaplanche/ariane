@@ -94,6 +94,26 @@ def local_branch_exists(cwd: Path, branch: str) -> bool:
     return git(["rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"], cwd, check=False).ok
 
 
+def worktree_of(cwd: Path, branch: str) -> Path | None:
+    """The working tree where `branch` is checked out, if any."""
+    current: Path | None = None
+    for line in out(["worktree", "list", "--porcelain"], cwd).splitlines():
+        if line.startswith("worktree "):
+            current = Path(line.removeprefix("worktree "))
+        elif line == f"branch refs/heads/{branch}":
+            return current
+    return None
+
+
+def merge_base(cwd: Path, first: str, second: str) -> str:
+    return out(["merge-base", first, second], cwd)
+
+
+def commit_messages(cwd: Path, since: str, until: str) -> str:
+    """The messages of the commits in `since..until`, oldest first."""
+    return out(["log", "--reverse", "--format=%B", f"{since}..{until}"], cwd)
+
+
 def remote_refs(cwd: Path, url: str) -> dict[str, str]:
     """Every branch and tag on the remote, as `refs/...` to commit, read with `git ls-remote`."""
     refs = {}

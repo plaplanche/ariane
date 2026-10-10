@@ -8,7 +8,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ariane import __version__, config, flow, git, logs, process, ticket
+from ariane import __version__, config, flow, git, logs, process, ticket, verify
 from ariane.claude_code import ClaudeCodeRuntime
 from ariane.github import GitHubTracker
 
@@ -35,6 +35,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         root = git.repo_root(Path.cwd())
     except git.GitError as exc:
         return _say(EXIT_USAGE, f"Did nothing: {exc}. Next: run ariane inside a git repository.")
+    if args.command == "verify":
+        logs.configure(level, logs.log_path(root, "verify-" + args.branch.replace("/", "-")))
+        return _verify(root, args.branch, args.issue)
     logs.configure(level, logs.log_path(root, args.issue))
     if args.command == "status":
         return _status(root, args.issue)
@@ -62,6 +65,17 @@ def _parser() -> argparse.ArgumentParser:
         "status", parents=[common], help="show a ticket's state, read from its folder"
     )
     status.add_argument("issue", type=_issue_number, help="issue number")
+    verify = sub.add_parser(
+        "verify",
+        parents=[common],
+        help="check and review a local branch finished by hand, then record it on the branch",
+    )
+    verify.add_argument("branch", help="a branch that exists locally")
+    verify.add_argument(
+        "--issue",
+        type=_issue_number,
+        help="give this issue's text to the reviewer (default: the branch's commit messages)",
+    )
     return parser
 
 
@@ -103,6 +117,37 @@ def _start(root: Path, number: int) -> int:
     )
     if outcome.detail:
         print(outcome.detail, file=sys.stderr)
+    return _say(outcome.exit_code, outcome.line)
+
+
+def _verify(root: Path, branch: str, number: int | None) -> int:
+    try:
+        cfg = config.load(root)
+    except config.ConfigError as exc:
+        return _say(EXIT_USAGE, f"Refused configuration: {exc}. Next: fix ariane.toml.")
+    tracker = None
+    if number is not None:
+        token = os.environ.get(cfg.tracker.token_env, "")
+        if not token:
+            return _say(
+                EXIT_USAGE,
+                f"Did not verify {branch}: environment variable {cfg.tracker.token_env} is empty."
+                f" Next: set it to a token with access to {cfg.tracker.repository}, or leave"
+                " out --issue.",
+            )
+        logs.add_secrets([token])
+        tracker = GitHubTracker(
+            repository=cfg.tracker.repository, token=token, api_url=cfg.tracker.api_url
+        )
+    outcome = verify.verify(
+        branch,
+        repo_root=root,
+        config=cfg,
+        runtime=ClaudeCodeRuntime(),
+        environ=os.environ,
+        tracker=tracker,
+        issue_number=number,
+    )
     return _say(outcome.exit_code, outcome.line)
 
 

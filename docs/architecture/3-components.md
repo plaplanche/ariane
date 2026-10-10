@@ -15,6 +15,7 @@ flowchart TD
   claude_code --> runtime
   cli --> config
   cli --> flow
+  cli --> verify
   cli --> git
   cli --> process
   cli --> ticket
@@ -43,9 +44,12 @@ flowchart TD
   flow --> runtime
   flow --> tracker
   git --> process
+  review_session --> checks
+  review_session --> config
   review_session --> review
   review_session --> runtime
   review_session --> ticket
+  review_session --> tracker
   review --> checks
   review --> config
   review --> context
@@ -62,6 +66,18 @@ flowchart TD
   ticket --> logs
   ticket --> redact
   ticket --> tracker
+  verify --> checks
+  verify --> context
+  verify --> flow
+  verify --> git
+  verify --> process
+  verify --> review
+  verify --> review_session
+  verify --> ticket
+  verify --> config
+  verify --> redact
+  verify --> runtime
+  verify --> tracker
 ```
 
 ## `ariane start <n>`
@@ -103,4 +119,28 @@ sequenceDiagram
   D->>T: publish statuses
   F-->>CLI: Outcome
   CLI-->>U: one line
+```
+
+## `ariane verify <branch>`
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant CLI as cli
+  participant V as verify
+  participant G as git
+  participant C as checks
+  participant R as runtime (claude_code)
+  U->>CLI: ariane verify branch
+  CLI->>V: verify
+  V->>G: refuse a checked-out branch with uncommitted changes
+  V->>G: add a clean replay tree at the branch head
+  V->>V: setup command
+  V->>C: replay the checks
+  C-->>V: results
+  V->>R: run a read-only reviewer session in the replay tree
+  R-->>V: answer (validated by review, one retry)
+  V->>G: commit work/verify/branch/review.md and checks.md on the branch
+  V-->>CLI: Outcome
+  CLI-->>U: one line (never pushes)
 ```
