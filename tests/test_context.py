@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from ariane import config, context
 from ariane.config import CheckConfig
 from ariane.tracker import Issue
@@ -116,3 +118,16 @@ def test_c26_dod_the_implementer_prompt_lists_every_item() -> None:
         Issue(3, "T", "B", "u"), "ariane/3", (CheckConfig("tests", ("pytest",), True, 1),), items
     )
     assert "Definition of done:\n- check tests passes\n- Docs updated.\n" in prompt
+
+
+def test_c26_dod_ariane_requires_adr() -> None:
+    sentence = (
+        "Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2)."
+    )
+    root = Path(__file__).resolve().parent.parent
+    cfg = config.load(root)
+    assert config.DoneItem(text=sentence) in cfg.definition_of_done
+    prompt = context.implementer_prompt(
+        Issue(3, "T", "B", "u"), "ariane/3", cfg.checks, cfg.definition_of_done
+    )
+    assert f"- {sentence}\n" in prompt

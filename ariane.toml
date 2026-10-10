@@ -46,4 +46,5 @@ items = [
   { check = "file length" },
   { text = "The change is covered by tests that fail without it." },
   { text = "The documentation the change affects is updated (C25)." },
+  { text = "Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2)." },
 ]
