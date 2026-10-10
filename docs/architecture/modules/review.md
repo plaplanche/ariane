@@ -4,7 +4,7 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 
 ## Main types and functions
 
-- `SCHEMA`, `validate`, `parse`: the answer's description (also passed to the runtime as `--json-schema`), its validator and its typed form.
+- `SCHEMA`, `validate`, `parse`: the answer's description (also passed to the runtime as `--json-schema`; the Claude Code runtime drops its `$schema`), its validator and its typed form.
 - `prompt`: the review instructions, the issue and the diff (untrusted data), the checks' summary and the sentence items.
 - `settle`: `go` with a blocking finding is `no-go`; a sentence item missing or `met: false` is a blocking finding; check items come from the replay's results.
 - `record`: the text of `work/<n>/review-0.md`. `pull_request_section`: the verdict, the item results and the findings table (3,000 characters at most, else a summary and a link).

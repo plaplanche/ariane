@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -135,3 +136,13 @@ def test_c5_tokens_cache_absent_fields_are_none() -> None:
     assert result.input_tokens == 3
     assert result.cache_read_tokens is None
     assert result.cache_write_tokens is None
+
+
+def test_c10_review_schema_goes_to_claude_code_without_its_draft(tmp_path: Path) -> None:
+    from ariane import review
+
+    reviewer = dataclasses.replace(session(tmp_path), role="reviewer", json_schema=review.SCHEMA)
+    argv = ClaudeCodeRuntime().command(reviewer)
+    passed = json.loads(argv[argv.index("--json-schema") + 1])
+    assert "$schema" in review.SCHEMA and "$schema" not in passed
+    assert passed == {k: v for k, v in review.SCHEMA.items() if k != "$schema"}
