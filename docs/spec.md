@@ -97,7 +97,7 @@ flowchart LR
 
 ## Functional specification
 
-Twenty-four capabilities in six groups, each with acceptance criteria. A criterion that no command or observation can check is not a criterion.
+Twenty-six capabilities in six groups, each with acceptance criteria. A criterion that no command or observation can check is not a criterion.
 
 ### A. Tickets and workflow
 
@@ -322,7 +322,7 @@ One configuration file in the repository describes the tracker, the ticket forma
 
 #### C23. Command line
 
-One command-line tool, usable on Windows (PowerShell), macOS and Linux: create a ticket, show its status, approve or revise a stage, run the next stage, list tickets, verify a checklist, verify a branch finished by hand (`ariane verify`), produce reports.
+One command-line tool, usable on Windows (PowerShell), macOS and Linux: create a ticket, show its status, approve or revise a stage, run the next stage, list tickets, verify a checklist, verify a branch finished by hand (`ariane verify`), review the documentation (`ariane docs-review`, C25), produce reports.
 
 - Each command says in one line what it did and what the next possible action is.
 - A ticket's state is readable without Ariane, by opening its folder.
@@ -335,6 +335,22 @@ A command guides the installation on a new project: it asks what it needs (track
 
 - At the end, a diagnostic command checks tracker access, the tools on the path, and a first run of the checks.
 
+#### C25. Documentation upkeep
+
+The project's documentation changes with its code, ticket by ticket, and Ariane checks that it does (ADR 0022).
+
+- A project declares its documentation paths and the commands that regenerate its generated documents (for example a command-line reference, a schema, an OpenAPI description); a generated document that differs from what its command produces fails a check.
+- Keeping the documentation up to date is an item of the default definition of done (C26): the implementer is told which documentation covers the files it changes, and the reviewer checks that the ticket updated it.
+- `ariane docs-review` runs a read-only review of the whole documentation against the code, on demand (for example at the end of a roadmap slice), and reports findings like a review (C10).
+
+#### C26. Definition of done
+
+A project configures what "done" means for its tickets, and Ariane holds every ticket to it (ADR 0023).
+
+- The configuration lists the definition of done as items; an item is either a declared check (C9), verified by Ariane, or a sentence, given to the implementer and verified item by item by the reviewer (C10). Ariane provides a default list (checks green, tests for the change, documentation updated, C25).
+- A ticket can add items of its own in its acceptance checklist; it cannot remove the project's.
+- The reviewer answers each sentence item with met or not met and the evidence; an item not met is a blocking finding. The pull request body and the ticket folder list every item with its result.
+
 ## Non-functional requirements
 
 | Area | Requirement |
@@ -346,8 +362,9 @@ A command guides the installation on a new project: it asks what it needs (track
 | Robustness | An interruption (crash, budget, timeout, reboot) never loses work; all state can be rebuilt from the ticket folder, git and the tracker; several projects on one machine never share state (lock, working trees, journal) |
 | Security | Least privilege per role; no secret in an agent's context; every published output redacted; agents never push |
 | Cost | A budget per session and per ticket, capped by the configuration; Ariane stops cleanly at the cap |
-| Observability | One human-readable journal per ticket: which step ran, with which context, for which result and cost |
+| Observability | One human-readable journal per ticket: which step ran, with which context, for which result and cost (functional log); technical logs at levels debug, info, warning and error, chosen by a command-line option or an environment variable, written to standard error and to a log file outside the repository, redacted (C21); every functional and technical log type has a stable identifier and is listed with its meaning in `docs/logs.md`, generated from the code (ADR 0022) |
 | Maintainability of Ariane | Short single-purpose modules; a file-length limit checked from slice 1 (no file over 600 lines); every capability tested; refactors done as pure moves first, behaviour changes after |
+| Documentation of Ariane | `docs/architecture/` explains how Ariane works with Mermaid diagrams at every C4 level (0 system landscape, 1 system context, 2 containers, 3 components, 4 code: one file per module); the command-line reference and the JSON Schemas of the configuration and of agents' structured answers are generated from the code and committed; a check fails when a module has no file or a generated document is stale; every ticket updates the documentation it affects, and a documentation review closes every roadmap slice (ADR 0022) |
 | Dependencies | As few as possible; each added dependency is justified in an ADR |
 | Vendors | No dependency on one model vendor: Ariane's guarantees never rely on one runtime's flags (C5); from slice 3 the reviewer runs on two runtimes, and a role that requires one runtime says so and why |
 
@@ -366,11 +383,11 @@ Revised on 8 October 2026 (ADR 0020); estimates are revised at every gate. Froze
 | Slice | Capabilities | Gate (checked before the next slice starts) |
 | --- | --- | --- |
 | 1. Walking skeleton | C1, C5, C8, C9, C11 and C22 in minimal form; C23 to start a ticket; CI on Windows, macOS and Linux | A real issue becomes a pull request whose checks Ariane replayed green |
-| 2. Dogfooding | Redaction of everything posted (C21, basic), check results as commit statuses from a replay (C9), one push per ticket, clean-tree replay (C9), cache tokens counted (C5), shorter records and live status (C1, C23), installation for a second user | Ariane's own tickets go through Ariane, each pushed once with checks replayed in a clean tree; a second user installs Ariane on macOS |
-| 3. Review, vendor-neutral | Runtime-neutral contract and login variables per runtime (C5), one reviewer with fix rounds (C10), `ariane verify` (C23), the reviewer on opencode (C5) | A ticket is reviewed on a second runtime; a branch finished by hand is verified |
-| 4. Measurement and shadow | C19 (cost, tokens, rounds, first-pass verdict, human time), shadow mode (no push), `ariane report` | The second user's first tickets are measured in shadow mode |
+| 2. Dogfooding | Redaction of everything posted (C21, basic), check results as commit statuses from a replay (C9), one push per ticket, clean-tree replay (C9), cache tokens counted (C5), shorter records and live status (C1, C23), installation for a second user | Ariane's own tickets go through Ariane, each pushed once with checks replayed in a clean tree (a hand takeover allowed by CLAUDE.md, such as a workflow file, is the exception) |
+| 3. Review, vendor-neutral | Ariane's documentation baseline, generated references and technical logs (ADR 0022), runtime-neutral contract and login variables per runtime (C5), one reviewer with fix rounds (C10), the definition of done checked item by item (C26, with C25's documentation item), `ariane verify` (C23), the reviewer on opencode (C5) | A ticket is reviewed on a second runtime; a branch finished by hand is verified; Ariane's documentation checks pass and the reviewer checks the definition of done item by item |
+| 4. Measurement and shadow | C19 (cost, tokens, rounds, first-pass verdict, human time), shadow mode (no push), `ariane report` | A second user installs Ariane on macOS, and their first tickets are measured in shadow mode |
 | 5. Approved stages and slices | C2, C4, C3, per-ticket budget (C5), approve and revise commands (C23) | No stage starts without human approval |
-| 6. Stronger checks | C9 complete (pre-change replay, checklist, coverage), rules judge (C10) | A test that tests nothing is flagged; the rules judge runs |
+| 6. Stronger checks | C9 complete (pre-change replay, checklist, coverage), rules judge (C10), `ariane docs-review` (C25) | A test that tests nothing is flagged; the rules judge runs; a documentation review runs from Ariane |
 | 7. Mastery | C17 | A quiz follows every delivery |
 | 8. Learnings and skills | C18 (ADR 0011), C6, project instructions (C22), resume after interruption (C5) | An accepted rule reaches a later ticket; only pinned, declared skills load |
 | 9. Security | C21 complete (security review, forbidden terms, operating-system sandbox) | No secret reaches an agent's context or anything Ariane posts; an agent cannot push even where the network supplies credentials |

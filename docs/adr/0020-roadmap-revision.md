@@ -69,3 +69,14 @@ spec's roadmap is the evidence that it works on Ariane's own tickets.
 - Remove the frozen capabilities: loses the decisions already written for them.
 - A stop rule tied to the success measure: rejected by the owner; the numbers inform, the owner
   decides.
+
+## Amendment (2026-10-09)
+The owner postponed the second user to slice 4 to build features first: the installation moves
+from slice 2's gate to slice 4's. Slice 2 closed with #25 (a hand takeover for a workflow file,
+pushed by bundle) and #29 (a second hand commit on the README, at the owner's request) as
+documented exceptions to "pushed once".
+
+## Amendment (2026-10-10)
+Before the reviewer work of slice 3, tickets create Ariane's documentation baseline, generated
+references and technical logs (ADR 0022); the definition of done (ADR 0023) joins slice 3 with
+the reviewer, and `ariane docs-review` joins slice 6.

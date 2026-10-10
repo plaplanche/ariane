@@ -7,13 +7,14 @@ input for building Ariane, and these rules come on top of it.
 
 If the environment variable `ARIANE_ROLE` is set, you are an agent session started by Ariane
 (for example `implementer`), not a session with the owner. Then only this section applies, with
-rules 1, 9 and 10 below:
+rules 1, 9, 10 and 11 below:
 
 - Do the task in Ariane's prompt, in the working tree you were given, and nothing else.
 - Do not write `GATES.md`, spawn subagents, load skills, post to GitHub, ask questions or wait
   for an answer: nobody reads this session live.
 - Do not push, switch branches, rewrite history or open pull requests: Ariane commits, replays
   the checks below and delivers.
+- Update the documentation your change affects (rule 11) before finishing.
 - Run the checks below before finishing, and leave `work/` untouched.
 
 ## Rules
@@ -48,6 +49,11 @@ rules 1, 9 and 10 below:
 9. **Nothing outside the project.** Code, docs, tests, commits, tickets and comments talk about
    Ariane only: no third-party organisation, employer, colleague or other project of the owner.
 10. **English everywhere** in the repository: code, docs, prompts, commits, tickets.
+11. **Documentation is part of done** (ADR 0022, ADR 0023). A change updates, in the same ticket,
+    the documentation it affects: `docs/architecture/` (the C4 level files and the
+    `modules/<module>.md` of every module touched or added), the generated references and the
+    log catalogue (regenerated, never edited by hand), the README. Every issue's acceptance
+    checklist names the documentation to update, as an item of the definition of done.
 
 ## Developing Ariane with Ariane
 
@@ -91,7 +97,9 @@ Each slice follows these steps, in order (rules 3 to 5):
 2. **Gates, then build.** Write `GATES.md` with `unlazy` from the slice's gate and the minimal
    form of its capabilities, lint it, then implement.
 3. **Review before done.** Run `/review` on the diff, then the independent review of rule 5
-   (a read-only subagent with `model: "opus"`), then `unlazy` `--reverify` on `GATES.md`.
+   (a read-only subagent with `model: "opus"`), then a documentation review of the whole
+   repository against the code (rule 11; a read-only subagent, until `ariane docs-review`
+   exists), then `unlazy` `--reverify` on `GATES.md`.
 4. **Deliver.** Push the slice branch and open a pull request; the owner merges.
 
 Forbidden skills: `/ship` and `/land-and-deploy` (and any skill that pushes to the main
