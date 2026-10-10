@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from ariane import process
@@ -27,6 +27,11 @@ _SUBTYPES = {
 }
 
 
+def schema_argument(schema: Mapping[str, Any]) -> dict[str, Any]:
+    """The schema for `--json-schema`: Claude Code rejects a draft 2020-12 `$schema` (#73)."""
+    return {k: v for k, v in schema.items() if k != "$schema"}
+
+
 class ClaudeCodeRuntime:
     name = "claude-code"
     login_variables: tuple[str, ...] = ("ANTHROPIC_", "CLAUDE_")
@@ -35,7 +40,11 @@ class ClaudeCodeRuntime:
         self.executable = tuple(executable)
 
     def command(self, session: Session) -> list[str]:
-        schema = ["--json-schema", json.dumps(session.json_schema)] if session.json_schema else []
+        schema = (
+            ["--json-schema", json.dumps(schema_argument(session.json_schema))]
+            if session.json_schema
+            else []
+        )
         return [
             *self.executable,
             "-p",
