@@ -251,16 +251,7 @@ class _TicketRun:
             f"Context given to the agent:\n\n{ticket.fenced(recorded)}",
         )
         result = self.runtime.run(session)
-        cost = "not reported" if result.cost_usd is None else f"{result.cost_usd:.4f} USD"
-        tokens = ", ".join(
-            f"{'not reported' if n is None else n} {label}"
-            for n, label in (
-                (result.input_tokens, "in"),
-                (result.cache_read_tokens, "cache read"),
-                (result.cache_write_tokens, "cache write"),
-                (result.output_tokens, "out"),
-            )
-        )
+        cost, tokens = result.usage()
         denials = "\n".join(f"- {d}" for d in result.permission_denials) or "none"
         cap = f"Cap reached: {result.cap}.\n\n" if result.cap else ""
         self.folder.log(
@@ -516,6 +507,12 @@ class _TicketRun:
                 f" time limit {agent.timeout_minutes:g} min, in `{replay}` at `{checked}`.",
             )
             result = self.runtime.run(session)
+            cost, tokens = result.usage()
+            self.folder.log(
+                "ticket.review.stopped",
+                f"Reviewer session {attempt} stopped: {result.stop_reason.value}",
+                f"Cost {cost} (as reported), tokens {tokens}.",
+            )
             self._verify("the reviewer", start_commit, guard, refs_before, expected_head=checked)
             self._verify_replay(replay, checked, tree_before)
             if result.stop_reason is not StopReason.FINISHED:

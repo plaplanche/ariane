@@ -8,6 +8,8 @@ Loads and validates `ariane.toml`. Every error names the faulty key.
   definition of done (C26), `DEFAULT_DEFINITION_OF_DONE` when the table is absent.
 - `AgentConfig.max_tokens`: optional `[agents.<role>] max_tokens`, a positive integer, Ariane's own token cap per session.
 - `Config.reviewer`: the required `[agents.reviewer]` table (same keys as the implementer's); `parse` refuses a reviewer model equal to the implementer's, naming `agents.reviewer.model` (C10).
+- Globs (`documentation.map[].source`): `**/` matches zero or more whole folders (`src/**/*.py` matches `src/a.py`); other `**` crosses segments (ADR 0026).
+- Check names: a `[[checks]]` name starting with `docs: ` is refused (`checks[i].name`); `{ check = "docs: <name>" }` is accepted in the definition of done when `<name>` is a `[documentation.generated]` entry (C26).
 - `Documentation`, `DocMapEntry`, `GeneratedDoc`: the optional `[documentation]` table (C25, ADR 0026): `paths`, `[[documentation.map]]` (`{stem}` expands, `*` stays in a folder), `[[documentation.generated]]`. `Documentation.not_updated` lists mapped documents a change left untouched; `Documentation.checks` turns generated entries into blocking checks `docs: <name>`. `Config.documentation` is empty without the table.
 - `load`: read the file at the repository root.
 - `parse`: validate a parsed TOML mapping.

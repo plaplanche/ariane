@@ -44,6 +44,20 @@ class SessionResult:
     cap: str | None = None  # which cap stopped a `budget` session
     structured_output: Any = None  # the answer parsed by the runtime, when a schema was given
 
+    def usage(self) -> tuple[str, str]:
+        """The cost and the tokens as the journal words them."""
+        cost = "not reported" if self.cost_usd is None else f"{self.cost_usd:.4f} USD"
+        tokens = ", ".join(
+            f"{'not reported' if n is None else n} {label}"
+            for n, label in (
+                (self.input_tokens, "in"),
+                (self.cache_read_tokens, "cache read"),
+                (self.cache_write_tokens, "cache write"),
+                (self.output_tokens, "out"),
+            )
+        )
+        return cost, tokens
+
 
 class AgentRuntime(Protocol):
     name: str

@@ -6,7 +6,7 @@ The agent runtime interface: one fresh session per stage, whatever the agent CLI
 
 - `AgentRuntime`: the protocol of a runtime; `login_variables` lists the exact names and prefixes (ending in `_`) of the variables it keeps in the agent's environment for its login (ADR 0024).
 - `Session`: what to run, with the runtime's cost cap (`max_budget_usd`) and Ariane's optional token cap (`max_tokens`).
-- `SessionResult`: what came back; `cap` names the cap that stopped a `budget` session.
+- `SessionResult`: what came back; `cap` names the cap that stopped a `budget` session. `usage()` words its cost and tokens for the journal (implementer and reviewer sessions).
 - `StopReason`: why a session ended.
 
 ## Collaborations
