@@ -27,6 +27,7 @@ class PullRequestRefused(Exception):
 @dataclass(frozen=True)
 class Delivered:
     pull_url: str
+    draft: bool = False
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class Delivery:
     environ: Mapping[str, str] | None = field(default=None, repr=False)
     checked: str = ""
     settled: review.Settled | None = None
+    review_round: int = 0
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
@@ -54,11 +56,18 @@ class Delivery:
             "Delivering",
             f"Pushing {self.branch} and opening the pull request.",
         )
-        self.folder.set_status(
-            "pushed",
-            f"{self.branch} pushed; opening the pull request",
-            "see the pull request, or run ariane status <n>".replace("<n>", str(number)),
-        )
+        if self.draft:
+            self.folder.set_status(
+                "needs a human",
+                f"{self.branch} pushed; the review is still no-go, opening a draft pull request",
+                "finish by hand, then run `ariane verify`",
+            )
+        else:
+            self.folder.set_status(
+                "pushed",
+                f"{self.branch} pushed; opening the pull request",
+                "see the pull request, or run ariane status <n>".replace("<n>", str(number)),
+            )
         self.commit_record(f"#{number}: record the checks and the delivery")
         self._require_replayed()
         pushed = git.head(self.worktree)
@@ -73,6 +82,7 @@ class Delivery:
                 base=self.base_branch,
                 title=redact(self.issue.title, self.secrets),
                 body=redact(self._pull_request_body(results), self.secrets),
+                draft=self.draft,
             )
         except TrackerError as exc:
             raise PullRequestRefused(
@@ -82,7 +92,12 @@ class Delivery:
             ) from None
         self.folder.log("ticket.delivered", "Delivered", f"Pull request #{pull.number}: {pull.url}")
         self._publish_statuses(results, pushed)
-        return Delivered(pull.url)
+        return Delivered(pull.url, self.draft)
+
+    @property
+    def draft(self) -> bool:
+        """A draft pull request carries a review that is still `no-go` after the fix rounds."""
+        return self.settled is not None and not self.settled.go
 
     def _require_replayed(self) -> None:
         """The head differs from the replayed commit only by this ticket's records."""
@@ -128,9 +143,17 @@ class Delivery:
     def _review_section(self) -> str:
         if self.settled is None:
             return ""
-        path = f"{ticket.relative_folder(self.issue.number)}/{ticket.REVIEW}"
+        path = (
+            f"{ticket.relative_folder(self.issue.number)}/{ticket.review_file(self.review_round)}"
+        )
         url = self.tracker.file_url(self.branch, path)
-        return review.pull_request_section(self.settled, url, path) + "\n"
+        section = review.pull_request_section(self.settled, url, path)
+        if self.draft:
+            section = (
+                "**Needs a human**: the review is still no-go after the fix rounds. Finish by"
+                " hand, then run `ariane verify`.\n\n" + section
+            )
+        return section + "\n"
 
     def _pull_request_body(self, results: list[checks.CheckResult]) -> str:
         number = self.issue.number

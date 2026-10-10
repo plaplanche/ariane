@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +11,7 @@ from ariane import checks, context, git, logs, process, review, ticket
 from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.redact import redact
+from ariane.review_session import ReviewFailed, ReviewSession
 from ariane.runtime import AgentRuntime, Session, SessionResult, StopReason
 from ariane.tracker import Issue, Tracker, TrackerError
 
@@ -19,6 +19,7 @@ REMOTE = "origin"
 SETUP_TIMEOUT_S = 30 * 60
 EXIT_OK = 0
 EXIT_STOPPED = 1
+MAX_FIX_ROUNDS = 2
 _FAILURES = FAILURES
 
 
@@ -109,20 +110,6 @@ def _describe(exc: BaseException) -> tuple[str, str]:
         return exc.reason, exc.next_action
     first = str(exc).splitlines()[0].rstrip(":") if str(exc) else type(exc).__name__
     return first, "read the error above and retry"
-
-
-def _read_answer(result: SessionResult) -> tuple[review.Review | None, str]:
-    """The validated answer of a reviewer session, or the reason it is not one."""
-    data = result.structured_output
-    if data is None:
-        try:
-            data = json.loads(result.summary)
-        except json.JSONDecodeError:
-            return None, "the answer is not a JSON object"
-    errors = review.validate(data)
-    if errors:
-        return None, "\n".join(errors)
-    return review.parse(data), ""
 
 
 class _TicketRun:
@@ -216,20 +203,17 @@ class _TicketRun:
             )
         return None
 
-    def _implement(self) -> SessionResult:
+    def _implement(self, fix_round: int = 0, findings: str = "") -> SessionResult:
+        """The implementer session, or the fresh session of fix round `fix_round` (C10)."""
         agent = self.config.implementer
         done = self.config.definition_of_done
         docs = self.config.documentation
-        prompt = context.implementer_prompt(self.issue, self.branch, self.config.checks, done, docs)
+        args = (self.issue, self.branch, self.config.checks, done, docs)
+        prompt = context.implementer_prompt(*args, fix_round=fix_round, findings=findings)
         recorded = context.implementer_prompt(
-            self.issue,
-            self.branch,
-            self.config.checks,
-            done,
-            docs,
-            recorded=True,
-            read_at=ticket.now(),
+            *args, fix_round=fix_round, findings=findings, recorded=True, read_at=ticket.now()
         )
+        name = f"Fix session {fix_round}" if fix_round else "Implementer session"
         tokens_cap = "none" if agent.max_tokens is None else f"{agent.max_tokens} tokens"
         session = Session(
             role="implementer",
@@ -244,7 +228,7 @@ class _TicketRun:
         )
         self.folder.log(
             "ticket.session.started",
-            "Implementer session started",
+            f"{name} started",
             f"Runtime {self.runtime.name}, model {agent.model}, tools {', '.join(agent.tools)},"
             f" runtime cost cap {agent.max_budget_usd:g} USD, Ariane token cap {tokens_cap},"
             f" time limit {agent.timeout_minutes:g} min.\n\n"
@@ -256,7 +240,7 @@ class _TicketRun:
         cap = f"Cap reached: {result.cap}.\n\n" if result.cap else ""
         self.folder.log(
             "ticket.session.stopped",
-            f"Implementer session stopped: {result.stop_reason.value}",
+            f"{name} stopped: {result.stop_reason.value}",
             f"{cap}Cost {cost} (as reported), tokens {tokens}.\n\n"
             f"Refused tool calls:\n{denials}\n\n"
             f"Agent summary:\n\n{ticket.fenced(result.summary)}",
@@ -329,7 +313,31 @@ class _TicketRun:
                 + "\n".join(f"- `{p}`" for p in new),
             )
 
-    def _commit_agent_work(self, start_commit: str, result: SessionResult) -> None:
+    def _fix(
+        self,
+        round_: int,
+        start_commit: str,
+        guard: dict[str, str],
+        refs_before: dict[str, str],
+        findings: str,
+    ) -> None:
+        """C10: a fresh implementer session fixes the findings in the ticket's working tree."""
+        self.folder.set_status("implementing", f"fix round {round_} running", "wait")
+        self.folder.log(
+            "ticket.fix.round",
+            f"Fix round {round_} began",
+            f"Findings given to the fix session (data from the reviewer):\n\n"
+            f"{ticket.fenced(findings)}",
+        )
+        ignored_before = git.ignored(self.worktree)
+        result = self._implement(round_, findings)
+        self._verify(f"fix session {round_}", start_commit, guard, refs_before)
+        self._warn_ignored(ignored_before)
+        self._commit_agent_work(start_commit, result, f"#{self.number}: fix round {round_}")
+
+    def _commit_agent_work(
+        self, start_commit: str, result: SessionResult, message: str = ""
+    ) -> None:
         # This ticket's own folder is rewritten by Ariane anyway (an agent's `git commit -a`
         # picks up Ariane's journal); other tickets' records must stay untouched.
         own = ticket.relative_folder(self.number) + "/"
@@ -352,7 +360,7 @@ class _TicketRun:
         if git.commit(
             self.worktree,
             [".", exclude],
-            redact(f"#{self.number}: {self.issue.title}", self.secrets),
+            redact(message or f"#{self.number}: {self.issue.title}", self.secrets),
             env=self.untrusted_env,
         ):
             self.folder.log(
@@ -384,25 +392,40 @@ class _TicketRun:
     def _check_and_deliver(
         self, start_commit: str, guard: dict[str, str], refs_before: dict[str, str]
     ) -> Outcome:
-        checked = git.head(self.worktree)
-        replay, results = self._replay(checked, start_commit, guard, refs_before)
-        try:
-            self.folder.write(ticket.CHECKS, checks.report(results, checked))
-            self.folder.log(
-                "ticket.checks.replayed",
-                "Checks replayed by Ariane",
-                checks.summary_table(results) + "\n\n" + checks.summary_line(results),
-            )
-            failed = checks.blocking_failures(results)
-            if failed:
-                names = ", ".join(r.name for r in failed)
-                raise Stop(
-                    f"blocking checks failed: {names}",
-                    f"read work/{self.number}/checks.md in {self.worktree}",
+        """C10: replay the checks and review; after a `no-go` (or blocking checks failing after
+        a fix round) up to two fix rounds, then deliver, as a draft if still `no-go`."""
+        settled: review.Settled | None = None
+        reviewed = 0
+        failed: list[checks.CheckResult] = []
+        for round_ in range(MAX_FIX_ROUNDS + 1):
+            if round_:
+                self._fix(
+                    round_, start_commit, guard, refs_before, review.fix_feedback(settled, failed)
                 )
-            settled = self._review(replay, checked, start_commit, guard, refs_before, results)
-        finally:
-            self._remove_replay(replay)
+            checked = git.head(self.worktree)
+            replay, results = self._replay(checked, start_commit, guard, refs_before)
+            try:
+                self.folder.write(ticket.CHECKS, checks.report(results, checked))
+                self.folder.log(
+                    "ticket.checks.replayed",
+                    "Checks replayed by Ariane",
+                    checks.summary_table(results) + "\n\n" + checks.summary_line(results),
+                )
+                failed = checks.blocking_failures(results)
+                if failed and not round_:
+                    names = ", ".join(r.name for r in failed)
+                    raise Stop(
+                        f"blocking checks failed: {names}",
+                        f"read work/{self.number}/checks.md in {self.worktree}",
+                    )
+                if not failed:
+                    reviewed = round_
+                    args = (replay, checked, start_commit, guard, refs_before, results, round_)
+                    settled = self._review(*args)
+            finally:
+                self._remove_replay(replay)
+            if settled is not None and settled.go and not failed:
+                break
         delivery = Delivery(
             self.issue,
             self.tracker,
@@ -417,11 +440,19 @@ class _TicketRun:
             self.environ,
             checked,
             settled,
+            reviewed,
         )
         try:
             done = delivery.deliver(results)
         except PullRequestRefused as exc:
             raise Stop(exc.reason, exc.next_action) from None
+        if done.draft:
+            return Outcome(
+                EXIT_STOPPED,
+                f"Opened draft pull request {done.pull_url} for issue #{self.number}: the review"
+                f" is still no-go after {MAX_FIX_ROUNDS} fix rounds. Next: finish by hand, then"
+                " run `ariane verify`.",
+            )
         return Outcome(
             EXIT_OK,
             f"Opened pull request {done.pull_url} for issue #{self.number}, checks replayed green,"
@@ -470,83 +501,39 @@ class _TicketRun:
         guard: dict[str, str],
         refs_before: dict[str, str],
         results: list[checks.CheckResult],
+        round_: int,
     ) -> review.Settled:
-        """C10, C26: a fresh read-only reviewer session in the replay tree; one retry if its
-        answer is invalid. `go` delivers; `no-go` stops for a human."""
-        agent = self.config.reviewer
+        """C10, C26: review `round_` in the replay tree; the record is `review-<round>.md`."""
         diff = git.diff(self.worktree, start_commit, checked, ticket.WORK_DIR)
         tree_before = git.status(replay)
-        error = ""
-        answer: review.Review | None = None
-        for attempt in (1, 2):
-            session = Session(
-                role="reviewer",
-                model=agent.model,
-                tools=agent.tools,
-                max_budget_usd=agent.max_budget_usd,
-                max_tokens=agent.max_tokens,
-                timeout_s=agent.timeout_minutes * 60,
-                cwd=replay,
-                prompt=review.prompt(
-                    self.issue,
-                    diff,
-                    results,
-                    self._all_checks(),
-                    self.config.definition_of_done,
-                    error=error,
-                    not_updated=self.not_updated,
-                ),
-                env=self.agent_env,
-                json_schema=review.SCHEMA,
-            )
-            self.folder.log(
-                "ticket.review.started",
-                f"Reviewer session {attempt} started",
-                f"Runtime {self.runtime.name}, model {agent.model}, tools"
-                f" {', '.join(agent.tools)}, runtime cost cap {agent.max_budget_usd:g} USD,"
-                f" time limit {agent.timeout_minutes:g} min, in `{replay}` at `{checked}`.",
-            )
-            result = self.runtime.run(session)
-            cost, tokens = result.usage()
-            self.folder.log(
-                "ticket.review.stopped",
-                f"Reviewer session {attempt} stopped: {result.stop_reason.value}",
-                f"Cost {cost} (as reported), tokens {tokens}.",
-            )
+
+        def after_session() -> None:
             self._verify("the reviewer", start_commit, guard, refs_before, expected_head=checked)
             self._verify_replay(replay, checked, tree_before)
-            if result.stop_reason is not StopReason.FINISHED:
-                raise Stop(
-                    f"the reviewer session stopped: {result.stop_reason.value}",
-                    f"read work/{self.number}/journal.md; Ariane pushed nothing",
-                    ticket.fenced(result.summary),
-                    status="needs a human",
-                )
-            answer, error = _read_answer(result)
-            if answer is not None:
-                break
-            self.folder.log("ticket.review.invalid", f"Reviewer answer {attempt} invalid", error)
-        if answer is None:
-            raise Stop(
-                f"the reviewer's answer was invalid twice ({error.splitlines()[0]})",
-                f"read work/{self.number}/journal.md; Ariane pushed nothing",
-                error,
-                status="needs a human",
-            )
+
+        sessions = ReviewSession(
+            self.runtime,
+            self.config.reviewer,
+            self.folder,
+            self.issue,
+            self.agent_env,
+            self._all_checks(),
+            self.config.definition_of_done,
+        )
+        try:
+            answer = sessions.run(replay, checked, diff, results, self.not_updated, after_session)
+        except ReviewFailed as exc:
+            raise Stop(exc.reason, exc.next_action, exc.detail, status="needs a human") from None
         settled = review.settle(answer, self.config.definition_of_done, results)
-        self.folder.write(ticket.REVIEW, review.record(settled, checked, agent.model))
+        model = self.config.reviewer.model
+        self.folder.write(
+            ticket.review_file(round_), review.record(settled, checked, model, round_)
+        )
         self.folder.log(
             "ticket.review.verdict",
-            f"Review: {settled.verdict}",
+            f"Review {round_}: {settled.verdict}",
             review.findings_table(settled),
         )
-        if not settled.go:
-            blocking = sum(f.severity == "blocking" for f in settled.findings)
-            raise Stop(
-                f"the review is no-go ({blocking} blocking findings)",
-                f"read work/{self.number}/review-0.md in {self.worktree}; a human decides",
-                status="needs a human",
-            )
         return settled
 
     def _verify_replay(self, replay: Path, checked: str, tree_before: str) -> None:

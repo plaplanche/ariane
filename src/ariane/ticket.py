@@ -17,7 +17,6 @@ BRIEF = "brief.md"
 JOURNAL = "journal.md"
 STATUS = "status.md"
 CHECKS = "checks.md"
-REVIEW = "review-0.md"
 RECORDS = (BRIEF, JOURNAL, STATUS, CHECKS)
 _BACKTICKS = re.compile(r"`+")
 
@@ -28,6 +27,11 @@ def folder_path(root: Path, number: int) -> Path:
 
 def relative_folder(number: int) -> str:
     return f"{WORK_DIR}/{number}"
+
+
+def review_file(round_: int) -> str:
+    """The record of review `round_` (0 is the first review, 1 and 2 follow a fix round)."""
+    return f"review-{round_}.md"
 
 
 def now() -> str:

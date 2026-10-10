@@ -54,11 +54,14 @@ class GitHubTracker:
         except (KeyError, TypeError, ValueError) as exc:
             raise TrackerError(f"GitHub API: unexpected issue #{number}: {exc!r}") from None
 
-    def open_pull_request(self, *, head: str, base: str, title: str, body: str) -> PullRequest:
+    def open_pull_request(
+        self, *, head: str, base: str, title: str, body: str, draft: bool = False
+    ) -> PullRequest:
         data = self._request(
             "POST",
             f"/repos/{self._repository}/pulls",
-            {"head": head, "base": base, "title": title, "body": body},
+            {"head": head, "base": base, "title": title, "body": body}
+            | ({"draft": True} if draft else {}),
         )
         try:
             return PullRequest(number=int(data["number"]), url=str(data["html_url"]))

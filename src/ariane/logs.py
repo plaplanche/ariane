@@ -72,6 +72,7 @@ FUNCTIONAL_TYPES = _declare(
             "info",
             "The review ended: verdict, findings, definition of done.",
         ),
+        ("ticket.fix.round", "info", "A fix round began, with the findings its session was given."),
         ("ticket.delivering", "info", "Delivery began: push and pull request."),
         ("ticket.pushed", "info", "The ticket branch was pushed."),
         ("ticket.delivered", "info", "The pull request was opened."),

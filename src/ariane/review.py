@@ -291,10 +291,11 @@ def findings_table(settled: Settled) -> str:
     return "\n".join(lines)
 
 
-def record(settled: Settled, commit: str, model: str) -> str:
-    """`work/<n>/review-0.md`: the reviewed commit, verdict, findings, every item, learnings."""
+def record(settled: Settled, commit: str, model: str, round_: int = 0) -> str:
+    """`work/<n>/review-<round>.md`: the reviewed commit, verdict, findings, every item,
+    learnings."""
     parts = [
-        "# Review 0\n",
+        f"# Review {round_}\n",
         f"- Reviewed commit: `{commit}`",
         f"- Reviewer model: {model}",
         f"- Verdict: **{settled.verdict}**"
@@ -313,6 +314,18 @@ def record(settled: Settled, commit: str, model: str) -> str:
     parts.append("## Proposed learnings (not decided)\n")
     parts += [f"- {text}" for text in settled.review.learnings] or ["None."]
     return "\n".join(parts) + "\n"
+
+
+def fix_feedback(settled: Settled | None, failed: Sequence[checks.CheckResult] = ()) -> str:
+    """What a fix session is told: the last review's findings and the blocking checks that
+    failed after the last fix round. It comes from an agent, so the caller gives it as data."""
+    lines = []
+    if settled is not None:
+        for f in settled.findings:
+            where = f" ({f.file}:{f.line})" if f.file else ""
+            lines.append(f"- {f.severity}{where} {f.title}: {f.detail}")
+    lines += [f"- blocking check failed: {r.name} ({r.detail})" for r in failed]
+    return "\n".join(lines) or "(no finding)"
 
 
 def pull_request_section(settled: Settled, review_url: str, review_path: str) -> str:

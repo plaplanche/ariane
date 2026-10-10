@@ -39,9 +39,13 @@ flowchart TD
   flow --> delivery
   flow --> redact
   flow --> review
+  flow --> review_session
   flow --> runtime
   flow --> tracker
   git --> process
+  review_session --> review
+  review_session --> runtime
+  review_session --> ticket
   review --> checks
   review --> config
   review --> context
@@ -87,10 +91,15 @@ sequenceDiagram
   F->>R: run a read-only reviewer session in the replay tree
   R-->>F: answer (validated by review, one retry)
   F->>G: verify git, the tree and the remote did not change
-  F->>F: review-0.md; go continues, no-go stops (needs a human)
+  F->>F: review-0.md; go continues
+  loop at most two fix rounds, while the review is no-go
+    F->>R: run a fresh implementer session with the findings
+    F->>G: guard checks, commit, clean replay, checks
+    F->>R: run a read-only reviewer session (review-1.md, review-2.md)
+  end
   F->>D: deliver
   D->>G: one push
-  D->>T: open the pull request
+  D->>T: open the pull request (a draft, needs a human, if still no-go)
   D->>T: publish statuses
   F-->>CLI: Outcome
   CLI-->>U: one line

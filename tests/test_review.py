@@ -32,7 +32,7 @@ def answer(**changes: Any) -> dict[str, Any]:
 
 
 def pull_body(tracker: InMemoryTracker) -> str:
-    return tracker.opened[-1]["body"]
+    return str(tracker.opened[-1]["body"])
 
 
 def test_c10_review_go_delivers_with_the_verdict_in_the_pull_request_body(
@@ -46,15 +46,14 @@ def test_c10_review_go_delivers_with_the_verdict_in_the_pull_request_body(
     assert "ariane/7" in project.remote_branches()
 
 
-def test_c10_review_go_with_a_blocking_finding_is_no_go_and_nothing_is_pushed(
+def test_c10_review_go_with_a_blocking_finding_is_no_go_and_goes_to_fix_rounds(
     project: Project, tracker: InMemoryTracker
 ) -> None:
     runtime = FakeRuntime(answers=[answer(findings=[BLOCKING])])
     outcome = start(project, tracker, runtime)
     assert outcome.exit_code == 1
-    assert "the review is no-go (1 blocking findings)" in outcome.line
-    assert "ariane/7" not in project.remote_branches()
-    assert tracker.opened == []
+    assert "draft pull request" in outcome.line
+    assert [s.role for s in runtime.sessions].count("reviewer") == 3
     status = (worktree(project) / "work/7/status.md").read_text(encoding="utf-8")
     assert "Last action: needs a human" in status
     assert "**no-go** (the reviewer answered go)" in (

@@ -4,7 +4,7 @@ The GitHub tracker over the REST API, with the standard library only.
 
 ## Main types and functions
 
-- `GitHubTracker`: implements `Tracker` (read an issue, open a pull request, publish statuses).
+- `GitHubTracker`: implements `Tracker` (read an issue, open a pull request, as a draft when asked, publish statuses).
 - `web_url`: the web address matching an API address.
 
 ## Collaborations
@@ -20,4 +20,4 @@ flowchart LR
 
 ## Serves
 
-C1; ADR 0007. See [the component view](../3-components.md).
+C1, C10; ADR 0007, ADR 0027. See [the component view](../3-components.md).
