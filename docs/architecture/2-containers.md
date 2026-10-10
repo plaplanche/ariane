@@ -9,7 +9,7 @@ flowchart TB
   repo[(Repository)]
   trees[(Ticket working trees and replay trees in repo.ariane/)]
   folder[(Ticket folder work/n/)]
-  session[Agent session process]
+  session[Agent session process: claude or opencode]
   ci[CI workflows: ci.yml, check-statuses.yml]
   github[GitHub]
   user --> cmd

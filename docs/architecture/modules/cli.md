@@ -6,6 +6,8 @@ The `ariane` command line. It parses arguments, wires the configuration, tracker
 
 - `main`: the entry point, returns the exit code. Commands: `start`, `status`, and `verify <branch> [--issue N]` (checks and reviews a local branch finished by hand, C23, ADR 0028).
 
+`_runtime` builds the `RoutedRuntime` from each role's `runtime` in the configuration; `config.load` honours `ARIANE_CONFIG`.
+
 ## Collaborations
 
 Arrows go from the caller to the callee.
@@ -19,6 +21,8 @@ flowchart LR
   cli --> process
   cli --> ticket
   cli --> claude_code
+  cli --> opencode
+  cli --> runtime
   cli --> github
   cli --> logs
   __main__ --> cli

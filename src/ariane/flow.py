@@ -12,7 +12,7 @@ from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.redact import redact
 from ariane.review_session import ReviewFailed, ReviewSession
-from ariane.runtime import AgentRuntime, Session, SessionResult, StopReason
+from ariane.runtime import AgentRuntime, Session, SessionResult, StopReason, for_role
 from ariane.tracker import Issue, Tracker, TrackerError
 
 REMOTE = "origin"
@@ -229,7 +229,8 @@ class _TicketRun:
         self.folder.log(
             "ticket.session.started",
             f"{name} started",
-            f"Runtime {self.runtime.name}, model {agent.model}, tools {', '.join(agent.tools)},"
+            f"Runtime {for_role(self.runtime, session.role).name}, model {agent.model}, tools"
+            f" {', '.join(agent.tools)},"
             f" runtime cost cap {agent.max_budget_usd:g} USD, Ariane token cap {tokens_cap},"
             f" time limit {agent.timeout_minutes:g} min.\n\n"
             f"Context given to the agent:\n\n{ticket.fenced(recorded)}",

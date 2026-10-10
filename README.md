@@ -34,6 +34,32 @@ ariane status 12
 ariane verify my-branch --issue 12
 ```
 
+### Reviewer on opencode
+
+The reviewer can run on [opencode](https://opencode.ai) (install it separately and put `opencode`
+on the PATH) with another vendor's model: set `runtime = "opencode"`, `model = "<provider>/<model>"`
+and `tools = ["read", "glob", "grep"]` in `[agents.reviewer]`, and export the provider's key (for
+example `OPENAI_API_KEY`). The implementer stays on Claude Code. `ARIANE_CONFIG` names a
+configuration file to read instead of `ariane.toml` for one run;
+[`docs/ariane.opencode-reviewer.example.toml`](docs/ariane.opencode-reviewer.example.toml) is Ariane's
+own configuration with the reviewer on opencode (ADR 0029).
+
+PowerShell:
+
+```powershell
+$env:OPENAI_API_KEY = "<the provider's key>"
+$env:ARIANE_CONFIG = "docs/ariane.opencode-reviewer.example.toml"
+ariane verify my-branch
+Remove-Item Env:ARIANE_CONFIG
+```
+
+bash:
+
+```bash
+export OPENAI_API_KEY="<the provider's key>"
+ARIANE_CONFIG=docs/ariane.opencode-reviewer.example.toml ariane verify my-branch
+```
+
 For a project other than Ariane, start from [`docs/ariane.example.toml`](docs/ariane.example.toml):
 copy it to `ariane.toml` at the root of your repository and adapt it.
 

@@ -65,3 +65,31 @@ class AgentRuntime(Protocol):
     login_variables: tuple[str, ...]
 
     def run(self, session: Session) -> SessionResult: ...
+
+
+class RoutedRuntime:
+    """One runtime per role (ADR 0029): a session goes to the runtime of its role."""
+
+    def __init__(self, runtimes: Mapping[str, AgentRuntime]) -> None:
+        self.runtimes = dict(runtimes)
+        self.name = ", ".join(dict.fromkeys(r.name for r in self.runtimes.values()))
+        self.login_variables = tuple(
+            dict.fromkeys(v for r in self.runtimes.values() for v in r.login_variables)
+        )
+
+    def for_role(self, role: str) -> AgentRuntime:
+        return self.runtimes[role]
+
+    def run(self, session: Session) -> SessionResult:
+        return self.runtimes[session.role].run(session)
+
+
+def for_role(runtime: AgentRuntime, role: str) -> AgentRuntime:
+    """The runtime that serves `role` (the runtime itself unless it routes by role)."""
+    return runtime.for_role(role) if isinstance(runtime, RoutedRuntime) else runtime
+
+
+def describe(runtime: AgentRuntime) -> str:
+    """The runtime as the journal words it: its name, plus its own description if it has one."""
+    describer = getattr(runtime, "describe", None)
+    return str(describer()) if callable(describer) else runtime.name

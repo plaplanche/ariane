@@ -177,3 +177,38 @@ def test_c10_review_the_reviewer_table_is_required_and_validated() -> None:
         config.parse(with_change("agents.reviewer.tools", ["Read", "Skill"]))
     cfg = config.parse(copy.deepcopy(VALID))
     assert (cfg.reviewer.model, cfg.reviewer.tools) == ("claude-opus-5-5", ("Read", "Glob", "Grep"))
+
+
+def write_config(path: Path, model: str) -> None:
+    text = (Path(__file__).resolve().parent.parent / "ariane.toml").read_text(encoding="utf-8")
+    path.write_text(text.replace("claude-opus-5-5", model), encoding="utf-8")
+
+
+def test_c22_config_path_arianes_config_names_the_file_to_read(tmp_path: Path) -> None:
+    write_config(tmp_path / "ariane.toml", "model-a")
+    write_config(tmp_path / "other.toml", "model-b")
+    assert config.load(tmp_path, {}).reviewer.model == "model-a"
+    assert config.load(tmp_path, {"ARIANE_CONFIG": "other.toml"}).reviewer.model == "model-b"
+    absolute = str(tmp_path / "other.toml")
+    assert config.load(tmp_path, {"ARIANE_CONFIG": absolute}).reviewer.model == "model-b"
+
+
+def test_c22_config_path_the_named_file_is_validated_and_errors_name_it(tmp_path: Path) -> None:
+    write_config(tmp_path / "ariane.toml", "model-a")
+    (tmp_path / "bad.toml").write_text("[project]\nbase_branch = 3\n", encoding="utf-8")
+    with pytest.raises(config.ConfigError, match=r"ARIANE_CONFIG \(bad\.toml\): tracker"):
+        config.load(tmp_path, {"ARIANE_CONFIG": "bad.toml"})
+    with pytest.raises(config.ConfigError, match=r"ARIANE_CONFIG .*missing\.toml.*not found"):
+        config.load(tmp_path, {"ARIANE_CONFIG": "missing.toml"})
+
+
+def test_c22_config_path_the_opencode_example_is_accepted() -> None:
+    root = Path(__file__).resolve().parent.parent
+    cfg = config.load(root, {"ARIANE_CONFIG": "docs/ariane.opencode-reviewer.example.toml"})
+    assert cfg.reviewer.runtime == "opencode" and cfg.implementer.runtime == "claude-code"
+
+
+def test_c22_config_path_a_folder_is_not_reported_as_missing(tmp_path: Path) -> None:
+    (tmp_path / "dir.toml").mkdir()
+    with pytest.raises(config.ConfigError, match="cannot be read"):
+        config.load(tmp_path, {"ARIANE_CONFIG": "dir.toml"})
