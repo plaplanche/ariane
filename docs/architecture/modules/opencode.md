@@ -1,6 +1,6 @@
 # Module `ariane.opencode`
 
-opencode as an agent runtime, for the reviewer role: it starts `opencode run --pure --format json --model <provider/model> --agent ariane-<role>` with the prompt as the message, in the session's working tree, and turns the event stream into a `SessionResult`.
+opencode as an agent runtime, for the reviewer role: it starts `opencode run --pure --format json --model <provider/model> --agent ariane-<role>` with the prompt on standard input (no message argument, no length limit), in the session's working tree, and turns the event stream into a `SessionResult`.
 
 - The environment adds `OPENCODE_CONFIG_CONTENT` (the agent `ariane-<role>` with `permission` `"*": "deny"` and `allow` for the role's tools only, `steps` as the turn cap, autoupdate off, sharing disabled), `OPENCODE_DISABLE_CLAUDE_CODE=1` and `OPENCODE_DISABLE_AUTOUPDATE=1`.
 - opencode has no schema option: a session with a `json_schema` gets the schema in the message and must end with one fenced `json` block; the adapter parses the last block of the last text part into `structured_output` (Ariane validates it, ADR 0016).

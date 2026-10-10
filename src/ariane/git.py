@@ -262,13 +262,27 @@ def committed_paths(cwd: Path, since: str, pathspec: str) -> list[str]:
     return [line for line in listing.splitlines() if line]
 
 
-def commit(cwd: Path, pathspec: list[str], message: str, *, env: Mapping[str, str]) -> bool:
+def commit(
+    cwd: Path,
+    pathspec: list[str],
+    message: str,
+    *,
+    env: Mapping[str, str],
+    tolerate_ignored: bool = False,
+) -> bool:
     """Commit the changes under `pathspec` only; return False when it holds none.
 
-    The index is reset to HEAD first: whatever an agent or a check staged does not ride along.
+    An ignored path makes `git add` fail: that raises `GitError`, unless `tolerate_ignored`, which
+    returns False instead. The index is reset to HEAD first: whatever an agent or a check staged
+    does not ride along.
     """
     git(["reset", "--quiet"], cwd, env=env)
-    git(["add", "--all", "--", *pathspec], cwd, env=env)
+    # English messages, so that "ignored" can be recognised whatever the user's locale.
+    added = git(["add", "--all", "--", *pathspec], cwd, env={**env, "LC_ALL": "C"}, check=False)
+    if not added.ok:
+        if tolerate_ignored and "ignored" in added.output:
+            return False
+        raise GitError(redact(f"git add failed:\n{added.output.strip()}"))
     if git(["diff", "--cached", "--quiet"], cwd, env=env, check=False).ok:
         return False
     git(["commit", "--quiet", "-m", message], cwd, env=env)

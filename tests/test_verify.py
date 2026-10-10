@@ -9,6 +9,7 @@ from test_fix_rounds import NO_GO
 
 from ariane import git, verify
 from ariane.flow import Outcome
+from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
 
 from conftest import FakeRuntime, Project, make_config, sh
@@ -141,3 +142,80 @@ def test_c23_verify_leaves_no_working_tree_behind(project: Project, branch: str)
     assert str(Path(project.root.parent / "hand-tree")) not in sh(
         ["git", "worktree", "list"], project.root
     )
+
+
+def test_c23_verify_records_a_project_ignoring_work_gets_exit_1_and_nothing_recorded(
+    project: Project, branch: str
+) -> None:
+    exclude = project.root / ".git" / "info" / "exclude"
+    exclude.write_text("work/\n", encoding="utf-8")
+    outcome = run(project, FakeRuntime())
+    assert outcome.exit_code == 1
+    assert "nothing was recorded" in outcome.line
+    assert "check that work/ is not ignored, then run verify again" in outcome.line
+    assert "Records committed" not in outcome.line
+    assert sh(["git", "log", "-1", "--format=%s", BRANCH], project.root).startswith("Bump")
+
+
+def test_c23_verify_records_a_branch_committed_to_during_the_run_commits_nothing(
+    project: Project, branch: str
+) -> None:
+    def commit_elsewhere(session: Session) -> None:
+        other = project.root.parent / "racing-tree"
+        sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
+        (other / "app.txt").write_text("version 3\n", encoding="utf-8")
+        sh(["git", "commit", "--quiet", "-am", "Racing commit"], other)
+        sh(["git", "worktree", "remove", str(other)], project.root)
+
+    runtime = FakeRuntime(review_actions=[commit_elsewhere])
+    outcome = run(project, runtime)
+    assert outcome.exit_code == 1
+    assert "Did not verify" in outcome.line
+    assert sh(["git", "log", "-1", "--format=%s", BRANCH], project.root) == "Racing commit"
+
+
+def test_c23_verify_records_a_branch_checked_out_elsewhere_during_the_run_commits_nothing(
+    project: Project, branch: str
+) -> None:
+    other = project.root.parent / "late-tree"
+
+    def check_out(session: Session) -> None:
+        sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
+
+    outcome = run(project, FakeRuntime(review_actions=[check_out]))
+    assert outcome.exit_code == 1
+    assert "now checked out" in outcome.line
+    assert sh(["git", "log", "-1", "--format=%s", BRANCH], project.root).startswith("Bump")
+    sh(["git", "worktree", "remove", "--force", str(other)], project.root)
+
+
+def test_c23_verify_records_branch_moved_is_caught_before_the_commit(
+    project: Project, branch: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(verify._Verification, "_unchanged", lambda *a, **k: None)
+
+    def commit_elsewhere(session: Session) -> None:
+        other = project.root.parent / "racing-tree"
+        sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
+        (other / "app.txt").write_text("version 3\n", encoding="utf-8")
+        sh(["git", "commit", "--quiet", "-am", "Racing commit"], other)
+        sh(["git", "worktree", "remove", str(other)], project.root)
+
+    outcome = run(project, FakeRuntime(review_actions=[commit_elsewhere]))
+    assert outcome.exit_code == 1 and "committed to during the run" in outcome.line
+    assert sh(["git", "log", "-1", "--format=%s", BRANCH], project.root) == "Racing commit"
+
+
+def test_c23_verify_records_a_tree_dirtied_during_the_run_commits_nothing(
+    project: Project, branch: str
+) -> None:
+    other = project.root.parent / "dirty-tree"
+    sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
+
+    def dirty(session: Session) -> None:
+        (other / "app.txt").write_text("edited\n", encoding="utf-8")
+
+    outcome = run(project, FakeRuntime(review_actions=[dirty]))
+    assert outcome.exit_code == 1 and "uncommitted changes" in outcome.line
+    assert sh(["git", "log", "-1", "--format=%s", BRANCH], project.root).startswith("Bump")
+    sh(["git", "worktree", "remove", "--force", str(other)], project.root)

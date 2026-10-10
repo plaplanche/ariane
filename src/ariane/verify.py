@@ -13,7 +13,7 @@ from ariane.config import Config
 from ariane.flow import EXIT_OK, EXIT_STOPPED, REMOTE, SETUP_TIMEOUT_S, Outcome
 from ariane.redact import redact
 from ariane.review_session import ReviewFailed, ReviewSession
-from ariane.runtime import AgentRuntime
+from ariane.runtime import AgentRuntime, for_role
 from ariane.tracker import Issue, Tracker, TrackerError
 
 VERIFY_DIR = f"{ticket.WORK_DIR}/verify"
@@ -110,8 +110,11 @@ class _Verification:
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
         remotes = git.remotes(repo_root)
         token_env = config.tracker.token_env
-        self.agent_env = context.untrusted_environment(
-            environ, token_env=token_env, remotes=remotes, login_variables=runtime.login_variables
+        self.reviewer_env = context.untrusted_environment(
+            environ,
+            token_env=token_env,
+            remotes=remotes,
+            login_variables=for_role(runtime, "reviewer").login_variables,
         )
         self.untrusted_env = context.untrusted_environment(
             environ, token_env=token_env, remotes=remotes
@@ -183,7 +186,7 @@ class _Verification:
             self.config.reviewer,
             folder,
             self.issue,
-            self.agent_env,
+            self.reviewer_env,
             all_checks,
             self.config.definition_of_done,
         )
@@ -204,6 +207,7 @@ class _Verification:
             REVIEW: review.record(settled, self.head, model),
             ticket.CHECKS: checks.report(results, self.head),
         }
+        self._before_commit()
         self._commit(texts, checks.summary_line(results))
         green = settled.go and not checks.blocking_failures(results)
         line = (
@@ -220,6 +224,27 @@ class _Verification:
             raise Refused(f"{after} moved a head", "inspect the branch and the replay tree")
         if git.status(replay) != tree_before:
             raise Refused(f"{after} changed files in the replay tree", "inspect the session")
+
+    def _before_commit(self) -> None:
+        """The branch and where it is checked out are as they were at the start (minutes ago)."""
+        if git.out(["rev-parse", f"refs/heads/{self.branch}"], self.repo_root) != self.head:
+            raise Refused(
+                f"branch {self.branch} was committed to during the run",
+                "run verify again on the new head",
+            )
+        where = git.worktree_of(self.repo_root, self.branch)
+        if where != self.where:
+            was = self.where or "nowhere"
+            raise Refused(
+                f"branch {self.branch} is now checked out in {where or 'nowhere'}, was {was}",
+                "run verify again",
+            )
+        if where is not None and git.status(where):
+            raise Refused(
+                f"branch {self.branch} is checked out in {where} with uncommitted changes"
+                " made during the run",
+                "commit or discard them, then run verify again",
+            )
 
     def _commit(self, texts: dict[str, str], summary: str) -> None:
         """Write the redacted records into a working tree of the branch and commit them."""
@@ -239,12 +264,19 @@ class _Verification:
             message = redact(
                 f"Verify {self.branch}: record the checks and the review", self.secrets
             )
-            git.commit(
+            committed = git.commit(
                 tree,
                 [relative_folder(self.branch)],
                 f"{message}\n\n{summary}",
                 env=self.untrusted_env,
+                tolerate_ignored=True,
             )
+            if not committed:
+                raise Refused(
+                    f"nothing was recorded: git found nothing to commit under"
+                    f" {relative_folder(self.branch)}",
+                    "check that work/ is not ignored, then run verify again",
+                )
         finally:
             if temporary:
                 git.remove_worktree(self.repo_root, tree)

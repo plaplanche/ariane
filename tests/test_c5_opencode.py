@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
+from test_fix_rounds import NO_GO
 
-from ariane import config, review, runtime
+from ariane import cli, config, flow, process, review, runtime
 from ariane.opencode import OpenCodeRuntime, inline_config, login_variables
 from ariane.review_session import read_answer
 from ariane.runtime import Session, SessionResult, StopReason
+from ariane.tracker import InMemoryTracker
 
-from conftest import PY
+from conftest import PY, FakeRuntime, Project, go_answer, make_config
 
 HERE = Path(__file__).resolve().parent
 REVIEW = HERE / "fixtures" / "opencode_review.jsonl"
@@ -124,7 +127,7 @@ def test_c5_opencode_pure_and_the_claude_code_switch_are_always_set(tmp_path: Pa
     argv = seen["argv"]
     assert argv[:6] == ["run", "--pure", "--format", "json", "--model", "openai/gpt-x"]
     assert argv[6:8] == ["--agent", "ariane-reviewer"]
-    assert argv[8].startswith("review this") and "JSON Schema" in argv[8]
+    assert len(argv) == 8
     env = seen["env"]
     assert env["OPENCODE_DISABLE_CLAUDE_CODE"] == "1"
     assert env["OPENCODE_DISABLE_AUTOUPDATE"] == "1"
@@ -165,12 +168,50 @@ def test_c5_opencode_the_implementer_role_is_refused() -> None:
         config.parse(data)
 
 
-def test_c5_opencode_a_too_long_prompt_ends_as_error_not_a_crash(tmp_path: Path) -> None:
+def test_c5_opencode_stdin_the_command_has_no_message_argument(tmp_path: Path) -> None:
+    command = OpenCodeRuntime().command(session(tmp_path))
+    assert command[-2:] == ["--agent", "ariane-reviewer"]
+    assert "review this" not in command
+
+
+def test_c5_opencode_stdin_the_prompt_is_given_as_input_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def stream(argv: Any, **kwargs: Any) -> process.Completed:
+        seen.update(kwargs)
+        return process.Completed(tuple(argv), 0, "", "", False, 0.0)
+
+    monkeypatch.setattr(process, "stream", stream)
+    OpenCodeRuntime().run(session(tmp_path))
+    assert seen["input_text"].startswith("review this")
+    assert "JSON Schema" in seen["input_text"]
+
+
+def test_c5_opencode_stdin_a_300000_character_prompt_runs_and_is_not_cut(tmp_path: Path) -> None:
     long = session(tmp_path)
     object.__setattr__(long, "prompt", "x" * 300_000)
-    result = OpenCodeRuntime((PY, "-c", "pass")).run(long)
-    assert result.stop_reason is StopReason.ERROR
-    assert "command line" in result.summary
+    dump = tmp_path / "dump.json"
+    fake = HERE / "fake_opencode.py"
+    adapter = OpenCodeRuntime((PY, str(fake), str(REVIEW), str(dump), "0", "end"))
+    result = adapter.run(long)
+    assert result.stop_reason is StopReason.FINISHED
+    recorded = json.loads(dump.read_text(encoding="utf-8"))
+    assert recorded["stdin_size"] >= 300_000
+    assert all(len(arg) < 1000 for arg in recorded["argv"])
+
+
+def test_c5_opencode_cli_runtime_builds_opencode_with_the_model_for_a_reviewer(
+    tmp_path: Path,
+) -> None:
+    cfg = make_config()
+    reviewer = replace(cfg.reviewer, runtime=config.OPENCODE, model="openai/gpt-x")
+    routed = cli._runtime(replace(cfg, reviewer=reviewer))
+    built = routed.for_role("reviewer")
+    assert isinstance(built, OpenCodeRuntime)
+    assert built.login_variables == ("OPENAI_API_KEY",)
+    assert routed.for_role("implementer").name == "claude-code"
 
 
 def test_c5_opencode_an_unstartable_executable_ends_as_error(tmp_path: Path) -> None:
@@ -200,7 +241,6 @@ def test_c5_opencode_roles_are_routed_to_their_runtime(tmp_path: Path) -> None:
     routed = runtime.RoutedRuntime({"implementer": runtime_stub(), "reviewer": reviewer})
     assert runtime.for_role(routed, "reviewer") is reviewer
     assert routed.name == "stub, opencode"
-    assert "OPENAI_API_KEY" in routed.login_variables and "STUB_" in routed.login_variables
 
 
 class StubRuntime:
@@ -213,3 +253,44 @@ class StubRuntime:
 
 def runtime_stub() -> StubRuntime:
     return StubRuntime()
+
+
+def test_c21_role_env_the_reviewer_on_opencode_keeps_its_key_and_the_implementer_does_not(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    implementer = FakeRuntime()
+    reviewer = FakeRuntime(login_variables=("OPENAI_API_KEY",))
+    routed = runtime.RoutedRuntime({"implementer": implementer, "reviewer": reviewer})
+    environ = {**os.environ, "OPENAI_API_KEY": "sk-o", "ANTHROPIC_API_KEY": "sk-a"}
+    outcome = flow.start(
+        7,
+        repo_root=project.root,
+        config=make_config(),
+        tracker=tracker,
+        runtime=routed,
+        environ={**environ, "GH_TOKEN": "t"},
+    )
+    assert outcome.exit_code == 0, outcome.line
+    (built,) = implementer.sessions
+    assert "OPENAI_API_KEY" not in built.env and "ANTHROPIC_API_KEY" in built.env
+    (judged,) = reviewer.sessions
+    assert "OPENAI_API_KEY" in judged.env
+    assert "ANTHROPIC_API_KEY" not in judged.env
+
+
+def test_c21_role_env_the_fix_session_does_not_hold_the_reviewers_key(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    implementer = FakeRuntime()
+    reviewer = FakeRuntime(login_variables=("OPENAI_API_KEY",), answers=[NO_GO, go_answer()])
+    routed = runtime.RoutedRuntime({"implementer": implementer, "reviewer": reviewer})
+    flow.start(
+        7,
+        repo_root=project.root,
+        config=make_config(),
+        tracker=tracker,
+        runtime=routed,
+        environ={**os.environ, "OPENAI_API_KEY": "sk-o", "GH_TOKEN": "t"},
+    )
+    assert len(implementer.sessions) == 2
+    assert all("OPENAI_API_KEY" not in s.env for s in implementer.sessions)
