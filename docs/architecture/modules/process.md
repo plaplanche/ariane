@@ -25,6 +25,7 @@ flowchart LR
   flow --> process
   git --> process
   process --> logs
+  verify --> process
 ```
 
 ## Serves

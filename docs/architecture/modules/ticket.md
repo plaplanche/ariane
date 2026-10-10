@@ -24,8 +24,10 @@ flowchart LR
   cli --> ticket
   delivery --> ticket
   flow --> ticket
+  review_session --> ticket
+  verify --> ticket
 ```
 
 ## Serves
 
-C1, C23; ADR 0019. See [the component view](../3-components.md).
+C1, C10, C23; ADR 0019. See [the component view](../3-components.md).

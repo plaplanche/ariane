@@ -109,6 +109,9 @@ sequenceDiagram
   F->>G: add a clean replay tree
   F->>C: replay the checks
   C-->>F: results
+  alt a blocking check failed
+    F-->>CLI: stop before any review, push nothing
+  end
   F->>R: run a read-only reviewer session in the replay tree
   R-->>F: answer (validated by review, one retry)
   F->>G: verify git, the tree and the remote did not change
