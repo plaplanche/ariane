@@ -8,6 +8,7 @@
 - `Outcome`: the result reported to the command line.
 - `Stop`: ends the flow early with a recorded reason.
 - Documentation upkeep (C25): after the agent's work is committed, mapped documents of changed files that the ticket did not change are journaled (`ticket.docs.not_updated`) and given to the reviewer; the `generated` documentation commands run in the clean replay as blocking checks `docs: <name>`, in `checks.md` and the statuses.
+- Each reviewer session journals `ticket.review.stopped` ("Reviewer session <n> stopped: <reason>") with its cost and tokens, in the implementer's format, including an invalid answer's.
 - `worktree_path`, `branch_name`: where a ticket lives.
 
 ## Collaborations

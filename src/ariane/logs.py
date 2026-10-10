@@ -61,6 +61,11 @@ FUNCTIONAL_TYPES = _declare(
         ("ticket.checks.worktree", "info", "The clean working tree used to replay the checks."),
         ("ticket.checks.replayed", "info", "The checks were replayed by Ariane, with the result."),
         ("ticket.review.started", "info", "A reviewer session started, with its model and limits."),
+        (
+            "ticket.review.stopped",
+            "info",
+            "A reviewer session stopped, with its cost and tokens.",
+        ),
         ("ticket.review.invalid", "warning", "The reviewer's answer was invalid; asking again."),
         (
             "ticket.review.verdict",

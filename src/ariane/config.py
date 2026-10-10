@@ -280,10 +280,14 @@ NO_DOCUMENTATION = Documentation()
 
 
 def _glob_regex(glob: str) -> re.Pattern[str]:
-    """`*` and `?` stay within a path segment, `**` crosses segments."""
+    """`*` and `?` stay within a path segment, `**` crosses segments, `**/` is any folders."""
     out = []
     i = 0
     while i < len(glob):
+        if glob.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+            continue
         if glob.startswith("**", i):
             out.append(".*")
             i += 2
@@ -365,6 +369,9 @@ def parse(data: dict[str, Any]) -> Config:
     setup = None
     if "setup" in project:
         setup = _str_list(project, "setup", "project.")
+    checks = _checks(raw_checks)
+    documentation = _documentation(data)
+    names = {c.name for c in (*checks, *documentation.checks())}
     return Config(
         base_branch=base_branch,
         setup=setup,
@@ -376,9 +383,9 @@ def parse(data: dict[str, Any]) -> Config:
         ),
         implementer=implementer,
         reviewer=reviewer,
-        checks=(checks := _checks(raw_checks)),
-        definition_of_done=_definition_of_done(data, {c.name for c in checks}),
-        documentation=_documentation(data),
+        checks=checks,
+        definition_of_done=_definition_of_done(data, names),
+        documentation=documentation,
     )
 
 
@@ -439,6 +446,10 @@ def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:
         name = _str(item, "name", where + ".")
         if name in names:
             raise ConfigError(f"{CONFIG_FILE}: {where}.name: duplicate check name {name!r}")
+        if name.startswith("docs: "):
+            raise ConfigError(
+                f"{CONFIG_FILE}: {where}.name: {name!r} is reserved (generated checks)"
+            )
         names.add(name)
         blocking = item.get("blocking", True)
         if not isinstance(blocking, bool):
