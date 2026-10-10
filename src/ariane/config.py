@@ -13,6 +13,85 @@ from typing import Any
 CONFIG_FILE = "ariane.toml"
 
 
+_STR: dict[str, Any] = {"type": "string", "minLength": 1}
+_ARGV: dict[str, Any] = {"type": "array", "minItems": 1, "items": _STR}
+_POSITIVE: dict[str, Any] = {"type": "number", "exclusiveMinimum": 0}
+
+# Description of `ariane.toml` for docs/reference/ariane.toml.schema.json (ADR 0022). Keep it in
+# step with `parse`: a test validates both example files against it.
+SCHEMA: dict[str, Any] = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "ariane.toml",
+    "description": "Configuration of Ariane for one repository.",
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["project", "tracker", "agents", "checks"],
+    "properties": {
+        "project": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["base_branch"],
+            "properties": {
+                "base_branch": {**_STR, "description": "Branch the pull requests target."},
+                "setup": {
+                    **_ARGV,
+                    "description": "Command run once in the working tree (list of arguments).",
+                },
+            },
+        },
+        "tracker": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["kind", "repository", "token_env"],
+            "properties": {
+                "kind": {"enum": ["github"]},
+                "repository": {**_STR, "description": "owner/name"},
+                "token_env": {**_STR, "description": "Environment variable holding the token."},
+                "api_url": {
+                    **_STR,
+                    "default": "https://api.github.com",
+                    "description": "https URL (plain http only to the local machine).",
+                },
+            },
+        },
+        "agents": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["implementer"],
+            "properties": {
+                "implementer": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["runtime", "model", "tools", "max_budget_usd", "timeout_minutes"],
+                    "properties": {
+                        "runtime": {"enum": ["claude-code"]},
+                        "model": _STR,
+                        "tools": {**_ARGV, "description": "Tools the agent may use (not Skill)."},
+                        "max_budget_usd": _POSITIVE,
+                        "timeout_minutes": _POSITIVE,
+                    },
+                }
+            },
+        },
+        "checks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "command"],
+                "properties": {
+                    "name": {**_STR, "description": "Unique name of the check."},
+                    "command": {**_ARGV, "description": "Command to run (list of arguments)."},
+                    "blocking": {"type": "boolean", "default": True},
+                    "timeout_minutes": {**_POSITIVE, "default": 15},
+                },
+            },
+        },
+    },
+}
+
+
 class ConfigError(Exception):
     """The configuration is missing or invalid."""
 

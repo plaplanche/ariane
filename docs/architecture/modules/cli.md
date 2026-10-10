@@ -22,6 +22,10 @@ flowchart LR
   __main__ --> cli
 ```
 
+## Reference
+
+See the generated [command-line reference](../../reference/cli.md), generated from the code (`scripts/generate_docs.py`).
+
 ## Serves
 
 C23; ADR 0002. See [the component view](../3-components.md).
