@@ -16,8 +16,6 @@ _CLOSING_TAG = re.compile(rf"<\s*/\s*{UNTRUSTED_TAG}", re.IGNORECASE)
 # Variables that can carry a credential; never given to an agent or to code it wrote.
 _SECRET_NAME = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|PRIVATE_?KEY")
 _CREDENTIAL_CHANNELS = ("SSH_AUTH_SOCK", "SSH_ASKPASS", "GIT_ASKPASS", "SUDO_ASKPASS")
-# The agent runtime's own login (for example CLAUDE_CODE_OAUTH_TOKEN) stays for agent sessions.
-_AGENT_RUNTIME_PREFIXES = ("ANTHROPIC_", "CLAUDE_")
 
 
 def implementer_prompt(
@@ -82,22 +80,24 @@ def untrusted_environment(
     *,
     token_env: str,
     remotes: list[str],
-    keep_agent_login: bool,
+    login_variables: Sequence[str] = (),
     is_root: bool | None = None,
 ) -> dict[str, str]:
     """The environment of an agent session or of checks running code an agent wrote.
 
     No credential variable, no SSH agent, and a git that cannot push. With `keep_agent_login`,
-    the agent runtime's own login variables are kept (an agent session needs them; checks
-    do not).
+    the runtime's own login variables are kept (an agent session needs them; checks
+    get none). An entry ending in `_` is a prefix, any other is an exact name (ADR 0024).
     """
+    keep_agent_login = bool(login_variables)
+    kept = tuple(v.upper() for v in login_variables)
     env = {}
     token_name = token_env.upper()
     for name, value in base.items():
         upper = name.upper()  # Windows environment names are case-insensitive
         if upper == token_name:
             continue  # the tracker token never passes, whatever its name
-        if keep_agent_login and upper.startswith(_AGENT_RUNTIME_PREFIXES):
+        if _is_login_variable(upper, kept):
             env[name] = value
         elif upper in _CREDENTIAL_CHANNELS or _SECRET_NAME.search(upper):
             continue
@@ -109,6 +109,10 @@ def untrusted_environment(
     if is_root and keep_agent_login:  # Claude Code refuses bypassPermissions as root otherwise
         env["IS_SANDBOX"] = "1"
     return git.blocked_push_env(env, remotes)
+
+
+def _is_login_variable(upper: str, kept: tuple[str, ...]) -> bool:
+    return any(upper.startswith(k) if k.endswith("_") else upper == k for k in kept)
 
 
 def _running_as_root() -> bool:

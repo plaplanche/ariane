@@ -4,7 +4,7 @@ Claude Code as an agent runtime: it starts the `claude` CLI for one session and 
 
 ## Main types and functions
 
-- `ClaudeCodeRuntime`: implements `AgentRuntime`.
+- `ClaudeCodeRuntime`: implements `AgentRuntime`; it declares `ANTHROPIC_` and `CLAUDE_` as its login variables.
 - `TokenTally`: the running token total of a stream.
 - `parse_result`: maps the final `result` event (or a single JSON result), stderr and the exit code to a result and a stop reason; a stream without a result is `error`.
 
