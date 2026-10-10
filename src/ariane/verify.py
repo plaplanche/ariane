@@ -269,6 +269,7 @@ class _Verification:
                 [relative_folder(self.branch)],
                 f"{message}\n\n{summary}",
                 env=self.untrusted_env,
+                tolerate_ignored=True,
             )
             if not committed:
                 raise Refused(

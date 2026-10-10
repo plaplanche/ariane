@@ -432,3 +432,12 @@ def test_c11_pushed_status_does_not_claim_a_pull_request(
     assert "ariane/7 pushed; opening the pull request" in status
     assert "see the pull request, or run ariane status 7" in status
     assert "delivered" not in status
+
+
+def test_c23_records_a_project_ignoring_work_does_not_deliver_a_ticket_without_records(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    (project.root / ".git" / "info" / "exclude").write_text("work/\n", encoding="utf-8")
+    outcome = start(project, tracker, FakeRuntime())
+    assert outcome.exit_code != 0
+    assert project.remote_branches().keys() == {"main"}

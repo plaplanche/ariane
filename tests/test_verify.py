@@ -187,3 +187,35 @@ def test_c23_verify_records_a_branch_checked_out_elsewhere_during_the_run_commit
     assert "now checked out" in outcome.line
     assert sh(["git", "log", "-1", "--format=%s", BRANCH], project.root).startswith("Bump")
     sh(["git", "worktree", "remove", "--force", str(other)], project.root)
+
+
+def test_c23_verify_records_branch_moved_is_caught_before_the_commit(
+    project: Project, branch: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(verify._Verification, "_unchanged", lambda *a, **k: None)
+
+    def commit_elsewhere(session: Session) -> None:
+        other = project.root.parent / "racing-tree"
+        sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
+        (other / "app.txt").write_text("version 3\n", encoding="utf-8")
+        sh(["git", "commit", "--quiet", "-am", "Racing commit"], other)
+        sh(["git", "worktree", "remove", str(other)], project.root)
+
+    outcome = run(project, FakeRuntime(review_actions=[commit_elsewhere]))
+    assert outcome.exit_code == 1 and "committed to during the run" in outcome.line
+    assert sh(["git", "log", "-1", "--format=%s", BRANCH], project.root) == "Racing commit"
+
+
+def test_c23_verify_records_a_tree_dirtied_during_the_run_commits_nothing(
+    project: Project, branch: str
+) -> None:
+    other = project.root.parent / "dirty-tree"
+    sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
+
+    def dirty(session: Session) -> None:
+        (other / "app.txt").write_text("edited\n", encoding="utf-8")
+
+    outcome = run(project, FakeRuntime(review_actions=[dirty]))
+    assert outcome.exit_code == 1 and "uncommitted changes" in outcome.line
+    assert sh(["git", "log", "-1", "--format=%s", BRANCH], project.root).startswith("Bump")
+    sh(["git", "worktree", "remove", "--force", str(other)], project.root)
