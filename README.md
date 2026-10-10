@@ -45,6 +45,8 @@ read and write"), on top of reading issues and writing pull requests.
 
 - [`docs/spec.md`](docs/spec.md): vision, functional specification (capabilities C1 to C24),
   non-functional requirements, roadmap and founding decisions.
+- [`docs/architecture/`](docs/architecture/README.md): how Ariane works, in Mermaid diagrams from
+  the system landscape to each module.
 - [`docs/adr/`](docs/adr/): architecture decision records, written as the implementation goes.
 
 ## While a ticket runs
