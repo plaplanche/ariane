@@ -5,18 +5,20 @@
 ## `ariane`
 
 ```text
-usage: ariane [-h] [--version] {start,status} ...
+usage: ariane [-h] [--version] {start,status,verify} ...
 
 Turn tickets into reviewed pull requests.
 
 positional arguments:
-  {start,status}
-    start         run the ticket of an issue up to its pull request
-    status        show a ticket's state, read from its folder
+  {start,status,verify}
+    start               run the ticket of an issue up to its pull request
+    status              show a ticket's state, read from its folder
+    verify              check and review a local branch finished by hand, then
+                        record it on the branch
 
 options:
-  -h, --help      show this help message and exit
-  --version       show program's version number and exit
+  -h, --help            show this help message and exit
+  --version             show program's version number and exit
 ```
 
 ## `ariane start`
@@ -45,4 +47,20 @@ options:
   -h, --help         show this help message and exit
   --log-level LEVEL  technical log level: debug, info, warning or error
                      (default: ARIANE_LOG_LEVEL, else warning)
+```
+
+## `ariane verify`
+
+```text
+usage: ariane verify [-h] [--log-level LEVEL] [--issue ISSUE] branch
+
+positional arguments:
+  branch             a branch that exists locally
+
+options:
+  -h, --help         show this help message and exit
+  --log-level LEVEL  technical log level: debug, info, warning or error
+                     (default: ARIANE_LOG_LEVEL, else warning)
+  --issue ISSUE      give this issue's text to the reviewer (default: the
+                     branch's commit messages)
 ```

@@ -7,7 +7,7 @@ Declares every log type once (functional journal entries and technical records) 
 - `LogType`, `FUNCTIONAL_TYPES`, `TECHNICAL_TYPES`: the declarations.
 - `functional`: the declared journal entry type; an undeclared one is refused.
 - `resolve_level`, `parse_level`: the level from `--log-level`, `ARIANE_LOG_LEVEL`, else warning.
-- `configure`, `add_secrets`, `log_path`: handlers, known secrets and the log file `<repo>.ariane/logs/<n>.log`.
+- `configure`, `add_secrets`, `log_path`: handlers, known secrets and the log file `<repo>.ariane/logs/<n>.log` (`verify-<branch>.log` for `ariane verify`).
 - `emit`: write one technical record naming its declared type.
 
 ## Collaborations
