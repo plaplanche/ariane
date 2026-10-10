@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ariane import context
+from ariane import config, context
 from ariane.config import CheckConfig
 from ariane.tracker import Issue
 
@@ -108,3 +108,11 @@ def test_c1_records_pointer_has_read_time_when_given() -> None:
     )
     assert "(issue #3 title and body: see brief.md, read at 2026-10-09 10:00:00Z)" in prompt
     assert "Body" not in prompt
+
+
+def test_c26_dod_the_implementer_prompt_lists_every_item() -> None:
+    items = (config.DoneItem(check="tests"), config.DoneItem(text="Docs updated."))
+    prompt = context.implementer_prompt(
+        Issue(3, "T", "B", "u"), "ariane/3", (CheckConfig("tests", ("pytest",), True, 1),), items
+    )
+    assert "Definition of done:\n- check tests passes\n- Docs updated.\n" in prompt

@@ -37,3 +37,13 @@ command = ["uv", "run", "ruff", "check", "."]
 [[checks]]
 name = "tests"
 command = ["uv", "run", "pytest", "-q"]
+
+# Optional: what a change must satisfy to be done. Each item is a declared check ({ check = "name" })
+# or a sentence ({ text = "..." }). The implementer receives every item. Without this table,
+# the default list applies: blocking checks pass, tests cover the change, documentation updated.
+[definition_of_done]
+items = [
+  { check = "lint" },
+  { check = "tests" },
+  { text = "The change is covered by tests that fail without it." },
+]

@@ -199,9 +199,10 @@ class _TicketRun:
 
     def _implement(self) -> SessionResult:
         agent = self.config.implementer
-        prompt = context.implementer_prompt(self.issue, self.branch, self.config.checks)
+        done = self.config.definition_of_done
+        prompt = context.implementer_prompt(self.issue, self.branch, self.config.checks, done)
         recorded = context.implementer_prompt(
-            self.issue, self.branch, self.config.checks, recorded=True, read_at=ticket.now()
+            self.issue, self.branch, self.config.checks, done, recorded=True, read_at=ticket.now()
         )
         session = Session(
             role="implementer",
