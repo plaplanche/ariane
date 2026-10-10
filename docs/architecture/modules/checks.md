@@ -20,6 +20,9 @@ flowchart LR
   checks --> ticket
   flow --> checks
   delivery --> checks
+  review --> checks
+  review_session --> checks
+  verify --> checks
 ```
 
 ## Serves

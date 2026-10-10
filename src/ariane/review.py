@@ -237,6 +237,12 @@ def prompt(
         if not_updated
         else ""
     )
+    failed = [r.name for r in results if r.blocking and not r.passed]
+    state = (
+        "all blocking checks green"
+        if not failed
+        else "blocking checks FAILED: " + ", ".join(failed)
+    )
     return f"""You are the reviewer of the change for ticket #{issue.number}, started by Ariane.
 
 Your working directory is a clean working tree at the commit under review. You may only read it.
@@ -251,7 +257,7 @@ Rules:
   sentence below, with "item" exactly as written, "met" and "evidence") and "learnings"
   (short lessons worth keeping, proposed only). A blocking finding makes the verdict no-go.
 {retry}
-Checks replayed by Ariane ({names}), all blocking ones green:
+Checks replayed by Ariane ({names}); {state}:
 {checks.summary_table(list(results))}
 
 Definition of done, sentences to answer one by one:

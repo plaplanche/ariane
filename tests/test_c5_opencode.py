@@ -153,6 +153,7 @@ def test_c5_opencode_the_implementer_role_is_refused() -> None:
                 "tools": ["read", "glob", "grep"],
                 "max_budget_usd": 1,
                 "timeout_minutes": 1,
+                "max_tokens": 1000,
             },
         },
         "checks": [{"name": "t", "command": ["pytest"]}],
@@ -294,3 +295,95 @@ def test_c21_role_env_the_fix_session_does_not_hold_the_reviewers_key(
     )
     assert len(implementer.sessions) == 2
     assert all("OPENAI_API_KEY" not in s.env for s in implementer.sessions)
+
+
+def opencode_data() -> dict[str, Any]:
+    return {
+        "project": {"base_branch": "main"},
+        "tracker": {"kind": "github", "repository": "o/n", "token_env": "GH_TOKEN"},
+        "agents": {
+            "implementer": {
+                "runtime": "claude-code",
+                "model": "claude-sonnet-5-5",
+                "tools": ["Read", "Edit", "Write", "Bash"],
+                "max_budget_usd": 1,
+                "timeout_minutes": 1,
+            },
+            "reviewer": {
+                "runtime": "opencode",
+                "model": "openai/gpt-y",
+                "tools": ["read", "glob", "grep"],
+                "max_budget_usd": 1,
+                "timeout_minutes": 1,
+                "max_tokens": 1000,
+            },
+        },
+        "checks": [{"name": "t", "command": ["pytest"]}],
+    }
+
+
+def test_c5_opencode_cap_an_agent_without_max_tokens_is_refused() -> None:
+    data = opencode_data()
+    config.parse(data)
+    del data["agents"]["reviewer"]["max_tokens"]
+    with pytest.raises(config.ConfigError, match=r"agents\.reviewer\.max_tokens"):
+        config.parse(data)
+
+
+def test_c5_opencode_cap_a_session_priced_at_zero_stops_at_max_tokens(tmp_path: Path) -> None:
+    free = tmp_path / "free.jsonl"
+    lines = [json.loads(line) for line in REVIEW.read_text(encoding="utf-8").splitlines()]
+    for event in lines:
+        if event["type"] == "step_finish":
+            event["part"]["cost"] = 0
+    free.write_text("\n".join(json.dumps(e) for e in lines), encoding="utf-8")
+    result, _ = run(tmp_path, free, max_tokens=10)
+    assert result.stop_reason is StopReason.BUDGET
+
+
+def test_c5_opencode_cap_the_journal_names_the_caps_that_apply() -> None:
+    from ariane.review_session import cap_text
+
+    cfg = config.parse(opencode_data())
+    text = cap_text(cfg.reviewer)
+    assert "cost cap none" in text and "1 USD" in text and "1000 tokens" in text
+    assert cap_text(cfg.implementer) == "runtime cost cap 1 USD"
+
+
+def test_c21_opencode_project_config_is_disabled_in_every_session(tmp_path: Path) -> None:
+    _, seen = run(tmp_path, REVIEW)
+    assert seen["env"]["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1"
+
+
+@pytest.mark.parametrize("tool", ["Write", "Edit", "NotebookEdit", "Bash"])
+def test_c10_reviewer_read_only_write_tools_are_refused(tool: str) -> None:
+    data = opencode_data()
+    data["agents"]["reviewer"] = {
+        "runtime": "claude-code",
+        "model": "claude-opus-5-5",
+        "tools": ["Read", tool],
+        "max_budget_usd": 1,
+        "timeout_minutes": 1,
+    }
+    with pytest.raises(config.ConfigError, match=r"agents\.reviewer\.tools"):
+        config.parse(data)
+    data["agents"]["reviewer"]["tools"] = ["Read", "Grep"]
+    config.parse(data)
+    data["agents"]["implementer"]["tools"] = ["Read", tool]
+    config.parse(data)
+
+
+def test_c10_review_prompt_failed_checks_are_named() -> None:
+    from ariane.checks import CheckResult
+    from ariane.config import CheckConfig
+    from ariane.tracker import Issue
+
+    def result(name: str, passed: bool) -> CheckResult:
+        return CheckResult(name, ("x",), True, passed, "exit 0", "", 0.0)
+
+    cfgs = [CheckConfig("lint", ("x",), True, 1), CheckConfig("tests", ("x",), True, 1)]
+    issue = Issue(7, "T", "B", "u")
+    ok = review.prompt(issue, "", [result("lint", True), result("tests", True)], cfgs, ())
+    assert "all blocking checks green" in ok
+    bad = review.prompt(issue, "", [result("lint", True), result("tests", False)], cfgs, ())
+    assert "all blocking checks green" not in bad and "FAILED: tests" in bad

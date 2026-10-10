@@ -237,6 +237,9 @@ def parse(data: dict[str, Any]) -> Config:
     )
 
 
+REVIEWER_FORBIDDEN_TOOLS = ("Write", "Edit", "NotebookEdit", "Bash")
+
+
 def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
     where = f"agents.{role}"
     table = _table(agents, role, "agents.")
@@ -259,6 +262,13 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
     tools = _str_list(table, "tools", prefix)
     if runtime == OPENCODE:
         _opencode_agent(table, tools, where)
+    if role == "reviewer" and runtime != OPENCODE:
+        writing = [t for t in tools if t in REVIEWER_FORBIDDEN_TOOLS]
+        if writing:
+            raise ConfigError(
+                f"{CONFIG_FILE}: {where}.tools: {writing[0]} is not allowed"
+                " (the reviewer is read-only, C10)"
+            )
     if "Skill" in tools:
         raise ConfigError(
             f"{CONFIG_FILE}: {where}.tools: Skill is not allowed (undeclared skills, C6)"
@@ -283,6 +293,11 @@ def _opencode_agent(table: dict[str, Any], tools: Sequence[str], where: str) -> 
     provider, _, name = _str(table, "model", f"{where}.").partition("/")
     if not provider or not name:
         raise ConfigError(f"{CONFIG_FILE}: {where}.model: opencode wants <provider>/<model>")
+    if "max_tokens" not in table:
+        raise ConfigError(
+            f"{CONFIG_FILE}: {where}.max_tokens: required with opencode"
+            " (opencode does not cap its own cost; Ariane needs a token cap)"
+        )
 
 
 def _safe_api_url(url: str) -> bool:

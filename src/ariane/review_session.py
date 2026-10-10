@@ -88,7 +88,7 @@ class ReviewSession:
                 "ticket.review.started",
                 f"Reviewer session {attempt} started",
                 f"Runtime {describe(runtime)}, model {agent.model}, tools"
-                f" {', '.join(agent.tools)}, runtime cost cap {agent.max_budget_usd:g} USD,"
+                f" {', '.join(agent.tools)}, {cap_text(agent)},"
                 f" time limit {agent.timeout_minutes:g} min, in `{replay}` at `{checked}`.",
             )
             result = runtime.run(session)
@@ -115,3 +115,13 @@ class ReviewSession:
             f"read work/{self.issue.number}/journal.md; Ariane pushed nothing",
             error,
         )
+
+
+def cap_text(agent: AgentConfig) -> str:
+    """The caps that apply to the reviewer's session, for the journal."""
+    if agent.runtime == "opencode":
+        return (
+            "runtime cost cap none; Ariane stops at"
+            f" {agent.max_budget_usd:g} USD of reported cost or {agent.max_tokens} tokens"
+        )
+    return f"runtime cost cap {agent.max_budget_usd:g} USD"

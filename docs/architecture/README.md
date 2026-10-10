@@ -8,7 +8,7 @@ C4 level. Each level zooms into the previous one.
 | 0 | [`0-landscape.md`](0-landscape.md) | The people and systems around Ariane. |
 | 1 | [`1-context.md`](1-context.md) | Ariane as one system and what it exchanges with each neighbour. |
 | 2 | [`2-containers.md`](2-containers.md) | The command, the working trees, the ticket folder, the sessions, the CI workflows. |
-| 3 | [`3-components.md`](3-components.md) | The modules, their dependencies, and `ariane start <n>` step by step. |
+| 3 | [`3-components.md`](3-components.md) | The modules, their dependencies, and `ariane start <n>` and `ariane verify <branch>` step by step. |
 | 4 | [`modules/`](modules/) | One file per module under `src/ariane/`. |
 
 A test (`tests/test_docs_architecture.py`) fails when a module has no file in `modules/` or a file
@@ -37,6 +37,9 @@ flowchart LR
 - [`opencode`](modules/opencode.md)
 - [`process`](modules/process.md)
 - [`redact`](modules/redact.md)
+- [`review`](modules/review.md)
+- [`review_session`](modules/review_session.md)
 - [`runtime`](modules/runtime.md)
 - [`ticket`](modules/ticket.md)
 - [`tracker`](modules/tracker.md)
+- [`verify`](modules/verify.md)

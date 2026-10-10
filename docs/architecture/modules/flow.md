@@ -34,6 +34,7 @@ flowchart LR
   flow --> runtime
   flow --> tracker
   cli --> flow
+  verify --> flow
 ```
 
 ## Serves

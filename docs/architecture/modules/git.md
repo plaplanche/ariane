@@ -26,6 +26,7 @@ flowchart LR
   context --> git
   delivery --> git
   flow --> git
+  verify --> git
 ```
 
 ## Serves

@@ -10,6 +10,7 @@ flowchart LR
   runtime[Agent runtime: Claude Code or opencode]
   vendor[Model vendor]
   user -->|ariane start n| ariane
+  user -->|ariane verify branch| ariane
   ariane -->|one line: what was done, what next| user
   ariane -->|read an issue| github
   ariane -->|push one branch| github
@@ -20,5 +21,6 @@ flowchart LR
   runtime -->|model calls| vendor
 ```
 
-Only Ariane pushes, and only once, after the checks passed on a clean replay (ADR 0018).
+`ariane verify` works on a local branch: it commits its records on it and never pushes.
+Only `ariane start` pushes, and only once, after the checks passed on a clean replay (ADR 0018).
 Agents never receive the GitHub token.
