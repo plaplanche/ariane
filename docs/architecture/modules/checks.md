@@ -5,7 +5,7 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 ## Main types and functions
 
 - `CheckResult`: name, blocking flag, outcome and output of one check.
-- `run_checks`, `run_check`: run the declared commands in a working tree.
+- `run_checks`, `run_check`: run the declared commands in a working tree; the flow also passes the generated-documentation commands as checks named `docs: <name>` (C25), so they appear in the report and the statuses like any check.
 - `blocking_failures`, `summary_line`, `summary_table`, `report`: read and render results.
 - `parse_summary_table`: read a committed report back.
 
@@ -24,4 +24,4 @@ flowchart LR
 
 ## Serves
 
-C9, C21; ADR 0004, ADR 0018. See [the component view](../3-components.md).
+C9, C21, C25; ADR 0004, ADR 0018, ADR 0026. See [the component view](../3-components.md).

@@ -9,6 +9,8 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 - `settle`: `go` with a blocking finding is `no-go`; a sentence item missing or `met: false` is a blocking finding; check items come from the replay's results.
 - `record`: the text of `work/<n>/review-0.md`. `pull_request_section`: the verdict, the item results and the findings table (3,000 characters at most, else a summary and a link).
 
+The reviewer's prompt also states, as a fact from Ariane, the mapped documents the change left untouched (C25).
+
 ## Collaborations
 
 Arrows go from the caller to the callee.

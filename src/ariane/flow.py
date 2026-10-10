@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ariane import checks, context, git, logs, process, review, ticket
-from ariane.config import Config
+from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.redact import redact
 from ariane.runtime import AgentRuntime, Session, SessionResult, StopReason
@@ -146,6 +146,7 @@ class _TicketRun:
         self.branch = branch
         self.url = url
         self.number = issue.number
+        self.not_updated: list[str] = []
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
         self.folder = ticket.TicketFolder(worktree, issue.number, secrets=self.secrets)
         remotes = git.remotes(worktree)
@@ -218,9 +219,16 @@ class _TicketRun:
     def _implement(self) -> SessionResult:
         agent = self.config.implementer
         done = self.config.definition_of_done
-        prompt = context.implementer_prompt(self.issue, self.branch, self.config.checks, done)
+        docs = self.config.documentation
+        prompt = context.implementer_prompt(self.issue, self.branch, self.config.checks, done, docs)
         recorded = context.implementer_prompt(
-            self.issue, self.branch, self.config.checks, done, recorded=True, read_at=ticket.now()
+            self.issue,
+            self.branch,
+            self.config.checks,
+            done,
+            docs,
+            recorded=True,
+            read_at=ticket.now(),
         )
         tokens_cap = "none" if agent.max_tokens is None else f"{agent.max_tokens} tokens"
         session = Session(
@@ -361,6 +369,7 @@ class _TicketRun:
                 "Agent work committed",
                 "\n".join(f"- `{p}`" for p in changed),
             )
+        self._flag_untouched_docs(changed)
         if result.stop_reason is not StopReason.FINISHED:
             raise Stop(
                 f"the implementer session stopped: {result.stop_reason.value}",
@@ -368,6 +377,18 @@ class _TicketRun:
             )
         if not changed:
             raise Stop("the agent changed no file", "clarify the issue, then start again")
+
+    def _flag_untouched_docs(self, changed: list[str]) -> None:
+        """C25: journal the documents mapped to changed files that the ticket did not change."""
+        missing = self.config.documentation.not_updated(changed)
+        self.not_updated = missing
+        if missing:
+            self.folder.log(
+                "ticket.docs.not_updated",
+                "Documentation not updated",
+                "Documents covering changed files that the ticket left untouched:\n"
+                + "\n".join(f"- `{d}`" for d in missing),
+            )
 
     def _check_and_deliver(
         self, start_commit: str, guard: dict[str, str], refs_before: dict[str, str]
@@ -416,6 +437,9 @@ class _TicketRun:
             " review go. Next: review and merge it.",
         )
 
+    def _all_checks(self) -> tuple[CheckConfig, ...]:
+        return (*self.config.checks, *self.config.documentation.checks())
+
     def _replay(
         self, checked: str, start_commit: str, guard: dict[str, str], refs_before: dict[str, str]
     ) -> tuple[Path, list[checks.CheckResult]]:
@@ -438,7 +462,7 @@ class _TicketRun:
             setup_error = self._setup(replay)
             if setup_error is not None:
                 raise setup_error
-            results = checks.run_checks(self.config.checks, replay, self.untrusted_env)
+            results = checks.run_checks(self._all_checks(), replay, self.untrusted_env)
             if git.current_branch(replay) or git.head(replay) != checked:
                 raise Stop("the checks moved the replay working tree's head", "inspect it")
             self._verify("the checks", start_commit, guard, refs_before, expected_head=checked)
@@ -476,9 +500,10 @@ class _TicketRun:
                     self.issue,
                     diff,
                     results,
-                    self.config.checks,
+                    self._all_checks(),
                     self.config.definition_of_done,
                     error=error,
+                    not_updated=self.not_updated,
                 ),
                 env=self.agent_env,
                 json_schema=review.SCHEMA,
