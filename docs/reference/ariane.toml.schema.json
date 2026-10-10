@@ -131,7 +131,8 @@
           "properties": {
             "runtime": {
               "enum": [
-                "claude-code"
+                "claude-code",
+                "opencode"
               ]
             },
             "model": {

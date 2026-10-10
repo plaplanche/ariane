@@ -11,6 +11,8 @@ from pathlib import Path
 from ariane import __version__, config, flow, git, logs, process, ticket, verify
 from ariane.claude_code import ClaudeCodeRuntime
 from ariane.github import GitHubTracker
+from ariane.opencode import OpenCodeRuntime
+from ariane.runtime import AgentRuntime, RoutedRuntime
 
 EXIT_OK = flow.EXIT_OK
 EXIT_STOPPED = flow.EXIT_STOPPED
@@ -84,6 +86,17 @@ def _version_line() -> str:
     return f"ariane {__version__} (Python {py.major}.{py.minor}.{py.micro}, {sys.platform})"
 
 
+def _runtime(cfg: config.Config) -> RoutedRuntime:
+    """The runtime of each role, as `[agents.<role>] runtime` says (ADR 0029)."""
+    runtimes: dict[str, AgentRuntime] = {}
+    for role, agent in (("implementer", cfg.implementer), ("reviewer", cfg.reviewer)):
+        if agent.runtime == config.OPENCODE:
+            runtimes[role] = OpenCodeRuntime(model=agent.model)
+        else:
+            runtimes[role] = ClaudeCodeRuntime()
+    return RoutedRuntime(runtimes)
+
+
 def _issue_number(text: str) -> int:
     value = text.removeprefix("#")
     if not value.isdigit() or int(value) <= 0:
@@ -112,7 +125,7 @@ def _start(root: Path, number: int) -> int:
         repo_root=root,
         config=cfg,
         tracker=tracker,
-        runtime=ClaudeCodeRuntime(),
+        runtime=_runtime(cfg),
         environ=os.environ,
     )
     if outcome.detail:
@@ -143,7 +156,7 @@ def _verify(root: Path, branch: str, number: int | None) -> int:
         branch,
         repo_root=root,
         config=cfg,
-        runtime=ClaudeCodeRuntime(),
+        runtime=_runtime(cfg),
         environ=os.environ,
         tracker=tracker,
         issue_number=number,

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ariane import checks, review, ticket
 from ariane.config import AgentConfig, CheckConfig, DoneItem
-from ariane.runtime import AgentRuntime, Session, SessionResult, StopReason
+from ariane.runtime import AgentRuntime, Session, SessionResult, StopReason, describe, for_role
 from ariane.tracker import Issue
 
 
@@ -61,6 +61,7 @@ class ReviewSession:
         """A fresh read-only reviewer session in `replay`; one retry if its answer is invalid.
         `after_session` verifies that the session changed nothing."""
         agent = self.agent
+        runtime = for_role(self.runtime, "reviewer")
         error = ""
         for attempt in (1, 2):
             session = Session(
@@ -86,11 +87,11 @@ class ReviewSession:
             self.folder.log(
                 "ticket.review.started",
                 f"Reviewer session {attempt} started",
-                f"Runtime {self.runtime.name}, model {agent.model}, tools"
+                f"Runtime {describe(runtime)}, model {agent.model}, tools"
                 f" {', '.join(agent.tools)}, runtime cost cap {agent.max_budget_usd:g} USD,"
                 f" time limit {agent.timeout_minutes:g} min, in `{replay}` at `{checked}`.",
             )
-            result = self.runtime.run(session)
+            result = runtime.run(session)
             cost, tokens = result.usage()
             self.folder.log(
                 "ticket.review.stopped",

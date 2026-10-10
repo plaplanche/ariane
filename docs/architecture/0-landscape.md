@@ -9,7 +9,7 @@ flowchart TB
   ariane[Ariane]
   github[GitHub: issues, pull requests, statuses, Actions]
   claude[Claude Code]
-  opencode[opencode, to come]
+  opencode[opencode, reviewer role]
   vendors[Model vendors]
   sandbox[Cloud sandbox]
   owner -->|writes issues, merges pull requests| github
@@ -18,9 +18,9 @@ flowchart TB
   second -->|runs ariane| ariane
   ariane <-->|reads issues, pushes a branch, opens pull requests, publishes statuses| github
   ariane -->|starts sessions| claude
-  ariane -.->|will start sessions| opencode
+  ariane -->|starts reviewer sessions| opencode
   claude -->|model calls| vendors
-  opencode -.->|model calls| vendors
+  opencode -->|model calls| vendors
   github -->|runs workflows| github
   sandbox -.->|may host Ariane and the agents| ariane
 ```

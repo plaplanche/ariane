@@ -13,13 +13,18 @@ flowchart TD
   checks --> ticket
   claude_code --> process
   claude_code --> runtime
+  opencode --> process
+  opencode --> runtime
   cli --> config
+  config --> config_schema
   cli --> flow
   cli --> verify
   cli --> git
   cli --> process
   cli --> ticket
   cli --> claude_code
+  cli --> opencode
+  cli --> runtime
   cli --> github
   context --> git
   context --> config
@@ -89,7 +94,7 @@ sequenceDiagram
   participant F as flow
   participant T as tracker (github)
   participant G as git
-  participant R as runtime (claude_code)
+  participant R as runtime (claude_code or opencode)
   participant C as checks
   participant D as delivery
   U->>CLI: ariane start n
@@ -130,7 +135,7 @@ sequenceDiagram
   participant V as verify
   participant G as git
   participant C as checks
-  participant R as runtime (claude_code)
+  participant R as runtime (claude_code or opencode)
   U->>CLI: ariane verify branch
   CLI->>V: verify
   V->>G: refuse a checked-out branch with uncommitted changes

@@ -4,183 +4,21 @@ from __future__ import annotations
 
 import ipaddress
 import math
+import os
 import re
 import tomllib
 import urllib.parse
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ariane.config_schema import OPENCODE, OPENCODE_TOOLS, RUNTIMES, SCHEMA
+
+__all__ = ["OPENCODE", "SCHEMA"]
+
 CONFIG_FILE = "ariane.toml"
-
-
-_STR: dict[str, Any] = {"type": "string", "minLength": 1}
-_ARGV: dict[str, Any] = {"type": "array", "minItems": 1, "items": _STR}
-_POSITIVE: dict[str, Any] = {"type": "number", "exclusiveMinimum": 0}
-
-_AGENT: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["runtime", "model", "tools", "max_budget_usd", "timeout_minutes"],
-    "properties": {
-        "runtime": {"enum": ["claude-code"]},
-        "model": _STR,
-        "tools": {**_ARGV, "description": "Tools the agent may use (not Skill)."},
-        "max_budget_usd": _POSITIVE,
-        "max_tokens": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "description": "Optional cap on tokens counted by Ariane per session.",
-        },
-        "timeout_minutes": _POSITIVE,
-    },
-}
-
-# Description of `ariane.toml` for docs/reference/ariane.toml.schema.json (ADR 0022). Keep it in
-# step with `parse`: a test validates both example files against it.
-SCHEMA: dict[str, Any] = {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "ariane.toml",
-    "description": "Configuration of Ariane for one repository.",
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["project", "tracker", "agents", "checks"],
-    "properties": {
-        "project": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["base_branch"],
-            "properties": {
-                "base_branch": {**_STR, "description": "Branch the pull requests target."},
-                "setup": {
-                    **_ARGV,
-                    "description": "Command run once in the working tree (list of arguments).",
-                },
-            },
-        },
-        "tracker": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["kind", "repository", "token_env"],
-            "properties": {
-                "kind": {"enum": ["github"]},
-                "repository": {**_STR, "description": "owner/name"},
-                "token_env": {**_STR, "description": "Environment variable holding the token."},
-                "api_url": {
-                    **_STR,
-                    "default": "https://api.github.com",
-                    "description": "https URL (plain http only to the local machine).",
-                },
-            },
-        },
-        "agents": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["implementer", "reviewer"],
-            "properties": {
-                "implementer": _AGENT,
-                "reviewer": {
-                    **_AGENT,
-                    "description": "Read-only reviewer (C10); model differs from the implementer.",
-                },
-            },
-        },
-        "definition_of_done": {
-            "type": "object",
-            "additionalProperties": False,
-            "description": "What a change must satisfy to be done (C26); optional.",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "oneOf": [
-                            {
-                                "type": "object",
-                                "additionalProperties": False,
-                                "required": ["check"],
-                                "properties": {
-                                    "check": {**_STR, "description": "Name of a declared check."}
-                                },
-                            },
-                            {
-                                "type": "object",
-                                "additionalProperties": False,
-                                "required": ["text"],
-                                "properties": {
-                                    "text": {**_STR, "description": "A sentence to satisfy."}
-                                },
-                            },
-                        ]
-                    },
-                    "description": "Default: tests pass, tests cover the change, docs updated.",
-                }
-            },
-        },
-        "documentation": {
-            "type": "object",
-            "additionalProperties": False,
-            "description": "The project's documentation (C25); optional.",
-            "properties": {
-                "paths": {
-                    **_ARGV,
-                    "description": "Documentation files and folders, for `ariane docs-review`.",
-                },
-                "map": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "required": ["source", "docs"],
-                        "properties": {
-                            "source": {**_STR, "description": "Glob of source files."},
-                            "docs": {
-                                **_ARGV,
-                                "description": "Documents covering them; {stem} is the matched"
-                                " file's name without extension.",
-                            },
-                        },
-                    },
-                },
-                "generated": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "required": ["name", "check"],
-                        "properties": {
-                            "name": {
-                                **_STR,
-                                "description": "Unique name; the check is `docs: <name>`.",
-                            },
-                            "check": {
-                                **_ARGV,
-                                "description": "Command exiting non-zero when a generated"
-                                " document is stale (list of arguments).",
-                            },
-                        },
-                    },
-                },
-            },
-        },
-        "checks": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["name", "command"],
-                "properties": {
-                    "name": {**_STR, "description": "Unique name of the check."},
-                    "command": {**_ARGV, "description": "Command to run (list of arguments)."},
-                    "blocking": {"type": "boolean", "default": True},
-                    "timeout_minutes": {**_POSITIVE, "default": 15},
-                },
-            },
-        },
-    },
-}
+CONFIG_ENV = "ARIANE_CONFIG"
 
 
 class ConfigError(Exception):
@@ -317,17 +155,25 @@ class Config:
     documentation: Documentation = NO_DOCUMENTATION
 
 
-def load(repo_root: Path) -> Config:
-    path = repo_root / CONFIG_FILE
+def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:
+    """Read `ariane.toml` at the repository root, or the file `ARIANE_CONFIG` names (C22)."""
+    chosen = (os.environ if environ is None else environ).get(CONFIG_ENV, "")
+    path = repo_root / chosen if chosen else repo_root / CONFIG_FILE
+    shown = f"{CONFIG_ENV} ({chosen})" if chosen else CONFIG_FILE
     try:
         text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise ConfigError(f"{CONFIG_FILE}: file not found in {repo_root}") from None
+    except OSError:
+        raise ConfigError(f"{shown}: file not found in {repo_root}") from None
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{CONFIG_FILE}: not valid TOML: {exc}") from None
-    return parse(data)
+        raise ConfigError(f"{shown}: not valid TOML: {exc}") from None
+    try:
+        return parse(data)
+    except ConfigError as exc:
+        if not chosen:
+            raise
+        raise ConfigError(str(exc).replace(f"{CONFIG_FILE}:", f"{shown}:", 1)) from None
 
 
 def parse(data: dict[str, Any]) -> Config:
@@ -399,11 +245,18 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
     )
     prefix = f"{where}."
     runtime = _str(table, "runtime", prefix)
-    if runtime != "claude-code":
+    if runtime == OPENCODE and role == "implementer":
         raise ConfigError(
-            f"{CONFIG_FILE}: {where}.runtime: unsupported value {runtime!r} (claude-code)"
+            f"{CONFIG_FILE}: {where}.runtime: opencode is not supported for the {role} role yet"
+        )
+    if runtime not in RUNTIMES[role]:
+        allowed = ", ".join(RUNTIMES[role])
+        raise ConfigError(
+            f"{CONFIG_FILE}: {where}.runtime: unsupported value {runtime!r} ({allowed})"
         )
     tools = _str_list(table, "tools", prefix)
+    if runtime == OPENCODE:
+        _opencode_agent(table, tools, where)
     if "Skill" in tools:
         raise ConfigError(
             f"{CONFIG_FILE}: {where}.tools: Skill is not allowed (undeclared skills, C6)"
@@ -416,6 +269,18 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
         timeout_minutes=_positive(table, "timeout_minutes", prefix),
         max_tokens=_max_tokens(table, where),
     )
+
+
+def _opencode_agent(table: dict[str, Any], tools: Sequence[str], where: str) -> None:
+    unknown = [t for t in tools if t not in OPENCODE_TOOLS]
+    if unknown:
+        raise ConfigError(
+            f"{CONFIG_FILE}: {where}.tools: {unknown[0]!r} is not an opencode tool"
+            f" ({', '.join(OPENCODE_TOOLS)})"
+        )
+    provider, _, name = _str(table, "model", f"{where}.").partition("/")
+    if not provider or not name:
+        raise ConfigError(f"{CONFIG_FILE}: {where}.model: opencode wants <provider>/<model>")
 
 
 def _safe_api_url(url: str) -> bool:
