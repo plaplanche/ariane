@@ -18,6 +18,7 @@ flowchart LR
   flow --> checks
   flow --> context
   flow --> git
+  flow --> logs
   flow --> process
   flow --> ticket
   flow --> config

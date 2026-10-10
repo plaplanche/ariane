@@ -42,6 +42,13 @@ flowchart TD
   git --> process
   git --> redact
   github --> tracker
+  logs --> redact
+  cli --> logs
+  flow --> logs
+  git --> logs
+  github --> logs
+  process --> logs
+  ticket --> logs
   ticket --> redact
   ticket --> tracker
 ```

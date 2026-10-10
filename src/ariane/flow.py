@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ariane import checks, context, git, process, ticket
+from ariane import checks, context, git, logs, process, ticket
 from ariane.config import Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.redact import redact
@@ -145,13 +145,16 @@ class _TicketRun:
             setup_error = self._setup(self.worktree)
             self.folder.create(self.issue)
             self.folder.log(
+                "ticket.started",
                 "Ticket started",
                 f"Issue #{self.number} ({self.issue.url}), branch `{self.branch}` from"
                 f" `{REMOTE}/{self.config.base_branch}`, working tree `{self.worktree}`.",
             )
             if setup_error is not None:
                 raise setup_error
-            self.folder.log("Setup", "No setup command." if not self.config.setup else "Passed.")
+            self.folder.log(
+                "ticket.setup", "Setup", "No setup command." if not self.config.setup else "Passed."
+            )
             self.folder.set_status("implementing", "implementer session running", "wait")
             self._commit_record(f"#{self.number}: open the ticket folder")
             start_commit = git.head(self.worktree)
@@ -211,6 +214,7 @@ class _TicketRun:
             env=self.agent_env,
         )
         self.folder.log(
+            "ticket.session.started",
             "Implementer session started",
             f"Runtime {self.runtime.name}, model {agent.model}, tools {', '.join(agent.tools)},"
             f" budget {agent.max_budget_usd:g} USD, time limit {agent.timeout_minutes:g} min.\n\n"
@@ -229,6 +233,7 @@ class _TicketRun:
         )
         denials = "\n".join(f"- {d}" for d in result.permission_denials) or "none"
         self.folder.log(
+            "ticket.session.stopped",
             f"Implementer session stopped: {result.stop_reason.value}",
             f"Cost {cost} (as reported), tokens {tokens}.\n\nRefused tool calls:\n{denials}\n\n"
             f"Agent summary:\n\n{ticket.fenced(result.summary)}",
@@ -267,8 +272,11 @@ class _TicketRun:
                 f"the remote changed during {after} ({', '.join(changed)})",
                 f"check it was not the agent; if a person pushed, start the ticket again; {QUIET}",
             )
+        logs.emit("guard.verified", f"after {after}: branch, history, git and remote unchanged")
         self.folder.log(
-            f"Verified after {after}", "Same branch and history, git unchanged, remote unchanged."
+            "ticket.guard.verified",
+            f"Verified after {after}",
+            "Same branch and history, git unchanged, remote unchanged.",
         )
 
     def _remote_changes(self, refs_before: dict[str, str]) -> list[str]:
@@ -292,6 +300,7 @@ class _TicketRun:
         new = sorted(git.ignored(self.worktree) - before)
         if new:
             self.folder.log(
+                "ticket.warning.ignored_files",
                 "Warning: new files ignored by git",
                 "The checks see them but the pull request does not carry them:\n"
                 + "\n".join(f"- `{p}`" for p in new),
@@ -323,7 +332,11 @@ class _TicketRun:
             redact(f"#{self.number}: {self.issue.title}", self.secrets),
             env=self.untrusted_env,
         ):
-            self.folder.log("Agent work committed", "\n".join(f"- `{p}`" for p in changed))
+            self.folder.log(
+                "ticket.work.committed",
+                "Agent work committed",
+                "\n".join(f"- `{p}`" for p in changed),
+            )
         if result.stop_reason is not StopReason.FINISHED:
             raise Stop(
                 f"the implementer session stopped: {result.stop_reason.value}",
@@ -339,6 +352,7 @@ class _TicketRun:
         results = self._replay(checked, start_commit, guard, refs_before)
         self.folder.write(ticket.CHECKS, checks.report(results, checked))
         self.folder.log(
+            "ticket.checks.replayed",
             "Checks replayed by Ariane",
             checks.summary_table(results) + "\n\n" + checks.summary_line(results),
         )
@@ -385,6 +399,7 @@ class _TicketRun:
         git.add_detached_worktree(self.worktree, replay, checked)
         try:
             self.folder.log(
+                "ticket.checks.worktree",
                 "Checks working tree",
                 f"Setup and checks run in a clean working tree `{replay}` at `{checked}`,"
                 f" not in `{self.worktree}`.",
@@ -404,7 +419,11 @@ class _TicketRun:
         try:
             git.remove_worktree(self.worktree, replay)
         except _FAILURES as exc:
-            self.folder.log("Warning: replay working tree not removed", f"`{replay}`: {exc}")
+            self.folder.log(
+                "ticket.warning.replay_not_removed",
+                "Warning: replay working tree not removed",
+                f"`{replay}`: {exc}",
+            )
 
     def _commit_record(self, message: str) -> None:
         self.folder.restore()
@@ -414,10 +433,11 @@ class _TicketRun:
     def _stopped(self, exc: BaseException) -> Outcome:
         reason, next_action = _describe(exc)
         detail = exc.detail if isinstance(exc, Stop) else str(exc)
+        logs.emit("run.stopped", f"ticket #{self.number}: {reason}")
         if self.folder.exists():
             # Recording the stop must not hide the reason: report it even if this fails.
             with contextlib.suppress(*_FAILURES):
-                self.folder.log(f"Stopped: {reason}", detail)
+                self.folder.log("ticket.stopped", f"Stopped: {reason}", detail)
                 self.folder.set_status("stopped", reason, next_action)
                 self._commit_record(f"#{self.number}: record the stop")
         return Outcome(

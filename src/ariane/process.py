@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
 
+from ariane import logs
+
 # After the process exits or is killed, how long to wait for its pipes to close.
 _DRAIN_SECONDS = 10.0
 
@@ -101,6 +103,7 @@ def run(
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         kwargs["start_new_session"] = True
+    logs.emit("process.started", " ".join(args))
     start = time.monotonic()
     proc = subprocess.Popen(
         args,
@@ -123,7 +126,7 @@ def run(
     kill_tree(proc.pid)
     with contextlib.suppress(subprocess.TimeoutExpired):
         proc.wait(timeout=_DRAIN_SECONDS)
-    return Completed(
+    completed = Completed(
         argv=tuple(argv),
         returncode=None if timed_out else proc.returncode,
         stdout=out.text(),
@@ -131,6 +134,9 @@ def run(
         timed_out=timed_out,
         duration_s=time.monotonic() - start,
     )
+    exit_text = "timed out" if timed_out else f"exit {completed.returncode}"
+    logs.emit("process.exited", f"{argv[0]}: {exit_text} in {completed.duration_s:.2f} s")
+    return completed
 
 
 class _Reader:

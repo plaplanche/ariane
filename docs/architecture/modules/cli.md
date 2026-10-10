@@ -19,6 +19,7 @@ flowchart LR
   cli --> ticket
   cli --> claude_code
   cli --> github
+  cli --> logs
   __main__ --> cli
 ```
 

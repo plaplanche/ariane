@@ -8,7 +8,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ariane import __version__, config, flow, git, process, ticket
+from ariane import __version__, config, flow, git, logs, process, ticket
 from ariane.claude_code import ClaudeCodeRuntime
 from ariane.github import GitHubTracker
 
@@ -25,9 +25,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help()
         return _say(EXIT_USAGE, "Did nothing: no command given. Next: run ariane start <issue>.")
     try:
+        level = logs.resolve_level(args.log_level, os.environ)
+    except ValueError as exc:
+        return _say(
+            EXIT_USAGE, (f"Did nothing: {exc}. Next: set --log-level or {logs.LEVEL_VARIABLE}.")
+        )
+    logs.configure(level)
+    try:
         root = git.repo_root(Path.cwd())
     except git.GitError as exc:
         return _say(EXIT_USAGE, f"Did nothing: {exc}. Next: run ariane inside a git repository.")
+    logs.configure(level, logs.log_path(root, args.issue))
     if args.command == "status":
         return _status(root, args.issue)
     return _start(root, args.issue)
@@ -38,10 +46,21 @@ def _parser() -> argparse.ArgumentParser:
         prog="ariane", description="Turn tickets into reviewed pull requests."
     )
     parser.add_argument("--version", action="version", version=_version_line())
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        help=f"technical log level: debug, info, warning or error (default: {logs.LEVEL_VARIABLE},"
+        f" else {logs.DEFAULT_LEVEL})",
+    )
     sub = parser.add_subparsers(dest="command")
-    start = sub.add_parser("start", help="run the ticket of an issue up to its pull request")
+    start = sub.add_parser(
+        "start", parents=[common], help="run the ticket of an issue up to its pull request"
+    )
     start.add_argument("issue", type=_issue_number, help="issue number")
-    status = sub.add_parser("status", help="show a ticket's state, read from its folder")
+    status = sub.add_parser(
+        "status", parents=[common], help="show a ticket's state, read from its folder"
+    )
     status.add_argument("issue", type=_issue_number, help="issue number")
     return parser
 
@@ -70,6 +89,7 @@ def _start(root: Path, number: int) -> int:
             f"Did not start #{number}: environment variable {cfg.tracker.token_env} is empty."
             f" Next: set it to a token with access to {cfg.tracker.repository}.",
         )
+    logs.add_secrets([token])
     tracker = GitHubTracker(
         repository=cfg.tracker.repository, token=token, api_url=cfg.tracker.api_url
     )

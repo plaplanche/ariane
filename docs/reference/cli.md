@@ -22,23 +22,27 @@ options:
 ## `ariane start`
 
 ```text
-usage: ariane start [-h] issue
+usage: ariane start [-h] [--log-level LEVEL] issue
 
 positional arguments:
-  issue       issue number
+  issue              issue number
 
 options:
-  -h, --help  show this help message and exit
+  -h, --help         show this help message and exit
+  --log-level LEVEL  technical log level: debug, info, warning or error
+                     (default: ARIANE_LOG_LEVEL, else warning)
 ```
 
 ## `ariane status`
 
 ```text
-usage: ariane status [-h] issue
+usage: ariane status [-h] [--log-level LEVEL] issue
 
 positional arguments:
-  issue       issue number
+  issue              issue number
 
 options:
-  -h, --help  show this help message and exit
+  -h, --help         show this help message and exit
+  --log-level LEVEL  technical log level: debug, info, warning or error
+                     (default: ARIANE_LOG_LEVEL, else warning)
 ```

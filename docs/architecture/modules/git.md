@@ -18,6 +18,7 @@ Arrows go from the caller to the callee.
 ```mermaid
 flowchart LR
   git --> process
+  git --> logs
   git --> redact
   cli --> git
   context --> git

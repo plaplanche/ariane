@@ -15,6 +15,7 @@ flowchart LR
   delivery --> redact
   flow --> redact
   git --> redact
+  logs --> redact
   ticket --> redact
 ```
 

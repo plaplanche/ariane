@@ -32,6 +32,7 @@ flowchart LR
 - [`flow`](modules/flow.md)
 - [`git`](modules/git.md)
 - [`github`](modules/github.md)
+- [`logs`](modules/logs.md)
 - [`process`](modules/process.md)
 - [`redact`](modules/redact.md)
 - [`runtime`](modules/runtime.md)
