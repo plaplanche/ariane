@@ -139,9 +139,15 @@ class _TicketRun:
         remotes = git.remotes(worktree)
         token_env = config.tracker.token_env
         # Agent sessions and anything running code an agent wrote get no credential.
-        self.agent_env = context.untrusted_environment(
-            environ, token_env=token_env, remotes=remotes, login_variables=runtime.login_variables
-        )
+        self.agent_envs = {
+            role: context.untrusted_environment(
+                environ,
+                token_env=token_env,
+                remotes=remotes,
+                login_variables=for_role(runtime, role).login_variables,
+            )
+            for role in ("implementer", "reviewer")
+        }
         self.untrusted_env = context.untrusted_environment(
             environ, token_env=token_env, remotes=remotes
         )
@@ -224,7 +230,7 @@ class _TicketRun:
             timeout_s=agent.timeout_minutes * 60,
             cwd=self.worktree,
             prompt=prompt,
-            env=self.agent_env,
+            env=self.agent_envs["implementer"],
         )
         self.folder.log(
             "ticket.session.started",
@@ -517,7 +523,7 @@ class _TicketRun:
             self.config.reviewer,
             self.folder,
             self.issue,
-            self.agent_env,
+            self.agent_envs["reviewer"],
             self._all_checks(),
             self.config.definition_of_done,
         )

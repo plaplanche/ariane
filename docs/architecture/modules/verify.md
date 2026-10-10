@@ -1,6 +1,6 @@
 # Module `ariane.verify`
 
-`ariane verify`: checks and reviews a local branch finished by hand (C10, C23). It replays the setup and the checks in a clean working tree at the branch's head, runs one read-only review, and commits `work/verify/<branch>/review.md` and `checks.md` (redacted) on top of the branch. It never pushes.
+`ariane verify`: checks and reviews a local branch finished by hand (C10, C23). It replays the setup and the checks in a clean working tree at the branch's head, runs one read-only review, and commits `work/verify/<branch>/review.md` and `checks.md` (redacted) on top of the branch. It never pushes. The agent environment is the reviewer's runtime's own. Just before committing it checks again that the branch has not moved and is checked out where it was, in a clean tree; otherwise it refuses without committing. When nothing is committed (for example `work/` is ignored) it exits 1 with "nothing was recorded".
 
 ## Main types and functions
 

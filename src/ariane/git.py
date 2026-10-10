@@ -263,13 +263,15 @@ def committed_paths(cwd: Path, since: str, pathspec: str) -> list[str]:
 
 
 def commit(cwd: Path, pathspec: list[str], message: str, *, env: Mapping[str, str]) -> bool:
-    """Commit the changes under `pathspec` only; return False when it holds none.
+    """Commit the changes under `pathspec` only; return False when it holds none (or all ignored).
 
     The index is reset to HEAD first: whatever an agent or a check staged does not ride along.
     """
     git(["reset", "--quiet"], cwd, env=env)
-    git(["add", "--all", "--", *pathspec], cwd, env=env)
-    if git(["diff", "--cached", "--quiet"], cwd, env=env, check=False).ok:
+    added = git(["add", "--all", "--", *pathspec], cwd, env=env, check=False)
+    if not added.ok and "ignored" not in added.output:
+        raise GitError(redact(f"git add failed:\n{added.output.strip()}"))
+    if not added.ok or git(["diff", "--cached", "--quiet"], cwd, env=env, check=False).ok:
         return False
     git(["commit", "--quiet", "-m", message], cwd, env=env)
     return True

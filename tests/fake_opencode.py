@@ -13,8 +13,11 @@ args = sys.argv[5:]
 if args == ["--version"]:
     print("1.18.35")
     sys.exit(0)
+stdin_size = len(sys.stdin.read())
 with open(dump, "w", encoding="utf-8") as out:
-    json.dump({"argv": args, "env": dict(os.environ), "cwd": os.getcwd()}, out)
+    json.dump(
+        {"argv": args, "env": dict(os.environ), "cwd": os.getcwd(), "stdin_size": stdin_size}, out
+    )
 with open(events, encoding="utf-8") as lines:
     for line in lines:
         print(line.rstrip("\n"), flush=True)

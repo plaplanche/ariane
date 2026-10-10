@@ -9,15 +9,15 @@ ADR 0014 requires vendor independence and ADR 0015 records how opencode 1.18.35 
 
 ## Decision
 - `[agents.<role>] runtime` is `claude-code` or `opencode`; opencode is refused for the implementer with a message naming the role. An opencode agent's model is `<provider>/<model>` and its tools are among `read`, `glob`, `grep`.
-- A `RoutedRuntime` gives each role its runtime; `flow` and `verify` still take one runtime. Login variables are the union of the runtimes' ones. For opencode they are the provider's key (`<PROVIDER>_API_KEY`, with a short table for providers that differ).
+- A `RoutedRuntime` gives each role its runtime; `flow` and `verify` still take one runtime. Each session's environment is built from its own role's runtime (`RoutedRuntime.for_role(role).login_variables`), so the implementer never holds the reviewer's provider key nor the reviewer `ANTHROPIC_*`/`CLAUDE_*` (amended). For opencode they are the provider's key (`<PROVIDER>_API_KEY`, with a short table for providers that differ).
 - The turn cap is a constant, `steps = 20`, in the inline configuration: the configuration has no key for it yet.
-- The prompt is passed as the message argument, as the issue decided. A command line over the system's limit (32,000 characters on Windows, about 127 KiB per argument elsewhere) ends the session with `error` before it starts, and an `OSError` at start is also `error`. The log shows each argument cut at 200 characters. opencode has no schema option, so the schema is appended to the message and the answer is the last fenced `json` block of the last text part.
+- The prompt is passed on standard input (`input_text`), with no message argument: `opencode run` reads its message from standard input when it has none (checked on 1.18.35 with a 300,000-character message). There is no command-length limit; an `OSError` at start is `error` (amended). The log shows each argument cut at 200 characters. opencode has no schema option, so the schema is appended to the message and the answer is the last fenced `json` block of the last text part.
 - Caps: the token cap (`max_tokens`) and, when opencode reports a cost above 0, the cost cap (`max_budget_usd`), both checked after each `step_finish`.
 - `ARIANE_CONFIG`, a path relative to the repository root (or absolute), replaces `ariane.toml` for one run; its errors name `ARIANE_CONFIG (<file>)`.
 
 ## Consequences
-A review on a second vendor needs no change to Ariane's own `ariane.toml`. A very large prompt may exceed the operating system's command-line limit (notably on Windows); the diff is already truncated by `review.MAX_DIFF_CHARS`.
+A review on a second vendor needs no change to Ariane's own `ariane.toml`. The reviewer takes prompts of any size.
 
 ## Alternatives considered
-- Pass the prompt on standard input: rejected, `opencode run` reads its message from the arguments.
+- Pass the prompt as the message argument: first chosen, replaced because real review prompts exceed the system's argument limits.
 - A `steps` key in `ariane.toml`: rejected for now, one more key without a need.

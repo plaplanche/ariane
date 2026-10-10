@@ -68,14 +68,16 @@ class AgentRuntime(Protocol):
 
 
 class RoutedRuntime:
-    """One runtime per role (ADR 0029): a session goes to the runtime of its role."""
+    """One runtime per role (ADR 0029): a session goes to the runtime of its role.
+
+    It has no login of its own: each session's environment is built from its role's runtime.
+    """
+
+    login_variables: tuple[str, ...] = ()
 
     def __init__(self, runtimes: Mapping[str, AgentRuntime]) -> None:
         self.runtimes = dict(runtimes)
         self.name = ", ".join(dict.fromkeys(r.name for r in self.runtimes.values()))
-        self.login_variables = tuple(
-            dict.fromkeys(v for r in self.runtimes.values() for v in r.login_variables)
-        )
 
     def for_role(self, role: str) -> AgentRuntime:
         return self.runtimes[role]
