@@ -17,6 +17,24 @@ _STR: dict[str, Any] = {"type": "string", "minLength": 1}
 _ARGV: dict[str, Any] = {"type": "array", "minItems": 1, "items": _STR}
 _POSITIVE: dict[str, Any] = {"type": "number", "exclusiveMinimum": 0}
 
+_AGENT: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["runtime", "model", "tools", "max_budget_usd", "timeout_minutes"],
+    "properties": {
+        "runtime": {"enum": ["claude-code"]},
+        "model": _STR,
+        "tools": {**_ARGV, "description": "Tools the agent may use (not Skill)."},
+        "max_budget_usd": _POSITIVE,
+        "max_tokens": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "description": "Optional cap on tokens counted by Ariane per session.",
+        },
+        "timeout_minutes": _POSITIVE,
+    },
+}
+
 # Description of `ariane.toml` for docs/reference/ariane.toml.schema.json (ADR 0022). Keep it in
 # step with `parse`: a test validates both example files against it.
 SCHEMA: dict[str, Any] = {
@@ -57,25 +75,13 @@ SCHEMA: dict[str, Any] = {
         "agents": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["implementer"],
+            "required": ["implementer", "reviewer"],
             "properties": {
-                "implementer": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["runtime", "model", "tools", "max_budget_usd", "timeout_minutes"],
-                    "properties": {
-                        "runtime": {"enum": ["claude-code"]},
-                        "model": _STR,
-                        "tools": {**_ARGV, "description": "Tools the agent may use (not Skill)."},
-                        "max_budget_usd": _POSITIVE,
-                        "max_tokens": {
-                            "type": "integer",
-                            "exclusiveMinimum": 0,
-                            "description": "Optional cap on tokens counted by Ariane per session.",
-                        },
-                        "timeout_minutes": _POSITIVE,
-                    },
-                }
+                "implementer": _AGENT,
+                "reviewer": {
+                    **_AGENT,
+                    "description": "Read-only reviewer (C10); model differs from the implementer.",
+                },
             },
         },
         "definition_of_done": {
@@ -184,6 +190,7 @@ class Config:
     setup: tuple[str, ...] | None
     tracker: TrackerConfig
     implementer: AgentConfig
+    reviewer: AgentConfig
     checks: tuple[CheckConfig, ...]
     definition_of_done: tuple[DoneItem, ...] = DEFAULT_DEFINITION_OF_DONE
 
@@ -208,13 +215,14 @@ def parse(data: dict[str, Any]) -> Config:
     tracker = _table(data, "tracker")
     _only(tracker, "tracker", {"kind", "repository", "token_env", "api_url"})
     agents = _table(data, "agents")
-    _only(agents, "agents", {"implementer"})
-    implementer = _table(agents, "implementer", "agents.")
-    _only(
-        implementer,
-        "agents.implementer",
-        {"runtime", "model", "tools", "max_budget_usd", "timeout_minutes", "max_tokens"},
-    )
+    _only(agents, "agents", {"implementer", "reviewer"})
+    implementer = _agent(agents, "implementer")
+    reviewer = _agent(agents, "reviewer")
+    if reviewer.model == implementer.model:
+        raise ConfigError(
+            f"{CONFIG_FILE}: agents.reviewer.model: must differ from agents.implementer.model"
+            f" ({reviewer.model!r}); the review is by a different model (C10)"
+        )
     raw_checks = data.get("checks")
     if not isinstance(raw_checks, list) or not raw_checks:
         raise ConfigError(f"{CONFIG_FILE}: checks: at least one [[checks]] table is required")
@@ -225,18 +233,6 @@ def parse(data: dict[str, Any]) -> Config:
     repository = _str(tracker, "repository", "tracker.")
     if repository.count("/") != 1 or "" in repository.split("/"):
         raise ConfigError(f"{CONFIG_FILE}: tracker.repository: expected owner/name")
-    runtime = _str(implementer, "runtime", "agents.implementer.")
-    if runtime != "claude-code":
-        raise ConfigError(
-            f"{CONFIG_FILE}: agents.implementer.runtime: unsupported value {runtime!r}"
-            " (claude-code)"
-        )
-    tools = _str_list(implementer, "tools", "agents.implementer.")
-    if "Skill" in tools:
-        raise ConfigError(
-            f"{CONFIG_FILE}: agents.implementer.tools: Skill is not allowed (undeclared skills, C6)"
-        )
-
     base_branch = _str(project, "base_branch", "project.")
     if base_branch.startswith("-") or any(c.isspace() or c in "~^:?*[\\" for c in base_branch):
         raise ConfigError(f"{CONFIG_FILE}: project.base_branch: not a valid branch name")
@@ -258,16 +254,39 @@ def parse(data: dict[str, Any]) -> Config:
             token_env=_str(tracker, "token_env", "tracker."),
             api_url=api_url,
         ),
-        implementer=AgentConfig(
-            runtime=runtime,
-            model=_str(implementer, "model", "agents.implementer."),
-            tools=tools,
-            max_budget_usd=_positive(implementer, "max_budget_usd", "agents.implementer."),
-            timeout_minutes=_positive(implementer, "timeout_minutes", "agents.implementer."),
-            max_tokens=_max_tokens(implementer),
-        ),
+        implementer=implementer,
+        reviewer=reviewer,
         checks=(checks := _checks(raw_checks)),
         definition_of_done=_definition_of_done(data, {c.name for c in checks}),
+    )
+
+
+def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
+    where = f"agents.{role}"
+    table = _table(agents, role, "agents.")
+    _only(
+        table,
+        where,
+        {"runtime", "model", "tools", "max_budget_usd", "timeout_minutes", "max_tokens"},
+    )
+    prefix = f"{where}."
+    runtime = _str(table, "runtime", prefix)
+    if runtime != "claude-code":
+        raise ConfigError(
+            f"{CONFIG_FILE}: {where}.runtime: unsupported value {runtime!r} (claude-code)"
+        )
+    tools = _str_list(table, "tools", prefix)
+    if "Skill" in tools:
+        raise ConfigError(
+            f"{CONFIG_FILE}: {where}.tools: Skill is not allowed (undeclared skills, C6)"
+        )
+    return AgentConfig(
+        runtime=runtime,
+        model=_str(table, "model", prefix),
+        tools=tools,
+        max_budget_usd=_positive(table, "max_budget_usd", prefix),
+        timeout_minutes=_positive(table, "timeout_minutes", prefix),
+        max_tokens=_max_tokens(table, where),
     )
 
 
@@ -381,14 +400,12 @@ def _str_list(table: dict[str, Any], key: str, prefix: str) -> tuple[str, ...]:
     return tuple(value)
 
 
-def _max_tokens(table: dict[str, Any]) -> int | None:
+def _max_tokens(table: dict[str, Any], where: str) -> int | None:
     value = table.get("max_tokens")
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ConfigError(
-            f"{CONFIG_FILE}: agents.implementer.max_tokens: expected a positive integer"
-        )
+        raise ConfigError(f"{CONFIG_FILE}: {where}.max_tokens: expected a positive integer")
     return value
 
 

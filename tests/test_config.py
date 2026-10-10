@@ -20,7 +20,14 @@ VALID: dict[str, Any] = {
             "tools": ["Read", "Edit"],
             "max_budget_usd": 5,
             "timeout_minutes": 30,
-        }
+        },
+        "reviewer": {
+            "runtime": "claude-code",
+            "model": "claude-opus-5-5",
+            "tools": ["Read", "Glob", "Grep"],
+            "max_budget_usd": 3,
+            "timeout_minutes": 20,
+        },
     },
     "checks": [{"name": "tests", "command": ["pytest"]}],
 }
@@ -64,7 +71,7 @@ def test_c22_a_valid_configuration_is_parsed_with_defaults() -> None:
         ("agents.implementer.tools", ["Read", "Skill"], "agents.implementer.tools: Skill"),
         ("agents.implementer.max_budget_usd", 0, "agents.implementer.max_budget_usd: expected"),
         ("agents.implementer.timeout_minutes", True, "agents.implementer.timeout_minutes"),
-        ("agents.reviewer", {}, "agents.reviewer: unknown key"),
+        ("agents.verifier", {}, "agents.verifier: unknown key"),
         ("checks", [], "checks: at least one"),
         ("checks.0.command", "pytest -q", "checks[0].command: expected a non-empty list"),
         ("checks.0.blocking", "yes", "checks[0].blocking: expected true or false"),
@@ -155,3 +162,18 @@ def test_c26_dod_the_default_list_applies_without_a_table() -> None:
         config.DEFAULT_DEFINITION_OF_DONE
     )
     assert len(config.DEFAULT_DEFINITION_OF_DONE) == 3
+
+
+def test_c10_review_the_same_model_for_both_roles_is_refused_at_load() -> None:
+    data = with_change("agents.reviewer.model", "claude-sonnet-5-5")
+    with pytest.raises(config.ConfigError, match=r"agents\.reviewer\.model: must differ"):
+        config.parse(data)
+
+
+def test_c10_review_the_reviewer_table_is_required_and_validated() -> None:
+    with pytest.raises(config.ConfigError, match=r"agents\.reviewer: missing table"):
+        config.parse(with_change("agents.reviewer", None))
+    with pytest.raises(config.ConfigError, match=r"agents\.reviewer\.tools: Skill"):
+        config.parse(with_change("agents.reviewer.tools", ["Read", "Skill"]))
+    cfg = config.parse(copy.deepcopy(VALID))
+    assert (cfg.reviewer.model, cfg.reviewer.tools) == ("claude-opus-5-5", ("Read", "Glob", "Grep"))

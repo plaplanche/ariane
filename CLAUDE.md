@@ -63,7 +63,9 @@ capability exists, so the gates are Ariane's, not the session's (ADR 0020).
 - When a capability ships, every rule above that it enforces is removed or marked "enforced by
   Ariane (Cn)" in the same pull request, and the next ticket uses it.
 - Today, for tickets Ariane runs: the checks of rule 6 are enforced by Ariane (C9); redaction of
-  what Ariane posts (rule 8) is enforced by Ariane (C21, basic). For a session's own commits and
+  what Ariane posts (rule 8) is enforced by Ariane (C21, basic), and the independent review of
+  rule 5 is enforced by Ariane (C10: a read-only reviewer on a different model, one review, no fix
+  rounds yet). For a session's own commits and
   posts, both rules stay manual.
 - A hand takeover (after a second `no-go`, or a ticket Ariane cannot run, such as a workflow
   file pushed from the owner's machine) runs `ariane verify <branch>` before its pull request

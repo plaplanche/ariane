@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import contextlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ariane import checks, context, git, logs, process, ticket
+from ariane import checks, context, git, logs, process, review, ticket
 from ariane.config import Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.redact import redact
@@ -34,8 +35,11 @@ QUIET = "nobody runs git commands in the repository or pushes to it while a tick
 class Stop(Exception):
     """The ticket stops here; `reason` and `next_action` go to the user and the journal."""
 
-    def __init__(self, reason: str, next_action: str, detail: str = "") -> None:
+    def __init__(
+        self, reason: str, next_action: str, detail: str = "", status: str = "stopped"
+    ) -> None:
         super().__init__(reason)
+        self.status = status
         self.reason = reason
         self.next_action = next_action
         self.detail = detail
@@ -105,6 +109,20 @@ def _describe(exc: BaseException) -> tuple[str, str]:
         return exc.reason, exc.next_action
     first = str(exc).splitlines()[0].rstrip(":") if str(exc) else type(exc).__name__
     return first, "read the error above and retry"
+
+
+def _read_answer(result: SessionResult) -> tuple[review.Review | None, str]:
+    """The validated answer of a reviewer session, or the reason it is not one."""
+    data = result.structured_output
+    if data is None:
+        try:
+            data = json.loads(result.summary)
+        except json.JSONDecodeError:
+            return None, "the answer is not a JSON object"
+    errors = review.validate(data)
+    if errors:
+        return None, "\n".join(errors)
+    return review.parse(data), ""
 
 
 class _TicketRun:
@@ -355,20 +373,24 @@ class _TicketRun:
         self, start_commit: str, guard: dict[str, str], refs_before: dict[str, str]
     ) -> Outcome:
         checked = git.head(self.worktree)
-        results = self._replay(checked, start_commit, guard, refs_before)
-        self.folder.write(ticket.CHECKS, checks.report(results, checked))
-        self.folder.log(
-            "ticket.checks.replayed",
-            "Checks replayed by Ariane",
-            checks.summary_table(results) + "\n\n" + checks.summary_line(results),
-        )
-        failed = checks.blocking_failures(results)
-        if failed:
-            names = ", ".join(r.name for r in failed)
-            raise Stop(
-                f"blocking checks failed: {names}",
-                f"read work/{self.number}/checks.md in {self.worktree}",
+        replay, results = self._replay(checked, start_commit, guard, refs_before)
+        try:
+            self.folder.write(ticket.CHECKS, checks.report(results, checked))
+            self.folder.log(
+                "ticket.checks.replayed",
+                "Checks replayed by Ariane",
+                checks.summary_table(results) + "\n\n" + checks.summary_line(results),
             )
+            failed = checks.blocking_failures(results)
+            if failed:
+                names = ", ".join(r.name for r in failed)
+                raise Stop(
+                    f"blocking checks failed: {names}",
+                    f"read work/{self.number}/checks.md in {self.worktree}",
+                )
+            settled = self._review(replay, checked, start_commit, guard, refs_before, results)
+        finally:
+            self._remove_replay(replay)
         delivery = Delivery(
             self.issue,
             self.tracker,
@@ -382,6 +404,7 @@ class _TicketRun:
             _token(self.environ, self.config.tracker.token_env),
             self.environ,
             checked,
+            settled,
         )
         try:
             done = delivery.deliver(results)
@@ -389,14 +412,16 @@ class _TicketRun:
             raise Stop(exc.reason, exc.next_action) from None
         return Outcome(
             EXIT_OK,
-            f"Opened pull request {done.pull_url} for issue #{self.number}, checks replayed green."
-            " Next: review and merge it.",
+            f"Opened pull request {done.pull_url} for issue #{self.number}, checks replayed green,"
+            " review go. Next: review and merge it.",
         )
 
     def _replay(
         self, checked: str, start_commit: str, guard: dict[str, str], refs_before: dict[str, str]
-    ) -> list[checks.CheckResult]:
-        """C9: set up and run every check in a clean working tree at the delivered commit."""
+    ) -> tuple[Path, list[checks.CheckResult]]:
+        """C9: set up and run every check in a clean working tree at the delivered commit.
+
+        The tree is kept for the reviewer; the caller removes it."""
         replay = self.worktree.with_name(f"{self.number}-replay")
         if replay.exists():
             raise Stop(
@@ -416,10 +441,102 @@ class _TicketRun:
             results = checks.run_checks(self.config.checks, replay, self.untrusted_env)
             if git.current_branch(replay) or git.head(replay) != checked:
                 raise Stop("the checks moved the replay working tree's head", "inspect it")
-        finally:
+            self._verify("the checks", start_commit, guard, refs_before, expected_head=checked)
+        except BaseException:
             self._remove_replay(replay)
-        self._verify("the checks", start_commit, guard, refs_before, expected_head=checked)
-        return results
+            raise
+        return replay, results
+
+    def _review(
+        self,
+        replay: Path,
+        checked: str,
+        start_commit: str,
+        guard: dict[str, str],
+        refs_before: dict[str, str],
+        results: list[checks.CheckResult],
+    ) -> review.Settled:
+        """C10, C26: a fresh read-only reviewer session in the replay tree; one retry if its
+        answer is invalid. `go` delivers; `no-go` stops for a human."""
+        agent = self.config.reviewer
+        diff = git.diff(self.worktree, start_commit, checked, ticket.WORK_DIR)
+        tree_before = git.status(replay)
+        error = ""
+        answer: review.Review | None = None
+        for attempt in (1, 2):
+            session = Session(
+                role="reviewer",
+                model=agent.model,
+                tools=agent.tools,
+                max_budget_usd=agent.max_budget_usd,
+                max_tokens=agent.max_tokens,
+                timeout_s=agent.timeout_minutes * 60,
+                cwd=replay,
+                prompt=review.prompt(
+                    self.issue,
+                    diff,
+                    results,
+                    self.config.checks,
+                    self.config.definition_of_done,
+                    error=error,
+                ),
+                env=self.agent_env,
+                json_schema=review.SCHEMA,
+            )
+            self.folder.log(
+                "ticket.review.started",
+                f"Reviewer session {attempt} started",
+                f"Runtime {self.runtime.name}, model {agent.model}, tools"
+                f" {', '.join(agent.tools)}, runtime cost cap {agent.max_budget_usd:g} USD,"
+                f" time limit {agent.timeout_minutes:g} min, in `{replay}` at `{checked}`.",
+            )
+            result = self.runtime.run(session)
+            self._verify("the reviewer", start_commit, guard, refs_before, expected_head=checked)
+            self._verify_replay(replay, checked, tree_before)
+            if result.stop_reason is not StopReason.FINISHED:
+                raise Stop(
+                    f"the reviewer session stopped: {result.stop_reason.value}",
+                    f"read work/{self.number}/journal.md; Ariane pushed nothing",
+                    ticket.fenced(result.summary),
+                    status="needs a human",
+                )
+            answer, error = _read_answer(result)
+            if answer is not None:
+                break
+            self.folder.log("ticket.review.invalid", f"Reviewer answer {attempt} invalid", error)
+        if answer is None:
+            raise Stop(
+                f"the reviewer's answer was invalid twice ({error.splitlines()[0]})",
+                f"read work/{self.number}/journal.md; Ariane pushed nothing",
+                error,
+                status="needs a human",
+            )
+        settled = review.settle(answer, self.config.definition_of_done, results)
+        self.folder.write(ticket.REVIEW, review.record(settled, checked, agent.model))
+        self.folder.log(
+            "ticket.review.verdict",
+            f"Review: {settled.verdict}",
+            review.findings_table(settled),
+        )
+        if not settled.go:
+            blocking = sum(f.severity == "blocking" for f in settled.findings)
+            raise Stop(
+                f"the review is no-go ({blocking} blocking findings)",
+                f"read work/{self.number}/review-0.md in {self.worktree}; a human decides",
+                status="needs a human",
+            )
+        return settled
+
+    def _verify_replay(self, replay: Path, checked: str, tree_before: str) -> None:
+        """The reviewer reads only: the replay tree has the same head and no edited file."""
+        if git.current_branch(replay) or git.head(replay) != checked:
+            raise Stop("the reviewer moved the replay working tree's head", "inspect it")
+        if git.status(replay) != tree_before:
+            raise Stop(
+                "the reviewer changed files in the working tree",
+                "inspect the review session; Ariane pushed nothing",
+                status="needs a human",
+            )
 
     def _remove_replay(self, replay: Path) -> None:
         try:
@@ -444,7 +561,8 @@ class _TicketRun:
             # Recording the stop must not hide the reason: report it even if this fails.
             with contextlib.suppress(*_FAILURES):
                 self.folder.log("ticket.stopped", f"Stopped: {reason}", detail)
-                self.folder.set_status("stopped", reason, next_action)
+                status = exc.status if isinstance(exc, Stop) else "stopped"
+                self.folder.set_status(status, reason, next_action)
                 self._commit_record(f"#{self.number}: record the stop")
         return Outcome(
             EXIT_STOPPED, f"Stopped ticket #{self.number}: {reason}. Next: {next_action}.", detail

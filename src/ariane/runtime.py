@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class StopReason(StrEnum):
@@ -28,6 +28,7 @@ class Session:
     cwd: Path
     prompt: str
     env: Mapping[str, str]  # the complete environment of the agent process
+    json_schema: Mapping[str, Any] | None = None  # shape of the structured answer, if any
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class SessionResult:
     summary: str  # the agent's final message, or the error
     permission_denials: tuple[str, ...] = field(default_factory=tuple)
     cap: str | None = None  # which cap stopped a `budget` session
+    structured_output: Any = None  # the answer parsed by the runtime, when a schema was given
 
 
 class AgentRuntime(Protocol):

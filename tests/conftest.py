@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from ariane.config import AgentConfig, CheckConfig, Config, TrackerConfig
+from ariane.config import (
+    DEFAULT_DEFINITION_OF_DONE,
+    AgentConfig,
+    CheckConfig,
+    Config,
+    TrackerConfig,
+)
 from ariane.runtime import Session, SessionResult, StopReason
 from ariane.tracker import InMemoryTracker
 
@@ -94,6 +102,13 @@ def make_config(
             max_budget_usd=1.0,
             timeout_minutes=1.0,
         ),
+        reviewer=AgentConfig(
+            runtime="claude-code",
+            model="test-reviewer",
+            tools=("Read", "Glob", "Grep"),
+            max_budget_usd=1.0,
+            timeout_minutes=1.0,
+        ),
         checks=checks
         or (
             CheckConfig(
@@ -113,6 +128,17 @@ def edit_app(session: Session) -> None:
     (session.cwd / "app.txt").write_text("version 2\n", encoding="utf-8")
 
 
+def go_answer(items: tuple[str, ...] | None = None) -> dict[str, Any]:
+    """A reviewer's `go` answer that meets every sentence of the default definition of done."""
+    texts = items or tuple(str(i.text) for i in DEFAULT_DEFINITION_OF_DONE)
+    return {
+        "verdict": "go",
+        "findings": [],
+        "definition_of_done": [{"item": t, "met": True, "evidence": "seen"} for t in texts],
+        "learnings": [],
+    }
+
+
 @dataclass
 class FakeRuntime:
     """An agent runtime that applies `action` to the working tree instead of calling a model."""
@@ -123,11 +149,27 @@ class FakeRuntime:
     name: str = "fake"
     login_variables: tuple[str, ...] = ("ANTHROPIC_", "CLAUDE_")
     sessions: list[Session] = field(default_factory=list)
+    # What a reviewer session does and answers, one entry per session; the last repeats.
+    review_actions: list[Action] = field(default_factory=list)
+    answers: list[Any] = field(default_factory=lambda: [go_answer()])
 
     def run(self, session: Session) -> SessionResult:
         self.sessions.append(session)
+        if session.role == "reviewer":
+            return self.review(session)
         self.action(session)
         return SessionResult(self.stop_reason, 0.42, 10, 20, 30, 40, self.summary)
+
+    def review(self, session: Session) -> SessionResult:
+        index = sum(1 for s in self.sessions if s.role == "reviewer") - 1
+        if self.review_actions:
+            self.review_actions[min(index, len(self.review_actions) - 1)](session)
+        answer = self.answers[min(index, len(self.answers) - 1)]
+        text = answer if isinstance(answer, str) else json.dumps(answer)
+        structured = None if isinstance(answer, str) else answer
+        return SessionResult(
+            StopReason.FINISHED, 0.1, 1, 2, 3, 4, text, structured_output=structured
+        )
 
 
 @pytest.fixture

@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ariane import checks, git, process, ticket
+from ariane import checks, git, process, review, ticket
 from ariane.redact import redact
 from ariane.tracker import Issue, Tracker, TrackerError
 
@@ -45,6 +45,7 @@ class Delivery:
     token: str = field(default="", repr=False)
     environ: Mapping[str, str] | None = field(default=None, repr=False)
     checked: str = ""
+    settled: review.Settled | None = None
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
@@ -124,6 +125,13 @@ class Delivery:
                 "\n".join(warnings),
             )
 
+    def _review_section(self) -> str:
+        if self.settled is None:
+            return ""
+        path = f"{ticket.relative_folder(self.issue.number)}/{ticket.REVIEW}"
+        url = self.tracker.file_url(self.branch, path)
+        return review.pull_request_section(self.settled, url, path) + "\n"
+
     def _pull_request_body(self, results: list[checks.CheckResult]) -> str:
         number = self.issue.number
         report = f"{ticket.relative_folder(number)}/{ticket.CHECKS}"
@@ -131,6 +139,7 @@ class Delivery:
             f"Closes #{number}\n\n"
             f"Implemented by an Ariane implementer session; checks replayed by Ariane.\n\n"
             f"{checks.summary_table(results)}\n\n{checks.summary_line(results)}\n\n"
+            f"{self._review_section()}"
             f"Full report: [{report}]({self.tracker.file_url(self.branch, report)}). "
             f"Journal: `{ticket.relative_folder(number)}/{ticket.JOURNAL}`.\n"
         )

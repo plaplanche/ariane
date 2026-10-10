@@ -16,6 +16,9 @@ Entries of a ticket's journal.
 | `ticket.work.committed` | info | The agent's work was committed on the ticket branch. |
 | `ticket.checks.worktree` | info | The clean working tree used to replay the checks. |
 | `ticket.checks.replayed` | info | The checks were replayed by Ariane, with the result. |
+| `ticket.review.started` | info | A reviewer session started, with its model and limits. |
+| `ticket.review.invalid` | warning | The reviewer's answer was invalid; asking again. |
+| `ticket.review.verdict` | info | The review ended: verdict, findings, definition of done. |
 | `ticket.delivering` | info | Delivery began: push and pull request. |
 | `ticket.pushed` | info | The ticket branch was pushed. |
 | `ticket.delivered` | info | The pull request was opened. |
