@@ -21,6 +21,7 @@ Entries of a ticket's journal.
 | `ticket.review.stopped` | info | A reviewer session stopped, with its cost and tokens. |
 | `ticket.review.invalid` | warning | The reviewer's answer was invalid; asking again. |
 | `ticket.review.verdict` | info | The review ended: verdict, findings, definition of done. |
+| `ticket.fix.round` | info | A fix round began, with the findings its session was given. |
 | `ticket.delivering` | info | Delivery began: push and pull request. |
 | `ticket.pushed` | info | The ticket branch was pushed. |
 | `ticket.delivered` | info | The pull request was opened. |

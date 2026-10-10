@@ -115,6 +115,18 @@ def test_c11_opens_a_pull_request_from_the_ticket_branch(stub: tuple[Stub, str])
     )
 
 
+def test_c10_fix_round_a_draft_pull_request_is_requested_as_a_draft(
+    stub: tuple[Stub, str],
+) -> None:
+    state, url = stub
+    state.responses[("POST", "/repos/owner/name/pulls")] = (
+        201,
+        {"number": 13, "html_url": "https://github.com/owner/name/pull/13"},
+    )
+    tracker(url).open_pull_request(head="ariane/5", base="main", title="T", body="B", draft=True)
+    assert state.requests[0]["body"]["draft"] is True
+
+
 def test_c9_sets_a_commit_status_with_the_documented_request(stub: tuple[Stub, str]) -> None:
     state, url = stub
     state.responses[("POST", "/repos/owner/name/statuses/abc123")] = (201, {"id": 1})

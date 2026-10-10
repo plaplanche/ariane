@@ -5,6 +5,7 @@ The ticket folder `work/<n>/`: every document of a ticket, readable without Aria
 ## Main types and functions
 
 - `TicketFolder`: write the documents of one ticket.
+- `review_file`: the name of review round `n` (`review-0.md`, then `review-1.md` and `review-2.md` after fix rounds).
 - `folder_path`, `relative_folder`: locations.
 - `brief`: the issue as a document.
 - `read_status`, `parse_status`: read the status file.

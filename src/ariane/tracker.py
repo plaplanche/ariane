@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class TrackerError(Exception):
@@ -29,8 +29,10 @@ class Tracker(Protocol):
         """Return the issue's title and body (never its comments); refuse pull requests."""
         ...
 
-    def open_pull_request(self, *, head: str, base: str, title: str, body: str) -> PullRequest:
-        """Open a pull request from branch `head` into `base`."""
+    def open_pull_request(
+        self, *, head: str, base: str, title: str, body: str, draft: bool = False
+    ) -> PullRequest:
+        """Open a pull request from branch `head` into `base`; a `draft` is not ready to merge."""
         ...
 
     def file_url(self, branch: str, path: str) -> str:
@@ -50,7 +52,7 @@ class InMemoryTracker:
 
     issues: dict[int, Issue] = field(default_factory=dict)
     pull_request_numbers: set[int] = field(default_factory=set)
-    opened: list[dict[str, str]] = field(default_factory=list)
+    opened: list[dict[str, Any]] = field(default_factory=list)
     statuses: list[dict[str, str]] = field(default_factory=list)
     refuse_statuses: bool = False
 
@@ -67,8 +69,12 @@ class InMemoryTracker:
         except KeyError:
             raise TrackerError(f"issue #{number} not found") from None
 
-    def open_pull_request(self, *, head: str, base: str, title: str, body: str) -> PullRequest:
-        self.opened.append({"head": head, "base": base, "title": title, "body": body})
+    def open_pull_request(
+        self, *, head: str, base: str, title: str, body: str, draft: bool = False
+    ) -> PullRequest:
+        self.opened.append(
+            {"head": head, "base": base, "title": title, "body": body, "draft": draft}
+        )
         number = 1000 + len(self.opened)
         return PullRequest(number, f"memory://pulls/{number}")
 
