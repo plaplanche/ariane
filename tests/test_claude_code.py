@@ -16,12 +16,13 @@ HERE = Path(__file__).resolve().parent
 FIXTURES = HERE / "fixtures"
 
 
-def session(tmp_path: Path, timeout_s: float = 30) -> Session:
+def session(tmp_path: Path, timeout_s: float = 30, max_tokens: int | None = None) -> Session:
     return Session(
         role="implementer",
         model="claude-sonnet-5-5",
         tools=("Read", "Edit", "Bash"),
         max_budget_usd=2.5,
+        max_tokens=max_tokens,
         timeout_s=timeout_s,
         cwd=tmp_path,
         prompt="do the ticket",

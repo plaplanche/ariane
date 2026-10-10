@@ -23,6 +23,7 @@ class Session:
     model: str
     tools: tuple[str, ...]
     max_budget_usd: float
+    max_tokens: int | None  # Ariane's own cap on counted tokens; None for no cap
     timeout_s: float
     cwd: Path
     prompt: str
@@ -39,6 +40,7 @@ class SessionResult:
     cache_write_tokens: int | None
     summary: str  # the agent's final message, or the error
     permission_denials: tuple[str, ...] = field(default_factory=tuple)
+    cap: str | None = None  # which cap stopped a `budget` session
 
 
 class AgentRuntime(Protocol):

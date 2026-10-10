@@ -24,6 +24,8 @@ model = "claude-sonnet-5-5"
 tools = ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
 # Spending limit of one session, in US dollars.
 max_budget_usd = 5.0
+# Optional: cap on the tokens of one session (input, cache and output), enforced by Ariane.
+# max_tokens = 2000000
 # Time limit of one session, in minutes.
 timeout_minutes = 30
 

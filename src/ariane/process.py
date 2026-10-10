@@ -9,7 +9,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
@@ -37,6 +37,7 @@ class Completed:
     stderr: str
     timed_out: bool
     duration_s: float
+    stopped: bool = False  # the caller asked for the stop (`stream`)
 
     @property
     def ok(self) -> bool:
@@ -95,6 +96,34 @@ def run(
     The process gets its own process group. When it exits or reaches its time limit, the whole
     group is killed, so background children cannot outlive it or hold its output open.
     """
+    return _execute(argv, cwd, timeout_s, env, input_text, merge_stderr, None)
+
+
+def stream(
+    argv: Sequence[str],
+    *,
+    cwd: Path,
+    on_line: Callable[[str], bool],
+    timeout_s: float | None = None,
+    env: Mapping[str, str] | None = None,
+    input_text: str | None = None,
+) -> Completed:
+    """Like `run`, but `on_line` sees each line of standard output while the command runs.
+
+    When `on_line` returns True the whole process tree is killed and `Completed.stopped` is set.
+    """
+    return _execute(argv, cwd, timeout_s, env, input_text, False, on_line)
+
+
+def _execute(
+    argv: Sequence[str],
+    cwd: Path,
+    timeout_s: float | None,
+    env: Mapping[str, str] | None,
+    input_text: str | None,
+    merge_stderr: bool,
+    on_line: Callable[[str], bool] | None,
+) -> Completed:
     if not argv:
         raise ValueError("empty command")
     args = [resolve(argv[0], env), *argv[1:]]
@@ -114,7 +143,14 @@ def run(
         stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
         **kwargs,  # type: ignore[call-overload]
     )
-    out = _Reader(proc.stdout)
+    stop = threading.Event()
+
+    def seen(line: str) -> None:
+        if on_line is not None and not stop.is_set() and on_line(line):
+            stop.set()
+            kill_tree(proc.pid)
+
+    out = _Reader(proc.stdout, seen if on_line is not None else None)
     err = _Reader(proc.stderr)
     if input_text is not None and proc.stdin is not None:
         threading.Thread(target=_feed, args=(proc.stdin, input_text), daemon=True).start()
@@ -133,24 +169,42 @@ def run(
         stderr=err.text(),
         timed_out=timed_out,
         duration_s=time.monotonic() - start,
+        stopped=stop.is_set(),
     )
-    exit_text = "timed out" if timed_out else f"exit {completed.returncode}"
+    exit_text = (
+        "timed out"
+        if timed_out
+        else "stopped by the caller"
+        if completed.stopped
+        else f"exit {completed.returncode}"
+    )
     logs.emit("process.exited", f"{argv[0]}: {exit_text} in {completed.duration_s:.2f} s")
     return completed
 
 
 class _Reader:
-    """Read a pipe to its end in a thread, so a full pipe never blocks the child."""
+    """Read a pipe to its end in a thread, so a full pipe never blocks the child.
 
-    def __init__(self, pipe: IO[bytes] | None) -> None:
+    With `on_line`, the pipe is read line by line and each decoded line is passed to it.
+    """
+
+    def __init__(
+        self, pipe: IO[bytes] | None, on_line: Callable[[str], None] | None = None
+    ) -> None:
         self._chunks: list[bytes] = []
         self._thread: threading.Thread | None = None
+        self._on_line = on_line
         if pipe is not None:
             self._thread = threading.Thread(target=self._read, args=(pipe,), daemon=True)
             self._thread.start()
 
     def _read(self, pipe: IO[bytes]) -> None:
         with contextlib.suppress(OSError, ValueError):
+            if self._on_line is not None:
+                for line in iter(pipe.readline, b""):
+                    self._chunks.append(line)
+                    self._on_line(decode(line).rstrip("\n"))
+                return
             for chunk in iter(lambda: pipe.read(65536), b""):
                 self._chunks.append(chunk)
 
