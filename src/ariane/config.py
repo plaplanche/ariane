@@ -73,6 +73,38 @@ SCHEMA: dict[str, Any] = {
                 }
             },
         },
+        "definition_of_done": {
+            "type": "object",
+            "additionalProperties": False,
+            "description": "What a change must satisfy to be done (C26); optional.",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": ["check"],
+                                "properties": {
+                                    "check": {**_STR, "description": "Name of a declared check."}
+                                },
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": ["text"],
+                                "properties": {
+                                    "text": {**_STR, "description": "A sentence to satisfy."}
+                                },
+                            },
+                        ]
+                    },
+                    "description": "Default: tests pass, tests cover the change, docs updated.",
+                }
+            },
+        },
         "checks": {
             "type": "array",
             "minItems": 1,
@@ -122,12 +154,32 @@ class CheckConfig:
 
 
 @dataclass(frozen=True)
+class DoneItem:
+    """One item of the definition of done: a declared check, or a sentence."""
+
+    check: str | None = None
+    text: str | None = None
+
+    @property
+    def label(self) -> str:
+        return f"check {self.check} passes" if self.check is not None else str(self.text)
+
+
+DEFAULT_DEFINITION_OF_DONE = (
+    DoneItem(text="Every blocking check passes."),
+    DoneItem(text="The change is covered by tests that fail without it."),
+    DoneItem(text="The documentation the change affects is updated (C25)."),
+)
+
+
+@dataclass(frozen=True)
 class Config:
     base_branch: str
     setup: tuple[str, ...] | None
     tracker: TrackerConfig
     implementer: AgentConfig
     checks: tuple[CheckConfig, ...]
+    definition_of_done: tuple[DoneItem, ...] = DEFAULT_DEFINITION_OF_DONE
 
 
 def load(repo_root: Path) -> Config:
@@ -144,7 +196,7 @@ def load(repo_root: Path) -> Config:
 
 
 def parse(data: dict[str, Any]) -> Config:
-    _only(data, "", {"project", "tracker", "agents", "checks"})
+    _only(data, "", {"project", "tracker", "agents", "checks", "definition_of_done"})
     project = _table(data, "project")
     _only(project, "project", {"base_branch", "setup"})
     tracker = _table(data, "tracker")
@@ -207,7 +259,8 @@ def parse(data: dict[str, Any]) -> Config:
             max_budget_usd=_positive(implementer, "max_budget_usd", "agents.implementer."),
             timeout_minutes=_positive(implementer, "timeout_minutes", "agents.implementer."),
         ),
-        checks=_checks(raw_checks),
+        checks=(checks := _checks(raw_checks)),
+        definition_of_done=_definition_of_done(data, {c.name for c in checks}),
     )
 
 
@@ -252,6 +305,32 @@ def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:
             )
         )
     return tuple(checks)
+
+
+def _definition_of_done(data: dict[str, Any], check_names: set[str]) -> tuple[DoneItem, ...]:
+    if "definition_of_done" not in data:
+        return DEFAULT_DEFINITION_OF_DONE
+    table = _table(data, "definition_of_done")
+    _only(table, "definition_of_done", {"items"})
+    raw = table.get("items")
+    if not isinstance(raw, list) or not raw:
+        raise ConfigError(f"{CONFIG_FILE}: definition_of_done.items: expected a non-empty list")
+    items = []
+    for index, item in enumerate(raw):
+        where = f"definition_of_done.items[{index}]"
+        if not isinstance(item, dict):
+            raise ConfigError(f"{CONFIG_FILE}: {where}: expected a table")
+        _only(item, where, {"check", "text"})
+        if len(item) != 1:
+            raise ConfigError(f"{CONFIG_FILE}: {where}: give either check or text")
+        if "check" in item:
+            name = _str(item, "check", where + ".")
+            if name not in check_names:
+                raise ConfigError(f"{CONFIG_FILE}: {where}.check: no declared check {name!r}")
+            items.append(DoneItem(check=name))
+        else:
+            items.append(DoneItem(text=_str(item, "text", where + ".")))
+    return tuple(items)
 
 
 def _only(table: dict[str, Any], where: str, allowed: set[str]) -> None:

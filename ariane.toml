@@ -35,3 +35,15 @@ command = ["uv", "run", "pytest", "-q"]
 [[checks]]
 name = "file length"
 command = ["uv", "run", "python", "scripts/check_file_length.py"]
+
+# Definition of done (C26): given to the implementer; the reviewer answers each sentence.
+[definition_of_done]
+items = [
+  { check = "lint" },
+  { check = "format" },
+  { check = "types" },
+  { check = "tests" },
+  { check = "file length" },
+  { text = "The change is covered by tests that fail without it." },
+  { text = "The documentation the change affects is updated (C25)." },
+]

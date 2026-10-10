@@ -124,3 +124,34 @@ def test_c22_example_config_is_accepted() -> None:
 
     path = Path(__file__).parent.parent / "docs" / "ariane.example.toml"
     config.parse(tomllib.loads(path.read_text(encoding="utf-8")))
+
+
+def test_c26_dod_a_valid_table_is_loaded() -> None:
+    data = copy.deepcopy(VALID)
+    data["definition_of_done"] = {"items": [{"check": "tests"}, {"text": "Docs updated."}]}
+    parsed = config.parse(data)
+    assert parsed.definition_of_done == (
+        config.DoneItem(check="tests"),
+        config.DoneItem(text="Docs updated."),
+    )
+
+
+def test_c26_dod_an_undeclared_check_is_refused_naming_the_key() -> None:
+    data = copy.deepcopy(VALID)
+    data["definition_of_done"] = {"items": [{"check": "nope"}]}
+    with pytest.raises(config.ConfigError, match=r"definition_of_done\.items\[0\]\.check"):
+        config.parse(data)
+
+
+def test_c26_dod_an_empty_text_is_refused() -> None:
+    data = copy.deepcopy(VALID)
+    data["definition_of_done"] = {"items": [{"text": "  "}]}
+    with pytest.raises(config.ConfigError, match=r"definition_of_done\.items\[0\]\.text"):
+        config.parse(data)
+
+
+def test_c26_dod_the_default_list_applies_without_a_table() -> None:
+    assert config.parse(copy.deepcopy(VALID)).definition_of_done == (
+        config.DEFAULT_DEFINITION_OF_DONE
+    )
+    assert len(config.DEFAULT_DEFINITION_OF_DONE) == 3

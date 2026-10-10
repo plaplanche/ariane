@@ -4,7 +4,8 @@ Builds what an agent receives from Ariane: its prompt and a trimmed environment 
 
 ## Main types and functions
 
-- `implementer_prompt`: the prompt of the implementer session.
+- `implementer_prompt`: the prompt of the implementer session: rules, the checks to replay and the
+  definition of done (C26).
 - `known_secrets`: the values to redact.
 - `untrusted_environment`: the environment of an agent process.
 
@@ -22,4 +23,4 @@ flowchart LR
 
 ## Serves
 
-C5, C21; ADR 0015. See [the component view](../3-components.md).
+C5, C21, C26; ADR 0015. See [the component view](../3-components.md).

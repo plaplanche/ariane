@@ -8,7 +8,7 @@ import sys
 from collections.abc import Mapping, Sequence
 
 from ariane import git
-from ariane.config import CheckConfig
+from ariane.config import DEFAULT_DEFINITION_OF_DONE, CheckConfig, DoneItem
 from ariane.tracker import Issue
 
 UNTRUSTED_TAG = "untrusted-ticket"
@@ -24,6 +24,7 @@ def implementer_prompt(
     issue: Issue,
     branch: str,
     checks: Sequence[CheckConfig],
+    definition_of_done: Sequence[DoneItem] = DEFAULT_DEFINITION_OF_DONE,
     *,
     recorded: bool = False,
     read_at: str = "",
@@ -40,6 +41,7 @@ Title: {_escape(issue.title)}
 {_escape(issue.body.strip()) or "(empty body)"}
 </{UNTRUSTED_TAG}>"""
     check_lines = "\n".join(f"- {c.name}: `{' '.join(c.command)}`" for c in checks)
+    done_lines = "\n".join(f"- {item.label}" for item in definition_of_done)
     return f"""You are the implementer of ticket #{issue.number}, started by Ariane.
 
 Your working directory is a dedicated git working tree on branch `{branch}`.
@@ -54,6 +56,9 @@ Rules:
 
 Checks Ariane will replay on your work:
 {check_lines}
+
+Definition of done:
+{done_lines}
 
 {block}
 """
