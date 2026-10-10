@@ -29,6 +29,7 @@ _SUBTYPES = {
 
 class ClaudeCodeRuntime:
     name = "claude-code"
+    login_variables: tuple[str, ...] = ("ANTHROPIC_", "CLAUDE_")
 
     def __init__(self, executable: Sequence[str] = ("claude",)) -> None:
         self.executable = tuple(executable)

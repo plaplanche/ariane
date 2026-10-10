@@ -45,5 +45,7 @@ class SessionResult:
 
 class AgentRuntime(Protocol):
     name: str
+    # Exact names and prefixes (ending in `_`) of the variables the runtime keeps for its login.
+    login_variables: tuple[str, ...]
 
     def run(self, session: Session) -> SessionResult: ...

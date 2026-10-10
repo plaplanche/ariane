@@ -20,7 +20,7 @@ SETUP_TIMEOUT_S = 1800.0
 def without_credentials() -> dict[str, str]:
     """The environment for the branch's code: the workflow's token is not passed to it."""
     return context.untrusted_environment(
-        os.environ, token_env="GITHUB_TOKEN", remotes=[], keep_agent_login=False, is_root=False
+        os.environ, token_env="GITHUB_TOKEN", remotes=[], is_root=False
     )
 
 

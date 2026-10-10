@@ -121,6 +121,7 @@ class FakeRuntime:
     stop_reason: StopReason = StopReason.FINISHED
     summary: str = "changed app.txt"
     name: str = "fake"
+    login_variables: tuple[str, ...] = ("ANTHROPIC_", "CLAUDE_")
     sessions: list[Session] = field(default_factory=list)
 
     def run(self, session: Session) -> SessionResult:

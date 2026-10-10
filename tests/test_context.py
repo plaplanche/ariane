@@ -39,9 +39,12 @@ def test_c5_the_issue_enters_the_prompt_as_delimited_untrusted_data() -> None:
     assert "Do not push" in prompt
 
 
+CLAUDE = ("ANTHROPIC_", "CLAUDE_")
+
+
 def test_c21_an_agent_gets_no_credential_but_keeps_its_own_login() -> None:
     env = context.untrusted_environment(
-        BASE, token_env="MY_TRACKER", remotes=["origin"], keep_agent_login=True, is_root=True
+        BASE, token_env="MY_TRACKER", remotes=["origin"], login_variables=CLAUDE, is_root=True
     )
     gone = {
         "GH_TOKEN",
@@ -69,24 +72,18 @@ def test_c21_an_agent_gets_no_credential_but_keeps_its_own_login() -> None:
 
 
 def test_c21_code_the_agent_wrote_does_not_even_get_the_agent_login() -> None:
-    env = context.untrusted_environment(
-        BASE, token_env="MY_TRACKER", remotes=[], keep_agent_login=False, is_root=True
-    )
+    env = context.untrusted_environment(BASE, token_env="MY_TRACKER", remotes=[], is_root=True)
     assert "ANTHROPIC_API_KEY" not in env and "CLAUDE_CODE_OAUTH_TOKEN" not in env
     assert "IS_SANDBOX" not in env
 
 
 def test_c21_existing_or_broken_git_config_variables_are_handled() -> None:
     base = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.proxy", "GIT_CONFIG_VALUE_0": "p"}
-    env = context.untrusted_environment(
-        base, token_env="X", remotes=[], keep_agent_login=False, is_root=False
-    )
+    env = context.untrusted_environment(base, token_env="X", remotes=[], is_root=False)
     assert env["GIT_CONFIG_COUNT"] == "2"
     assert env["GIT_CONFIG_KEY_0"] == "http.proxy"
     assert env["GIT_CONFIG_KEY_1"] == "credential.helper"
-    broken = context.untrusted_environment(
-        {"GIT_CONFIG_COUNT": "x"}, token_env="X", remotes=[], keep_agent_login=False
-    )
+    broken = context.untrusted_environment({"GIT_CONFIG_COUNT": "x"}, token_env="X", remotes=[])
     assert broken["GIT_CONFIG_COUNT"] == "1"
 
 
@@ -96,7 +93,7 @@ def test_c21_the_tracker_token_never_passes_whatever_its_name_or_case() -> None:
             {name: "s3cret", "PATH": "/bin"},
             token_env=name.lower(),
             remotes=[],
-            keep_agent_login=True,
+            login_variables=CLAUDE,
             is_root=False,
         )
         assert "s3cret" not in env.values(), name
@@ -131,3 +128,43 @@ def test_c26_dod_ariane_requires_adr() -> None:
         Issue(3, "T", "B", "u"), "ariane/3", cfg.checks, cfg.definition_of_done
     )
     assert f"- {sentence}\n" in prompt
+
+
+def test_c21_login_variables_a_declared_name_is_kept_for_the_agent_only() -> None:
+    base = {"OPENAI_API_KEY": "sk", "ANTHROPIC_API_KEY": "a", "PATH": "/bin"}
+    agent = context.untrusted_environment(
+        base, token_env="T", remotes=[], login_variables=("OPENAI_API_KEY",), is_root=False
+    )
+    checks = context.untrusted_environment(base, token_env="T", remotes=[], is_root=False)
+    assert agent["OPENAI_API_KEY"] == "sk" and "ANTHROPIC_API_KEY" not in agent
+    assert "OPENAI_API_KEY" not in checks and "ANTHROPIC_API_KEY" not in checks
+
+
+def test_c21_login_variables_claude_code_keeps_its_prefixes() -> None:
+    from ariane.claude_code import ClaudeCodeRuntime
+
+    base = {"ANTHROPIC_API_KEY": "a", "CLAUDE_CODE_OAUTH_TOKEN": "c", "OPENAI_API_KEY": "o"}
+    env = context.untrusted_environment(
+        base,
+        token_env="T",
+        remotes=[],
+        login_variables=ClaudeCodeRuntime.login_variables,
+        is_root=False,
+    )
+    assert env["ANTHROPIC_API_KEY"] == "a" and env["CLAUDE_CODE_OAUTH_TOKEN"] == "c"
+    assert "OPENAI_API_KEY" not in env
+
+
+def test_c21_login_variables_never_keep_the_tracker_token() -> None:
+    env = context.untrusted_environment(
+        {"OPENAI_API_KEY": "sk", "PATH": "/bin"},
+        token_env="openai_api_key",
+        remotes=[],
+        login_variables=("OPENAI_API_KEY",),
+        is_root=False,
+    )
+    assert "sk" not in env.values()
+
+
+def test_c21_login_variables_a_kept_key_is_a_known_secret() -> None:
+    assert context.known_secrets({"OPENAI_API_KEY": "sk", "PATH": "/bin"}, "T") == ["sk"]

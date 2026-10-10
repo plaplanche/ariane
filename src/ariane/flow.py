@@ -134,10 +134,10 @@ class _TicketRun:
         token_env = config.tracker.token_env
         # Agent sessions and anything running code an agent wrote get no credential.
         self.agent_env = context.untrusted_environment(
-            environ, token_env=token_env, remotes=remotes, keep_agent_login=True
+            environ, token_env=token_env, remotes=remotes, login_variables=runtime.login_variables
         )
         self.untrusted_env = context.untrusted_environment(
-            environ, token_env=token_env, remotes=remotes, keep_agent_login=False
+            environ, token_env=token_env, remotes=remotes
         )
 
     def execute(self, refs_before: dict[str, str]) -> Outcome:
