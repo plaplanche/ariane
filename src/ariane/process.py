@@ -161,10 +161,13 @@ def _execute(
         threading.Thread(target=_feed, args=(proc.stdin, input_text), daemon=True).start()
     timed_out = False
     try:
-        proc.wait(timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-    kill_tree(proc.pid)
+        try:
+            proc.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+    finally:
+        # Whatever ended the wait (exit, timeout, Ctrl-C, any error), nothing outlives the call.
+        kill_tree(proc.pid)
     with contextlib.suppress(subprocess.TimeoutExpired):
         proc.wait(timeout=_DRAIN_SECONDS)
     completed = Completed(

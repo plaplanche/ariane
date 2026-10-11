@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ariane import checks, context, git, process, review, ticket
 from ariane.config import Config
-from ariane.flow import EXIT_OK, EXIT_STOPPED, REMOTE, SETUP_TIMEOUT_S, Outcome
+from ariane.flow import EXIT_INTERRUPTED, EXIT_OK, EXIT_STOPPED, REMOTE, SETUP_TIMEOUT_S, Outcome
 from ariane.redact import redact
 from ariane.review_session import ReviewFailed, ReviewSession
 from ariane.runtime import AgentRuntime, for_role
@@ -55,6 +55,11 @@ def verify(
         issue_source = _issue(tracker, issue_number)
         where = _checkout(repo_root, branch)
         return _Verification(branch, repo_root, config, runtime, environ, where, issue_source).run()
+    except KeyboardInterrupt:
+        return Outcome(
+            EXIT_INTERRUPTED,
+            f"Stopped verifying {branch}: interrupted by the user. Next: run verify again.",
+        )
     except Refused as exc:
         return Outcome(
             EXIT_STOPPED, f"Did not verify {branch}: {exc.reason}. Next: {exc.next_action}."

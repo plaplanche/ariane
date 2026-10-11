@@ -19,6 +19,7 @@ REMOTE = "origin"
 SETUP_TIMEOUT_S = 30 * 60
 EXIT_OK = 0
 EXIT_STOPPED = 1
+EXIT_INTERRUPTED = 130
 MAX_FIX_ROUNDS = 2
 _FAILURES = FAILURES
 
@@ -106,6 +107,8 @@ def _token(environ: Mapping[str, str], token_env: str) -> str:
 
 
 def _describe(exc: BaseException) -> tuple[str, str]:
+    if isinstance(exc, KeyboardInterrupt):
+        return "interrupted by the user", "check the working tree, then start the ticket again"
     if isinstance(exc, Stop):
         return exc.reason, exc.next_action
     first = str(exc).splitlines()[0].rstrip(":") if str(exc) else type(exc).__name__
@@ -177,7 +180,7 @@ class _TicketRun:
             self._warn_ignored(ignored_before)
             self._commit_agent_work(start_commit, result)
             return self._check_and_deliver(start_commit, guard, refs_before)
-        except (Stop, *_FAILURES) as exc:
+        except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
             return self._stopped(exc)
 
     def _setup(self, cwd: Path) -> Stop | None:
@@ -580,6 +583,7 @@ class _TicketRun:
                 status = exc.status if isinstance(exc, Stop) else "stopped"
                 self.folder.set_status(status, reason, next_action)
                 self._commit_record(f"#{self.number}: record the stop")
+        code = EXIT_INTERRUPTED if isinstance(exc, KeyboardInterrupt) else EXIT_STOPPED
         return Outcome(
-            EXIT_STOPPED, f"Stopped ticket #{self.number}: {reason}. Next: {next_action}.", detail
+            code, f"Stopped ticket #{self.number}: {reason}. Next: {next_action}.", detail
         )
