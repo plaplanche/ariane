@@ -101,7 +101,7 @@
                 "type": "string",
                 "minLength": 1
               },
-              "description": "Tools the agent may use (not Skill)"
+              "description": "Tools the agent may use (not Skill)."
             },
             "max_budget_usd": {
               "type": "number",
@@ -146,7 +146,7 @@
                 "type": "string",
                 "minLength": 1
               },
-              "description": "Tools the agent may use (not Skill)"
+              "description": "Tools the agent may use (not Skill)."
             },
             "max_budget_usd": {
               "type": "number",

@@ -22,7 +22,7 @@ flowchart TB
   cmd -->|starts in a tree| session
   cmd -->|ariane verify commits on the branch| verifyrec
   cmd -->|technical logs, redacted| logs
-  session -->|reviewer: read-only, in a replay tree| trees
+  session -->|reviewer: read-only, in a reviewer tree without instruction files| trees
   session -->|edits files in| trees
   cmd -->|push, pull request, statuses| github
   github -->|triggers| ci
@@ -31,6 +31,7 @@ flowchart TB
 
 - `ci.yml` runs the checks on Windows, macOS and Linux (ADR 0005).
 - `check-statuses.yml` publishes the statuses from the committed report when Ariane cannot.
-- The reviewer session is read-only: its tools exclude writing and it runs in a clean replay tree.
-  On opencode it ignores project configuration files.
+- The reviewer session is read-only: its tools are an allow list (`Read`, `Glob`, `Grep`). It reads a
+  separate reviewer tree with no `CLAUDE.md`, `AGENTS.md` or `.claude/` (ADR 0031); Claude Code starts
+  from an empty folder with `--restricted`. On opencode it ignores project configuration files.
 - The ticket folder is committed with the ticket and readable without Ariane.

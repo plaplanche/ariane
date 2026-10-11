@@ -4,6 +4,8 @@
 - Date: 2026-10-10
 - Capabilities: C10, C26
 
+See also ADR 0031: the reviewer now runs in a separate tree without instruction files.
+
 ## Context
 ADR 0016 fixes the review; a few details were left open.
 

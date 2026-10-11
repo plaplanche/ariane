@@ -144,20 +144,33 @@ def add_reviewer_worktree(cwd: Path, path: Path, commit: str) -> None:
     """A detached worktree of `commit` without the files an agent would load as configuration:
     every instruction file and `.claude/` directory, at any depth (ADR 0031)."""
     add_detached_worktree(cwd, path, commit)
-    for here, dirs, files in os.walk(path):
-        if Path(here) == path / ".git":
-            continue
-        dirs[:] = [d for d in dirs if d != ".git"]
-        for name in files:
-            if name.casefold() in INSTRUCTION_FILES:
-                (Path(here) / name).unlink()
-        for name in [d for d in dirs if d.casefold() in INSTRUCTION_DIRS]:
-            target = Path(here) / name
-            dirs.remove(name)
-            if target.is_symlink():
-                target.unlink()
-            else:
-                shutil.rmtree(target)
+    try:
+        root = path.resolve()
+        for here, dirs, files in os.walk(path):
+            if Path(here) == path / ".git":
+                continue
+            dirs[:] = [d for d in dirs if d != ".git"]
+            for name in files:
+                link = Path(here) / name
+                if name.casefold() in INSTRUCTION_FILES or _leaves_tree(link, root):
+                    link.unlink()
+            for name in list(dirs):
+                target = Path(here) / name
+                if name.casefold() not in INSTRUCTION_DIRS and not _leaves_tree(target, root):
+                    continue
+                dirs.remove(name)
+                if target.is_symlink():
+                    target.unlink()
+                else:
+                    shutil.rmtree(target)
+    except BaseException:
+        remove_worktree(cwd, path)
+        raise
+
+
+def _leaves_tree(link: Path, root: Path) -> bool:
+    """A symlink whose target is outside `root`: reading through it could load files from there."""
+    return link.is_symlink() and not link.resolve().is_relative_to(root)
 
 
 def base_instructions(cwd: Path, remote: str, branch: str) -> str:

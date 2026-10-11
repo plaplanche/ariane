@@ -4,6 +4,8 @@
 - Date: 2026-10-08
 - Capabilities: C10, C5, C21, C23
 
+See also ADR 0031: the reviewer now runs in a separate tree without instruction files.
+
 ## Context
 ADR 0010 relied on Claude Code's `--json-schema` for the validity of the reviewer's answer.
 ADR 0015 makes Ariane enforce it for every runtime. ADR 0020 moves the learnings checkpoint

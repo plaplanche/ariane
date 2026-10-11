@@ -112,7 +112,7 @@ sequenceDiagram
   alt a blocking check failed
     F-->>CLI: stop before any review, push nothing
   end
-  F->>R: run a read-only reviewer session in the replay tree
+  F->>R: run a read-only reviewer session in the reviewer tree (no instruction files, ADR 0031)
   R-->>F: answer (validated by review, one retry)
   F->>G: verify git, the tree and the remote did not change
   F->>F: review-0.md; go continues
@@ -146,7 +146,7 @@ sequenceDiagram
   V->>V: setup command
   V->>C: replay the checks
   C-->>V: results
-  V->>R: run a read-only reviewer session in the replay tree
+  V->>R: run a read-only reviewer session in the `-reviewer` tree (no instruction files, ADR 0031)
   R-->>V: answer (validated by review, one retry)
   V->>G: commit work/verify/branch/review.md and checks.md on the branch
   V-->>CLI: Outcome

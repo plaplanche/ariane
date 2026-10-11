@@ -4,6 +4,8 @@
 - Date: 2026-10-07
 - Capabilities: C10, C5, C21
 
+See also ADR 0031: the reviewer now runs in a separate tree without instruction files.
+
 ## Context
 C10: before delivery, an adversarial review by a different model from the implementer's, with a
 verdict and findings marked blocking or minor; a positive verdict listing a blocking finding is

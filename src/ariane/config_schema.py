@@ -23,10 +23,7 @@ _AGENT: dict[str, Any] = {
     "properties": {
         "runtime": {"enum": [CLAUDE_CODE, OPENCODE]},
         "model": _STR,
-        "tools": {
-            **_ARGV,
-            "description": "Tools the agent may use (not Skill)",
-        },
+        "tools": {**_ARGV, "description": "Tools the agent may use (not Skill)."},
         "max_budget_usd": _POSITIVE,
         "max_tokens": {
             "type": "integer",

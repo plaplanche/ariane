@@ -3,7 +3,7 @@
 - Status: accepted
 - Date: 2026-10-11
 - Capabilities: C10, C21, C5
-- Amends: 0010, 0016, 0029
+- Amends: 0010, 0016, 0025, 0029
 
 ## Context
 An outside analysis found that the "read-only" Claude Code reviewer loads configuration written
@@ -48,6 +48,10 @@ Residual vector: the reviewer's empty working directory is created under the sys
 directory, and Claude Code loads `CLAUDE.md` from the ancestors of its cwd. An implementer running
 without a sandbox could write a `CLAUDE.md` into that directory before the reviewer starts. It is
 closed by the operating-system sandbox (slice 9).
+
+Symlinks in the reviewer tree whose target is outside it (for example to the implementer's working
+tree) are deleted with the instruction files, so reading through them cannot load files from
+outside. A tree that cannot be built is removed at once, so the next run is not blocked.
 
 ## Alternatives considered
 - Keep `cwd` = tree and filter the settings sources: the probe shows the hook runs.
