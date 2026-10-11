@@ -1,6 +1,6 @@
 # 0012. Measurements per ticket and the report command
 
-- Status: accepted
+- Status: accepted; format amended by 0030
 - Date: 2026-10-07
 - Capabilities: C19, C23
 
