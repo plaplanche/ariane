@@ -102,3 +102,12 @@ Claude Code stays enforced by its flag until it streams cost.
 - Keep delegating to Claude Code flags: simplest, but no second runtime could honour the
   contract.
 - Estimate cost from tokens and a price list in Ariane: C5 and C19 forbid estimates.
+
+## Amendment (slice 3 fix round)
+
+Probed on opencode 1.18.35: an `opencode.json` or `.opencode/opencode.json` in the working tree
+that sets `agent.ariane-reviewer.prompt` replaces the reviewer's prompt, since
+`OPENCODE_CONFIG_CONTENT` wins only for the keys it sets. The replay tree holds files the
+implementer wrote, so the adapter always sets `OPENCODE_DISABLE_PROJECT_CONFIG=1`: neither file is
+read and the inline configuration still applies. A configuration with `runtime = "opencode"`
+must set `max_tokens`: opencode does not cap its own cost (a provider priced at 0 reports none).

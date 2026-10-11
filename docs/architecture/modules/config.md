@@ -13,7 +13,7 @@ Loads and validates `ariane.toml`. Every error names the faulty key.
 - `Documentation`, `DocMapEntry`, `GeneratedDoc`: the optional `[documentation]` table (C25, ADR 0026): `paths`, `[[documentation.map]]` (`{stem}` expands, `*` stays in a folder), `[[documentation.generated]]`. `Documentation.not_updated` lists mapped documents a change left untouched; `Documentation.checks` turns generated entries into blocking checks `docs: <name>`. `Config.documentation` is empty without the table.
 - `SCHEMA` (re-exported from `config_schema`): the JSON Schema of the file.
 - `load`: read the file at the repository root, or the file `ARIANE_CONFIG` names (relative to the repository root; errors then name `ARIANE_CONFIG (<file>)`), with the same validation (C22).
-- Runtimes (C5, ADR 0029): `runtime` is `claude-code`, or `opencode` for the reviewer only; naming opencode for the implementer is refused with the role. An opencode agent takes `<provider>/<model>` and tools among `read`, `glob`, `grep`.
+- Runtimes (C5, ADR 0029): `runtime` is `claude-code`, or `opencode` for the reviewer only; naming opencode for the implementer is refused with the role. An opencode agent takes `<provider>/<model>` and tools among `read`, `glob`, `grep`. It must set `max_tokens`, else it is refused naming `agents.<role>.max_tokens`. A Claude Code reviewer's `tools` may not hold `Write`, `Edit`, `NotebookEdit` or `Bash` (naming `agents.reviewer.tools`).
 - `parse`: validate a parsed TOML mapping.
 - `ConfigError`: raised for any invalid key.
 
@@ -27,6 +27,10 @@ flowchart LR
   cli --> config
   context --> config
   flow --> config
+  config --> config_schema
+  review --> config
+  review_session --> config
+  verify --> config
 ```
 
 ## Reference

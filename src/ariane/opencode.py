@@ -80,6 +80,7 @@ class OpenCodeRuntime:
             **session.env,
             "OPENCODE_CONFIG_CONTENT": inline_config(session.role, session.tools),
             "OPENCODE_DISABLE_CLAUDE_CODE": "1",
+            "OPENCODE_DISABLE_PROJECT_CONFIG": "1",
             "OPENCODE_DISABLE_AUTOUPDATE": "1",
             "ARIANE_ROLE": session.role,
         }

@@ -21,6 +21,9 @@ flowchart LR
   flow --> tracker
   github --> tracker
   ticket --> tracker
+  review --> tracker
+  review_session --> tracker
+  verify --> tracker
 ```
 
 ## Serves

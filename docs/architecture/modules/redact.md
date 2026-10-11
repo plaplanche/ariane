@@ -17,6 +17,7 @@ flowchart LR
   git --> redact
   logs --> redact
   ticket --> redact
+  verify --> redact
 ```
 
 ## Serves

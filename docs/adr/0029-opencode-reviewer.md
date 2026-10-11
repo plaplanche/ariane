@@ -21,3 +21,12 @@ A review on a second vendor needs no change to Ariane's own `ariane.toml`. The r
 ## Alternatives considered
 - Pass the prompt as the message argument: first chosen, replaced because real review prompts exceed the system's argument limits.
 - A `steps` key in `ariane.toml`: rejected for now, one more key without a need.
+
+## Amendment (slice 3 fix round)
+
+- `OPENCODE_DISABLE_PROJECT_CONFIG=1` is always set (probe in ADR 0015): the implementer's files
+  cannot change the reviewer's prompt.
+- `agents.<role>.max_tokens` is required with opencode and refused at load otherwise, naming the
+  key; the journal says "runtime cost cap none; Ariane stops at <max_budget_usd> USD of reported
+  cost or <max_tokens> tokens".
+- A Claude Code reviewer's `tools` may not hold `Write`, `Edit`, `NotebookEdit` or `Bash`.

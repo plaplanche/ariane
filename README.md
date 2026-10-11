@@ -8,7 +8,7 @@ you never lose the thread of your own code.
 pull request whose checks Ariane replayed in a clean tree and that a read-only reviewer on a
 different model approved, after up to two fix rounds (`[agents.reviewer]` in `ariane.toml`; the
 reviewer can run on Claude Code or opencode). `ariane verify <branch>` gives a branch finished by
-hand the same checks and review. Measurement and approvals come next (see the roadmap in
+hand the same checks and review. Measurement and shadow mode (slice 4) and approvals (slice 5) come next (see the roadmap in
 [`docs/spec.md`](docs/spec.md)).
 
 ## Try it
@@ -67,9 +67,12 @@ For a project other than Ariane, start from [`docs/ariane.example.toml`](docs/ar
 copy it to `ariane.toml` at the root of your repository and adapt it.
 
 `ariane start` creates the branch `ariane/12` in a working tree beside the repository
-(`<repo>.ariane/worktrees/12`), runs the setup command, one implementer session, every check,
-then pushes the branch, opens the pull request and publishes each check's result as a commit
-status (`ariane/<check name>`) on its head commit. The ticket's records are in `work/12/`.
+(`<repo>.ariane/worktrees/12`), runs the setup command, one implementer session and every check. If a blocking check fails
+before any review, it stops there and pushes nothing. Otherwise a read-only reviewer on a
+different model reviews a clean replay; on a no-go, up to two fix rounds follow, each with a fresh
+implementer session, a replay and a review. Then it pushes the branch, opens the pull request (a
+draft that needs a human if the review is still no-go) and publishes each check's result as a
+commit status (`ariane/<check name>`) on its head commit. The ticket's records are in `work/12/`.
 A GitHub Actions workflow (`check-statuses.yml`) also publishes these statuses from the committed
 report, including when Ariane cannot (for example from a cloud session).
 `ariane verify <branch> [--issue N]` checks and reviews a local branch finished by hand: a clean
@@ -79,7 +82,7 @@ text goes to the reviewer with `--issue`, else the branch's commit messages.
 The token needs permission to write commit statuses (for a fine-grained token, "Commit statuses:
 read and write"), on top of reading issues and writing pull requests.
 
-- [`docs/spec.md`](docs/spec.md): vision, functional specification (capabilities C1 to C24),
+- [`docs/spec.md`](docs/spec.md): vision, functional specification (capabilities C1 to C26),
   non-functional requirements, roadmap and founding decisions.
 - [`docs/architecture/`](docs/architecture/README.md): how Ariane works, in Mermaid diagrams from
   the system landscape to each module.

@@ -18,8 +18,12 @@ Arrows go from the caller to the callee.
 flowchart LR
   claude_code --> runtime
   flow --> runtime
+  cli --> runtime
+  opencode --> runtime
+  review_session --> runtime
+  verify --> runtime
 ```
 
 ## Serves
 
-C5; ADR 0007, ADR 0014, ADR 0015. See [the component view](../3-components.md).
+C5; ADR 0007, ADR 0014, ADR 0015, ADR 0024, ADR 0029. See [the component view](../3-components.md).
