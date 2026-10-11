@@ -73,11 +73,14 @@ class OpenCodeRuntime:
             session.model,
             "--agent",
             agent_name(session.role),
+            "--dir",
+            str(session.cwd.resolve()),
         ]
 
     def environment(self, session: Session) -> dict[str, str]:
         return {
             **session.env,
+            "PWD": str(session.cwd.resolve()),
             "OPENCODE_CONFIG_CONTENT": inline_config(session.role, session.tools),
             "OPENCODE_DISABLE_CLAUDE_CODE": "1",
             "OPENCODE_DISABLE_PROJECT_CONFIG": "1",
