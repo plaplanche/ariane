@@ -133,26 +133,24 @@ def test_c11_remote_check_a_fast_forward_of_the_base_branch_does_not_stop(
     assert "ariane/7" in project.remote_branches()
 
 
-def test_c11_remote_check_a_new_branch_stops(project: Project, tracker: InMemoryTracker) -> None:
+def test_c11_remote_check_a_new_tag_stops(project: Project, tracker: InMemoryTracker) -> None:
     def create(clone: Path) -> None:
-        sh(["git", "push", "--quiet", "origin", "HEAD:refs/heads/sneaky"], clone)
+        sh(["git", "push", "--quiet", "origin", "HEAD:refs/tags/sneaky"], clone)
 
     outcome = start(project, tracker, FakeRuntime(action=_remote_change(project, create)))
     assert outcome.exit_code == 1
-    assert "the remote changed during the agent session (refs/heads/sneaky)" in outcome.line
+    assert "the remote changed during the agent session (refs/tags/sneaky)" in outcome.line
 
 
-def test_c11_remote_check_a_deleted_branch_stops(
-    project: Project, tracker: InMemoryTracker
-) -> None:
-    sh(["git", "push", "--quiet", "origin", "main:refs/heads/other"], project.root)
+def test_c11_remote_check_a_deleted_tag_stops(project: Project, tracker: InMemoryTracker) -> None:
+    sh(["git", "push", "--quiet", "origin", "main:refs/tags/other"], project.root)
 
     def delete(clone: Path) -> None:
-        sh(["git", "push", "--quiet", "origin", ":refs/heads/other"], clone)
+        sh(["git", "push", "--quiet", "origin", ":refs/tags/other"], clone)
 
     outcome = start(project, tracker, FakeRuntime(action=_remote_change(project, delete)))
     assert outcome.exit_code == 1
-    assert "(refs/heads/other)" in outcome.line
+    assert "(refs/tags/other)" in outcome.line
 
 
 def test_c11_remote_check_a_rewritten_base_branch_stops(

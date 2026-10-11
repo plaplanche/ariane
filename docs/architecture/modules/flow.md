@@ -6,6 +6,7 @@
 
 - `start`: the whole flow for one ticket number.
 - `Outcome`: the result reported to the command line.
+- `remote_changes`: the push guard's remote check (C11, ADR 0017): of the refs that differ from the start, only the ticket's branch, the base branch (a fast-forward is tolerated) and tags count; other branches are ignored. `ariane verify` uses it too.
 - `Stop`: ends the flow early with a recorded reason.
 - Environments (C21, ADR 0029): the implementer and fix sessions get an environment built from the implementer runtime's login variables, the reviewer from the reviewer runtime's; the checks get none.
 - Documentation upkeep (C25): after the agent's work is committed, mapped documents of changed files that the ticket did not change are journaled (`ticket.docs.not_updated`) and given to the reviewer; the `generated` documentation commands run in the clean replay as blocking checks `docs: <name>`, in `checks.md` and the statuses.

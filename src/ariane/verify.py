@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ariane import checks, context, git, process, review, ticket
 from ariane.config import Config
-from ariane.flow import EXIT_OK, EXIT_STOPPED, REMOTE, SETUP_TIMEOUT_S, Outcome
+from ariane.flow import EXIT_OK, EXIT_STOPPED, REMOTE, SETUP_TIMEOUT_S, Outcome, remote_changes
 from ariane.redact import redact
 from ariane.review_session import ReviewFailed, ReviewSession
 from ariane.runtime import AgentRuntime, for_role
@@ -119,6 +119,8 @@ class _Verification:
         self.untrusted_env = context.untrusted_environment(
             environ, token_env=token_env, remotes=remotes
         )
+        self.url = git.push_url(repo_root, REMOTE) if REMOTE in remotes else None
+        self.refs_before = git.remote_refs(repo_root, self.url) if self.url else {}
         self.head = git.out(["rev-parse", f"refs/heads/{branch}"], repo_root)
         self.base = self._base()
         self.issue = issue or Issue(
@@ -224,6 +226,15 @@ class _Verification:
             raise Refused(f"{after} moved a head", "inspect the branch and the replay tree")
         if git.status(replay) != tree_before:
             raise Refused(f"{after} changed files in the replay tree", "inspect the session")
+        if self.url:
+            changed = remote_changes(
+                self.repo_root, self.url, self.branch, self.config.base_branch, self.refs_before
+            )
+            if changed:
+                raise Refused(
+                    f"the remote changed during {after} ({', '.join(changed)})",
+                    "check it was not the agent, then run verify again",
+                )
 
     def _before_commit(self) -> None:
         """The branch and where it is checked out are as they were at the start (minutes ago)."""
