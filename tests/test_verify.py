@@ -219,3 +219,20 @@ def test_c23_verify_records_a_tree_dirtied_during_the_run_commits_nothing(
     assert outcome.exit_code == 1 and "uncommitted changes" in outcome.line
     assert sh(["git", "log", "-1", "--format=%s", BRANCH], project.root).startswith("Bump")
     sh(["git", "worktree", "remove", "--force", str(other)], project.root)
+
+
+def test_c5_interrupt_during_verify_exits_130_removes_the_replay_and_commits_nothing(
+    project: Project, branch: str, pushes: list[str]
+) -> None:
+    def interrupt(session: Session) -> None:
+        raise KeyboardInterrupt
+
+    head = sh(["git", "rev-parse", BRANCH], project.root)
+    outcome = run(project, FakeRuntime(review_actions=[interrupt]))
+    assert outcome.exit_code == 130
+    assert outcome.line == (
+        f"Stopped verifying {BRANCH}: interrupted by the user. Next: run verify again."
+    )
+    assert not verify.replay_path(project.root, BRANCH).exists()
+    assert sh(["git", "rev-parse", BRANCH], project.root) == head
+    assert pushes == []

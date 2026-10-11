@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 import pytest
 
-from ariane import flow, process, ticket
+from ariane import flow, git, process, ticket
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
 
@@ -38,7 +39,10 @@ def _alive(pid: int) -> bool:
         return False
     # A zombie still answers signal 0: look at its state.
     state = Path(f"/proc/{pid}/stat")
-    return not (state.exists() and state.read_text().rsplit(")", 1)[1].split()[0] == "Z")
+    if state.exists():
+        return state.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+    shown = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
+    return bool(shown.stdout.strip()) and not shown.stdout.strip().startswith("Z")
 
 
 def _pid(path: Path) -> int:
@@ -63,7 +67,7 @@ def _interrupt_wait(monkeypatch: pytest.MonkeyPatch, started: list[Path]) -> Non
     monkeypatch.setattr(subprocess.Popen, "wait", wait)
 
 
-@pytest.mark.skipif(not Path("/proc").exists(), reason="needs /proc")
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows kills the tree with taskkill")
 def test_c5_interrupt_kills_the_process_tree_and_reraises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -90,3 +94,15 @@ def test_c5_interrupt_during_the_agent_session_is_recorded_and_exits_130(
     assert "interrupted by the user" in journal(project)
     status = (worktree(project) / ticket.relative_folder(7) / "status.md").read_text()
     assert "interrupted by the user" in status
+
+
+def test_c5_interrupt_before_the_ticket_folder_exists_exits_130_with_one_line(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupted(*args: object, **kwargs: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(git, "fetch", interrupted)
+    outcome = start(project, tracker, FakeRuntime())
+    assert outcome.exit_code == 130
+    assert "interrupted by the user" in outcome.line and "\n" not in outcome.line

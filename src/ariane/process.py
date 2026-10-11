@@ -168,8 +168,9 @@ def _execute(
     finally:
         # Whatever ended the wait (exit, timeout, Ctrl-C, any error), nothing outlives the call.
         kill_tree(proc.pid)
-    with contextlib.suppress(subprocess.TimeoutExpired):
-        proc.wait(timeout=_DRAIN_SECONDS)
+        # Reap the child and let the readers reach the end of the pipes, best effort.
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=_DRAIN_SECONDS)
     completed = Completed(
         argv=tuple(argv),
         returncode=None if timed_out else proc.returncode,

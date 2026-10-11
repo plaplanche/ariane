@@ -68,17 +68,28 @@ def start(
         issue = tracker.read_issue(number)
     except TrackerError as exc:
         return Outcome(EXIT_STOPPED, f"Did not start #{number}: {exc}. Next: check the number.")
+    except KeyboardInterrupt:
+        return _interrupted_before_start(number)
     branch = branch_name(number)
     worktree = worktree_path(repo_root, number)
     try:
         url, refs_before = _prepare(repo_root, config, branch, worktree)
         run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url)
+    except KeyboardInterrupt:
+        return _interrupted_before_start(number)
     except (Stop, *_FAILURES) as exc:
         reason, next_action = _describe(exc)
         return Outcome(
             EXIT_STOPPED, f"Did not start ticket #{number}: {reason}. Next: {next_action}."
         )
     return run.execute(refs_before)
+
+
+def _interrupted_before_start(number: int) -> Outcome:
+    """Ctrl-C before the ticket folder exists: nothing to record, one line, exit 130."""
+    reason, next_action = _describe(KeyboardInterrupt())
+    line = f"Did not start ticket #{number}: {reason}. Next: {next_action}."
+    return Outcome(EXIT_INTERRUPTED, line)
 
 
 def _prepare(
