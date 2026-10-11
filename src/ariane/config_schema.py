@@ -32,6 +32,10 @@ _AGENT: dict[str, Any] = {
         },
         "timeout_minutes": _POSITIVE,
     },
+}
+
+# Only a role that may run on opencode requires `max_tokens` for it.
+_OPENCODE_NEEDS_TOKENS: dict[str, Any] = {
     "if": {
         "type": "object",
         "properties": {"runtime": {"const": OPENCODE}},
@@ -88,6 +92,7 @@ SCHEMA: dict[str, Any] = {
                 },
                 "reviewer": {
                     **_AGENT,
+                    **_OPENCODE_NEEDS_TOKENS,
                     "description": "Read-only reviewer (C10); model differs from the implementer.",
                 },
             },
