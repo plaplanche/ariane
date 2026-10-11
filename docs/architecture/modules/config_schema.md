@@ -4,7 +4,7 @@ The description of `ariane.toml` as a JSON Schema (`SCHEMA`, written to `docs/re
 
 ## Main types and functions
 
-- `SCHEMA`: the schema of the file. The agent object carries an `if`/`then` that requires `max_tokens` when `runtime` is `opencode`, as `config.parse` does.
+- `SCHEMA`: the schema of the file. The reviewer (the only role that may run on opencode) carries an `if`/`then` that requires `max_tokens` when `runtime` is `opencode`, as `config.parse` does; the implementer has none.
 - `RUNTIMES`, `OPENCODE_TOOLS`: the runtimes allowed per role and the tools of an opencode agent.
 
 ## Collaborations

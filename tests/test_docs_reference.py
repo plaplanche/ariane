@@ -62,6 +62,11 @@ def errors(value: Any, schema: dict[str, Any], where: str = "") -> list[str]:
     elif kind == "boolean":
         if not isinstance(value, bool):
             found.append(f"{here}: expected a boolean")
+    elif kind == "integer":
+        if isinstance(value, bool) or not isinstance(value, int):
+            return [f"{here}: expected an integer"]
+        if "exclusiveMinimum" in schema and value <= schema["exclusiveMinimum"]:
+            found.append(f"{here}: must be greater than {schema['exclusiveMinimum']}")
     elif kind == "number":
         if isinstance(value, bool) or not isinstance(value, int | float):
             return [f"{here}: expected a number"]
@@ -159,3 +164,25 @@ def test_c5_opencode_schema_claude_code_agent_needs_no_max_tokens() -> None:
     agent = schema["properties"]["agents"]["properties"]["reviewer"]
     claude = _reviewer(runtime="claude-code", model="m", tools=["Read"], max_tokens=None)
     assert errors(claude, agent) == []
+
+
+def test_c5_schema_implementer_needs_no_max_tokens_and_has_no_if_then() -> None:
+    import json
+
+    schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
+    agent = schema["properties"]["agents"]["properties"]["implementer"]
+    assert "if" not in agent and "then" not in agent
+    implementer = dict(load_toml(ROOT / "ariane.toml")["agents"]["implementer"])
+    implementer.pop("max_tokens", None)
+    assert errors(implementer, agent) == []
+
+
+def test_c5_schema_integer_refuses_fraction_and_zero_accepts_ten() -> None:
+    import json
+
+    schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
+    agent = schema["properties"]["agents"]["properties"]["reviewer"]
+    assert errors(_reviewer(max_tokens=10), agent) == []
+    assert any("max_tokens" in e for e in errors(_reviewer(max_tokens=1.5), agent))
+    assert any("max_tokens" in e for e in errors(_reviewer(max_tokens=0), agent))
+    assert any("max_tokens" in e for e in errors(_reviewer(max_tokens=True), agent))

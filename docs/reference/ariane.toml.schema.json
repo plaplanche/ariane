@@ -116,23 +116,6 @@
               "type": "number",
               "exclusiveMinimum": 0
             }
-          },
-          "if": {
-            "type": "object",
-            "properties": {
-              "runtime": {
-                "const": "opencode"
-              }
-            },
-            "required": [
-              "runtime"
-            ]
-          },
-          "then": {
-            "type": "object",
-            "required": [
-              "max_tokens"
-            ]
           }
         },
         "reviewer": {

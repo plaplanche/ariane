@@ -30,3 +30,11 @@ A review on a second vendor needs no change to Ariane's own `ariane.toml`. The r
   key; the journal says "runtime cost cap none; Ariane stops at <max_budget_usd> USD of reported
   cost or <max_tokens> tokens".
 - A Claude Code reviewer's `tools` may not hold `Write`, `Edit`, `NotebookEdit` or `Bash`.
+
+## Amendment (slice 3 gate)
+
+- opencode takes its directory from `PWD`, not from the process's working directory. Ariane passes
+  `--dir` with the absolute path of the tree under review and sets `PWD` to it (#90), so the
+  reviewer cannot read the directory Ariane was started from.
+- The configuration schema puts the `max_tokens` rule (`if`/`then`) on the reviewer only: the
+  implementer's runtime can only be `claude-code`.
