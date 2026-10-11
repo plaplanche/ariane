@@ -110,12 +110,29 @@
             "max_tokens": {
               "type": "integer",
               "exclusiveMinimum": 0,
-              "description": "Optional cap on tokens counted by Ariane per session."
+              "description": "Cap on tokens counted by Ariane per session; required when runtime is opencode."
             },
             "timeout_minutes": {
               "type": "number",
               "exclusiveMinimum": 0
             }
+          },
+          "if": {
+            "type": "object",
+            "properties": {
+              "runtime": {
+                "const": "opencode"
+              }
+            },
+            "required": [
+              "runtime"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "max_tokens"
+            ]
           }
         },
         "reviewer": {
@@ -155,12 +172,29 @@
             "max_tokens": {
               "type": "integer",
               "exclusiveMinimum": 0,
-              "description": "Optional cap on tokens counted by Ariane per session."
+              "description": "Cap on tokens counted by Ariane per session; required when runtime is opencode."
             },
             "timeout_minutes": {
               "type": "number",
               "exclusiveMinimum": 0
             }
+          },
+          "if": {
+            "type": "object",
+            "properties": {
+              "runtime": {
+                "const": "opencode"
+              }
+            },
+            "required": [
+              "runtime"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "max_tokens"
+            ]
           },
           "description": "Read-only reviewer (C10); model differs from the implementer."
         }
