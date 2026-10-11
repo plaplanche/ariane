@@ -43,7 +43,8 @@ The reviewer can run on [opencode](https://opencode.ai) (install it separately a
 on the PATH) with another vendor's model: set `runtime = "opencode"`, `model = "<provider>/<model>"`
 and `tools = ["read", "glob", "grep"]` in `[agents.reviewer]`, and export the provider's key (for
 example `OPENAI_API_KEY`). The implementer stays on Claude Code. `ARIANE_CONFIG` names a
-configuration file to read instead of `ariane.toml` for one run;
+configuration file to read instead of `ariane.toml` for one run (it does not reach the agents or
+the checks);
 [`docs/ariane.opencode-reviewer.example.toml`](docs/ariane.opencode-reviewer.example.toml) is Ariane's
 own configuration with the reviewer on opencode (ADR 0029).
 

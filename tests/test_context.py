@@ -77,6 +77,17 @@ def test_c21_code_the_agent_wrote_does_not_even_get_the_agent_login() -> None:
     assert "IS_SANDBOX" not in env
 
 
+def test_c22_untrusted_environment_drops_ariane_config_in_any_case() -> None:
+    base = {"ARIANE_CONFIG": "x.toml", "ariane_config": "y.toml", "KEEP_ME": "1"}
+    for login in ((), ("ANTHROPIC_API_KEY",)):
+        env = context.untrusted_environment(
+            base, token_env="T", remotes=[], login_variables=login, is_root=False
+        )
+        assert "ARIANE_CONFIG" not in env and "ariane_config" not in env
+        assert env["KEEP_ME"] == "1"
+    assert context.known_secrets(base, "T") == []
+
+
 def test_c21_existing_or_broken_git_config_variables_are_handled() -> None:
     base = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.proxy", "GIT_CONFIG_VALUE_0": "p"}
     env = context.untrusted_environment(base, token_env="X", remotes=[], is_root=False)
