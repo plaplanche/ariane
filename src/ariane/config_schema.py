@@ -27,10 +27,17 @@ _AGENT: dict[str, Any] = {
         "max_tokens": {
             "type": "integer",
             "exclusiveMinimum": 0,
-            "description": "Optional cap on tokens counted by Ariane per session.",
+            "description": "Cap on tokens counted by Ariane per session;"
+            " required when runtime is opencode.",
         },
         "timeout_minutes": _POSITIVE,
     },
+    "if": {
+        "type": "object",
+        "properties": {"runtime": {"const": OPENCODE}},
+        "required": ["runtime"],
+    },
+    "then": {"type": "object", "required": ["max_tokens"]},
 }
 
 # Description of `ariane.toml` for docs/reference/ariane.toml.schema.json (ADR 0022). Keep it in

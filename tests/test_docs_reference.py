@@ -32,6 +32,10 @@ def errors(value: Any, schema: dict[str, Any], where: str = "") -> list[str]:
     here = where or "<root>"
     if "enum" in schema and value not in schema["enum"]:
         found.append(f"{here}: not one of {schema['enum']}")
+    if "const" in schema and value != schema["const"]:
+        found.append(f"{here}: not {schema['const']!r}")
+    if "if" in schema and not errors(value, schema["if"], where) and "then" in schema:
+        found += errors(value, schema["then"], where)
     kind = schema.get("type")
     if kind == "object":
         if not isinstance(value, dict):
@@ -129,3 +133,29 @@ def test_docs_reference_wrong_type_rejected_like_parse() -> None:
     ]
     with pytest.raises(config.ConfigError, match="max_budget_usd"):
         config.parse(bad)
+
+
+def _reviewer(**changes: Any) -> dict[str, Any]:
+    agent = dict(
+        load_toml(ROOT / "docs" / "ariane.opencode-reviewer.example.toml")["agents"]["reviewer"]
+    )
+    agent.update(changes)
+    return {k: v for k, v in agent.items() if v is not None}
+
+
+def test_c5_opencode_schema_requires_max_tokens() -> None:
+    import json
+
+    schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
+    agent = schema["properties"]["agents"]["properties"]["reviewer"]
+    assert errors(_reviewer(), agent) == []
+    assert any("max_tokens" in e for e in errors(_reviewer(max_tokens=None), agent))
+
+
+def test_c5_opencode_schema_claude_code_agent_needs_no_max_tokens() -> None:
+    import json
+
+    schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
+    agent = schema["properties"]["agents"]["properties"]["reviewer"]
+    claude = _reviewer(runtime="claude-code", model="m", tools=["Read"], max_tokens=None)
+    assert errors(claude, agent) == []
