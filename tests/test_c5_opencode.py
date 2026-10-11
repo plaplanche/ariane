@@ -127,12 +127,20 @@ def test_c5_opencode_pure_and_the_claude_code_switch_are_always_set(tmp_path: Pa
     argv = seen["argv"]
     assert argv[:6] == ["run", "--pure", "--format", "json", "--model", "openai/gpt-x"]
     assert argv[6:8] == ["--agent", "ariane-reviewer"]
-    assert len(argv) == 8
+    assert len(argv) == 10
     env = seen["env"]
     assert env["OPENCODE_DISABLE_CLAUDE_CODE"] == "1"
     assert env["OPENCODE_DISABLE_AUTOUPDATE"] == "1"
     assert json.loads(env["OPENCODE_CONFIG_CONTENT"])["agent"]["ariane-reviewer"]
     assert seen["cwd"] == str(tmp_path)
+
+
+def test_c5_opencode_dir_is_the_session_tree_in_the_command_and_in_pwd(tmp_path: Path) -> None:
+    adapter = OpenCodeRuntime()
+    stale = replace(session(tmp_path), env={"PWD": "/somewhere/else"})
+    command = adapter.command(stale)
+    assert command[command.index("--dir") + 1] == str(tmp_path.resolve())
+    assert adapter.environment(stale)["PWD"] == str(tmp_path.resolve())
 
 
 def test_c5_opencode_the_implementer_role_is_refused() -> None:
@@ -171,7 +179,7 @@ def test_c5_opencode_the_implementer_role_is_refused() -> None:
 
 def test_c5_opencode_stdin_the_command_has_no_message_argument(tmp_path: Path) -> None:
     command = OpenCodeRuntime().command(session(tmp_path))
-    assert command[-2:] == ["--agent", "ariane-reviewer"]
+    assert command[-4:-2] == ["--agent", "ariane-reviewer"]
     assert "review this" not in command
 
 
