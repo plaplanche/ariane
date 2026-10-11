@@ -5,7 +5,7 @@ The agent runtime interface: one fresh session per stage, whatever the agent CLI
 ## Main types and functions
 
 - `AgentRuntime`: the protocol of a runtime; `login_variables` lists the exact names and prefixes (ending in `_`) of the variables it keeps in the agent's environment for its login (ADR 0024).
-- `Session`: what to run, with the runtime's cost cap (`max_budget_usd`) and Ariane's optional token cap (`max_tokens`).
+- `Session`: what to run (`add_dirs`: extra trees the agent may read; the reviewer's cwd is an empty folder and its tree is listed here, ADR 0031), with the runtime's cost cap (`max_budget_usd`) and Ariane's optional token cap (`max_tokens`).
 - `SessionResult`: what came back; `cap` names the cap that stopped a `budget` session. `usage()` words its cost and tokens for the journal (implementer and reviewer sessions).
 - `RoutedRuntime`: one runtime per role (`[agents.<role>] runtime`); a session goes to the runtime of its role, it has no login variables of its own: each session's environment is built from `for_role(role).login_variables` (ADR 0029). `for_role` and `describe` are the helpers the journal uses: the runtime of a role, and its name with its version when it has one.
 - `StopReason`: why a session ended.
@@ -26,4 +26,4 @@ flowchart LR
 
 ## Serves
 
-C5; ADR 0007, ADR 0014, ADR 0015, ADR 0024, ADR 0029. See [the component view](../3-components.md).
+C5; ADR 0007, ADR 0014, ADR 0015, ADR 0024, ADR 0029, ADR 0031. See [the component view](../3-components.md).

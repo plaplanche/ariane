@@ -512,6 +512,10 @@ class _TicketRun:
     ) -> review.Settled:
         """C10, C26: review `round_` in the replay tree; the record is `review-<round>.md`."""
         tree = self.worktree.with_name(f"{self.number}-review")
+        if tree.exists():
+            raise Stop(
+                f"the reviewer working tree already exists at {tree}", "remove it, then retry"
+            )
         git.add_reviewer_worktree(self.worktree, tree, checked)
         try:
             diff = git.diff(self.worktree, start_commit, checked, ticket.WORK_DIR)

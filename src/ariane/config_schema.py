@@ -25,7 +25,7 @@ _AGENT: dict[str, Any] = {
         "model": _STR,
         "tools": {
             **_ARGV,
-            "description": "Tools the agent may use (not Skill); a reviewer: Read, Glob, Grep only",
+            "description": "Tools the agent may use (not Skill)",
         },
         "max_budget_usd": _POSITIVE,
         "max_tokens": {
@@ -46,6 +46,25 @@ _OPENCODE_NEEDS_TOKENS: dict[str, Any] = {
         "required": ["runtime"],
     },
     "then": {"type": "object", "required": ["max_tokens"]},
+}
+
+# A Claude Code reviewer may only read (ADR 0031).
+_CLAUDE_REVIEWER_TOOLS: dict[str, Any] = {
+    "if": {
+        "type": "object",
+        "properties": {"runtime": {"const": CLAUDE_CODE}},
+        "required": ["runtime"],
+    },
+    "then": {
+        "type": "object",
+        "properties": {
+            "tools": {
+                "type": "array",
+                "items": {"enum": list(REVIEWER_TOOLS)},
+                "description": "A Claude Code reviewer: Read, Glob, Grep only",
+            }
+        },
+    },
 }
 
 # Description of `ariane.toml` for docs/reference/ariane.toml.schema.json (ADR 0022). Keep it in
@@ -96,7 +115,7 @@ SCHEMA: dict[str, Any] = {
                 },
                 "reviewer": {
                     **_AGENT,
-                    **_OPENCODE_NEEDS_TOKENS,
+                    "allOf": [_OPENCODE_NEEDS_TOKENS, _CLAUDE_REVIEWER_TOOLS],
                     "description": "Read-only reviewer (C10); model differs from the implementer.",
                 },
             },

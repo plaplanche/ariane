@@ -77,8 +77,24 @@ def test_c10_reviewer_isolation_prompt_holds_the_base_branch_claude_md(
 def test_c10_reviewer_isolation_prompt_has_none_without_a_base_claude_md(
     project: Project, tracker: InMemoryTracker
 ) -> None:
-    sh(["git", "fetch", "-q", "origin"], project.root)
-    assert git.base_instructions(project.root, "origin", "main") == ""
+    runtime = FakeRuntime()
+    assert start(project, tracker, runtime).exit_code == 0
+    review = next(s for s in runtime.sessions if s.role == "reviewer")
+    section = review.prompt.split("Project instructions (from the base branch)")[1]
+    assert section.lstrip().startswith("(none)") or "(none)" in section.split("Diff from")[0]
+    assert 'kind="project-instructions"' not in review.prompt
+
+
+def test_c10_reviewer_isolation_removal_ignores_case(project: Project, tmp_path: Path) -> None:
+    (project.root / "Agents.md").write_text("x\n", encoding="utf-8")
+    (project.root / ".Claude").mkdir()
+    (project.root / ".Claude/s.json").write_text("{}\n", encoding="utf-8")
+    sh(["git", "add", "-A"], project.root)
+    sh(["git", "commit", "-q", "-m", "cases"], project.root)
+    tree = tmp_path / "tree"
+    git.add_reviewer_worktree(project.root, tree, git.head(project.root))
+    assert not (tree / "Agents.md").exists()
+    assert not (tree / ".Claude").exists()
 
 
 def test_c10_reviewer_isolation_claude_code_argv_is_restricted(tmp_path: Path) -> None:

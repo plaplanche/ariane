@@ -44,6 +44,11 @@ tree. A reviewer that needs another tool (for example `WebFetch`) is refused. An
 the branch changes is judged from the diff only. An operating-system sandbox for the implementer
 stays out of scope (slice 9).
 
+Residual vector: the reviewer's empty working directory is created under the system temporary
+directory, and Claude Code loads `CLAUDE.md` from the ancestors of its cwd. An implementer running
+without a sandbox could write a `CLAUDE.md` into that directory before the reviewer starts. It is
+closed by the operating-system sandbox (slice 9).
+
 ## Alternatives considered
 - Keep `cwd` = tree and filter the settings sources: the probe shows the hook runs.
 - `--restricted` with the original tree: the `CLAUDE.md` is still loaded on read.

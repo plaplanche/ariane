@@ -135,7 +135,8 @@ def add_detached_worktree(cwd: Path, path: Path, commit: str) -> None:
     git(["worktree", "add", "--quiet", "--detach", str(path), commit], cwd)
 
 
-INSTRUCTION_FILES = ("CLAUDE.md", "CLAUDE.local.md", "AGENTS.md")
+# Lower case: names are compared case-folded, as case-insensitive file systems find them.
+INSTRUCTION_FILES = ("claude.md", "claude.local.md", "agents.md")
 INSTRUCTION_DIRS = (".claude",)
 
 
@@ -148,9 +149,9 @@ def add_reviewer_worktree(cwd: Path, path: Path, commit: str) -> None:
             continue
         dirs[:] = [d for d in dirs if d != ".git"]
         for name in files:
-            if name in INSTRUCTION_FILES:
+            if name.casefold() in INSTRUCTION_FILES:
                 (Path(here) / name).unlink()
-        for name in [d for d in dirs if d in INSTRUCTION_DIRS]:
+        for name in [d for d in dirs if d.casefold() in INSTRUCTION_DIRS]:
             target = Path(here) / name
             dirs.remove(name)
             if target.is_symlink():
