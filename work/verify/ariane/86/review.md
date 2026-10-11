@@ -1,18 +1,14 @@
 # Review 0
 
-- Reviewed commit: `95e654e4036d601b0b5c79984fd8312c60c5b28f`
+- Reviewed commit: `42a0ca9c863a03a8c8f31727bcdd0626e70940a1`
 - Reviewer model: openai/gpt-5
 - Verdict: **go**
 
 ## Findings
 
-- **minor** (`docs/reference/ariane.toml.schema.json:120`) Redundant if/then on implementer schema
+- **minor** (`tests/test_docs_reference.py:65`) Schema helper does not validate 'integer' type
 
-  The generated schema for agents.implementer includes an if/then block that requires max_tokens when runtime == 'opencode', but implementer.runtime is restricted to 'claude-code'. This is harmless (JSON Schema 'if' is non-assertive) but adds noise. It could be removed by not inheriting the agent-level if/then for implementer.
-
-- **minor** (`tests/test_docs_reference.py:146`) Implementer path not explicitly tested
-
-  Acceptance criteria focus on the reviewer, and the added tests cover reviewer/opencode and reviewer/claude-code. Consider adding a small test that an implementer (always claude-code) does not require max_tokens to guard against future regressions.
+  The minimal JSON Schema validator in tests handles 'number' but not 'integer'. This means integer-only constraints (like type errors or exclusiveMinimum on integers) are not checked by this helper. It doesn't impact this ticket because the test asserts the 'required' constraint via if/then, but expanding the helper to support 'integer' would improve coverage fidelity.
 
 ## Definition of done
 
@@ -38,17 +34,18 @@
 
 - met: The change is covered by tests that fail without it.
 
-  tests/test_docs_reference.py adds test_c5_opencode_schema_requires_max_tokens and test_c5_opencode_schema_claude_code_agent_needs_no_max_tokens (lines 146-161). Removing the if/then constraint from src/ariane/config_schema.py would make the first test fail.
+  Added tests test_c5_opencode_schema_requires_max_tokens and test_c5_opencode_schema_claude_code_agent_needs_no_max_tokens in tests/test_docs_reference.py (lines 146-161). They validate the generated schema: opencode without max_tokens fails (missing), claude-code without it passes. Without the schema change (if/then) the first test would fail.
 
 - met: The documentation the change affects is updated (C25).
 
-  docs/architecture/modules/opencode.md now lists OPENCODE_DISABLE_PROJECT_CONFIG=1 in the environment bullet (line 5). docs/architecture/modules/config.md mentions the if/then requirement in the Runtimes bullet (line 16). docs/architecture/modules/config_schema.md notes the agent-level if/then (line 7). docs/reference/ariane.toml.schema.json regenerated with updated max_tokens description and if/then.
+  docs/reference/ariane.toml.schema.json regenerated with if/then for both agents; docs/architecture/modules/opencode.md bullet now lists OPENCODE_DISABLE_PROJECT_CONFIG=1 (line 6); docs/architecture/modules/config.md mentions the schema rule (line 16); docs/architecture/modules/config_schema.md documents the if/then (line 7).
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  The spec is fully decided (require max_tokens for opencode and update the opencode module docs). No new open choices arose; existing ADR 0029 covers the runtime policy.
+  The spec was fully decided (require max_tokens for opencode in schema; list the env var). No open choices remained to record beyond existing ADR 0029 referenced in the docs.
 
 ## Proposed learnings (not decided)
 
-- Express runtime-specific constraints in the generated schema to keep parser and schema behavior aligned; add tests that assert both layers agree.
-- When narrative docs and bullet lists describe environment variables, keep them strictly consistent with the implementation to avoid subtle drift.
+- When runtime-specific validation exists in code, encode it in the generated schema too so config files fail early and consistently.
+- Testing against the generated reference artifacts (schema files) catches drift between code and docs.
+- For external runtimes, keep environment variable documentation consistent across introduction and bullet lists to avoid confusion.
