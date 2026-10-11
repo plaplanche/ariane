@@ -45,6 +45,19 @@ class ClaudeCodeRuntime:
             if session.json_schema
             else []
         )
+        if session.role == "reviewer":
+            # ADR 0031: nothing is loaded from the tree under review; it is only read.
+            isolation = [
+                "--restricted",
+                *(a for d in session.add_dirs for a in ("--add-dir", str(d))),
+            ]
+        else:
+            isolation = [
+                "--permission-mode",
+                "bypassPermissions",
+                "--setting-sources",
+                "project,local",
+            ]
         return [
             *self.executable,
             "-p",
@@ -57,11 +70,8 @@ class ClaudeCodeRuntime:
             *session.tools,
             "--disallowedTools",
             *DENIED_TOOLS,
-            "--permission-mode",
-            "bypassPermissions",
+            *isolation,
             "--strict-mcp-config",
-            "--setting-sources",
-            "project,local",
             "--max-budget-usd",
             f"{session.max_budget_usd:g}",
             "--no-session-persistence",

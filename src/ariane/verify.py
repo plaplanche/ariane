@@ -5,11 +5,11 @@ from __future__ import annotations
 
 import shutil
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from ariane import checks, context, git, process, review, ticket
-from ariane.config import Config
+from ariane.config import CheckConfig, Config
 from ariane.flow import EXIT_OK, EXIT_STOPPED, REMOTE, SETUP_TIMEOUT_S, Outcome
 from ariane.redact import redact
 from ariane.review_session import ReviewFailed, ReviewSession
@@ -179,8 +179,30 @@ class _Verification:
         changed = git.changed_paths(replay, self.base)
         folder = ticket.TicketFolder(records, self.issue.number, secrets=self.secrets)
         folder.create(self.issue)
-        tree_before = git.status(replay)
         diff = git.diff(replay, self.base, self.head, ticket.WORK_DIR)
+        tree = replay.with_name(replay.name + "-reviewer")
+        if tree.exists():
+            raise Refused(f"the reviewer working tree already exists at {tree}", "remove it")
+        git.add_reviewer_worktree(self.repo_root, tree, self.head)
+        try:
+            return self._review_in(
+                tree, replay, records, folder, all_checks, results, changed, diff
+            )
+        finally:
+            git.remove_worktree(self.repo_root, tree)
+
+    def _review_in(
+        self,
+        tree: Path,
+        replay: Path,
+        records: Path,
+        folder: ticket.TicketFolder,
+        all_checks: Sequence[CheckConfig],
+        results: list[checks.CheckResult],
+        changed: list[str],
+        diff: str,
+    ) -> Outcome:
+        tree_before = git.status(tree)
         sessions = ReviewSession(
             self.runtime,
             self.config.reviewer,
@@ -189,15 +211,16 @@ class _Verification:
             self.reviewer_env,
             all_checks,
             self.config.definition_of_done,
+            git.base_instructions(self.repo_root, REMOTE, self.config.base_branch),
         )
         try:
             answer = sessions.run(
-                replay,
+                tree,
                 self.head,
                 diff,
                 results,
                 self.config.documentation.not_updated(changed),
-                lambda: self._unchanged(replay, "the reviewer", tree_before),
+                lambda: self._unchanged(tree, "the reviewer", tree_before),
             )
         except ReviewFailed as exc:
             raise Refused(exc.reason, "read the error, then run verify again") from None

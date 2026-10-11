@@ -6,6 +6,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 
 - `git`, `out`: run git and return output.
 - `add_worktree`, `add_detached_worktree`, `remove_worktree`: ticket and replay trees.
+- `add_reviewer_worktree`: a detached tree without `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md` and `.claude/` at any depth (ADR 0031). `base_instructions`: the base branch's `CLAUDE.md` read with git, or empty.
 - `worktree_of`, `merge_base`, `commit_messages`: where a branch is checked out, and what `ariane verify` reads of a branch (ADR 0028).
 - `config_snapshot`, `snapshot_changes`: detect configuration tampering.
 - `blocked_push_env`, `push_env`, `push`: push only from Ariane.

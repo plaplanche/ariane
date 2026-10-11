@@ -29,6 +29,7 @@ class Session:
     prompt: str
     env: Mapping[str, str]  # the complete environment of the agent process
     json_schema: Mapping[str, Any] | None = None  # shape of the structured answer, if any
+    add_dirs: tuple[Path, ...] = ()  # read-only reviewer: the trees it may read, cwd is empty
 
 
 @dataclass(frozen=True)

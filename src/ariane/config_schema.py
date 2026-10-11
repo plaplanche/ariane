@@ -9,6 +9,7 @@ OPENCODE = "opencode"
 # Runtimes per role: opencode starts with the reviewer (ADR 0029).
 RUNTIMES = {"implementer": (CLAUDE_CODE,), "reviewer": (CLAUDE_CODE, OPENCODE)}
 OPENCODE_TOOLS = ("read", "glob", "grep")
+REVIEWER_TOOLS = ("Read", "Glob", "Grep")
 
 
 _STR: dict[str, Any] = {"type": "string", "minLength": 1}
@@ -22,7 +23,10 @@ _AGENT: dict[str, Any] = {
     "properties": {
         "runtime": {"enum": [CLAUDE_CODE, OPENCODE]},
         "model": _STR,
-        "tools": {**_ARGV, "description": "Tools the agent may use (not Skill)."},
+        "tools": {
+            **_ARGV,
+            "description": "Tools the agent may use (not Skill); a reviewer: Read, Glob, Grep only",
+        },
         "max_budget_usd": _POSITIVE,
         "max_tokens": {
             "type": "integer",

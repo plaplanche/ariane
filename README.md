@@ -37,6 +37,8 @@ ariane status 12
 ariane verify my-branch --issue 12
 ```
 
+The reviewer loads nothing from the tree under review (no hooks, settings or instruction files; ADR 0031): a Claude Code reviewer's `tools` are a subset of `Read`, `Glob`, `Grep`, and it gets the base branch's `CLAUDE.md` in its prompt as data.
+
 ### Reviewer on opencode
 
 The reviewer can run on [opencode](https://opencode.ai) (install it separately and put `opencode`

@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import shutil
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -132,6 +133,37 @@ def add_worktree(cwd: Path, path: Path, branch: str, start: str) -> None:
 def add_detached_worktree(cwd: Path, path: Path, commit: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     git(["worktree", "add", "--quiet", "--detach", str(path), commit], cwd)
+
+
+INSTRUCTION_FILES = ("CLAUDE.md", "CLAUDE.local.md", "AGENTS.md")
+INSTRUCTION_DIRS = (".claude",)
+
+
+def add_reviewer_worktree(cwd: Path, path: Path, commit: str) -> None:
+    """A detached worktree of `commit` without the files an agent would load as configuration:
+    every instruction file and `.claude/` directory, at any depth (ADR 0031)."""
+    add_detached_worktree(cwd, path, commit)
+    for here, dirs, files in os.walk(path):
+        if Path(here) == path / ".git":
+            continue
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for name in files:
+            if name in INSTRUCTION_FILES:
+                (Path(here) / name).unlink()
+        for name in [d for d in dirs if d in INSTRUCTION_DIRS]:
+            target = Path(here) / name
+            dirs.remove(name)
+            if target.is_symlink():
+                target.unlink()
+            else:
+                shutil.rmtree(target)
+
+
+def base_instructions(cwd: Path, remote: str, branch: str) -> str:
+    """The `CLAUDE.md` of the last fetched `remote/branch`, or "" when it has none."""
+    if not path_exists_on_branch(cwd, remote, branch, "CLAUDE.md"):
+        return ""
+    return show_on_branch(cwd, remote, branch, "CLAUDE.md")
 
 
 def remove_worktree(cwd: Path, path: Path) -> None:

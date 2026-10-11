@@ -427,8 +427,9 @@ class _TicketRun:
                     )
                 if not failed:
                     reviewed = round_
-                    args = (replay, checked, start_commit, guard, refs_before, results, round_)
-                    settled = self._review(*args)
+                    settled = self._review(
+                        checked, start_commit, guard, refs_before, results, round_
+                    )
             finally:
                 self._remove_replay(replay)
             if settled is not None and settled.go and not failed:
@@ -502,7 +503,6 @@ class _TicketRun:
 
     def _review(
         self,
-        replay: Path,
         checked: str,
         start_commit: str,
         guard: dict[str, str],
@@ -511,37 +511,47 @@ class _TicketRun:
         round_: int,
     ) -> review.Settled:
         """C10, C26: review `round_` in the replay tree; the record is `review-<round>.md`."""
-        diff = git.diff(self.worktree, start_commit, checked, ticket.WORK_DIR)
-        tree_before = git.status(replay)
-
-        def after_session() -> None:
-            self._verify("the reviewer", start_commit, guard, refs_before, expected_head=checked)
-            self._verify_replay(replay, checked, tree_before)
-
-        sessions = ReviewSession(
-            self.runtime,
-            self.config.reviewer,
-            self.folder,
-            self.issue,
-            self.agent_envs["reviewer"],
-            self._all_checks(),
-            self.config.definition_of_done,
-        )
+        tree = self.worktree.with_name(f"{self.number}-review")
+        git.add_reviewer_worktree(self.worktree, tree, checked)
         try:
-            answer = sessions.run(replay, checked, diff, results, self.not_updated, after_session)
-        except ReviewFailed as exc:
-            raise Stop(exc.reason, exc.next_action, exc.detail, status="needs a human") from None
-        settled = review.settle(answer, self.config.definition_of_done, results)
-        model = self.config.reviewer.model
-        self.folder.write(
-            ticket.review_file(round_), review.record(settled, checked, model, round_)
-        )
-        self.folder.log(
-            "ticket.review.verdict",
-            f"Review {round_}: {settled.verdict}",
-            review.findings_table(settled),
-        )
-        return settled
+            diff = git.diff(self.worktree, start_commit, checked, ticket.WORK_DIR)
+            tree_before = git.status(tree)
+
+            def after_session() -> None:
+                self._verify(
+                    "the reviewer", start_commit, guard, refs_before, expected_head=checked
+                )
+                self._verify_replay(tree, checked, tree_before)
+
+            sessions = ReviewSession(
+                self.runtime,
+                self.config.reviewer,
+                self.folder,
+                self.issue,
+                self.agent_envs["reviewer"],
+                self._all_checks(),
+                self.config.definition_of_done,
+                git.base_instructions(self.worktree, REMOTE, self.config.base_branch),
+            )
+            try:
+                answer = sessions.run(tree, checked, diff, results, self.not_updated, after_session)
+            except ReviewFailed as exc:
+                raise Stop(
+                    exc.reason, exc.next_action, exc.detail, status="needs a human"
+                ) from None
+            settled = review.settle(answer, self.config.definition_of_done, results)
+            model = self.config.reviewer.model
+            self.folder.write(
+                ticket.review_file(round_), review.record(settled, checked, model, round_)
+            )
+            self.folder.log(
+                "ticket.review.verdict",
+                f"Review {round_}: {settled.verdict}",
+                review.findings_table(settled),
+            )
+            return settled
+        finally:
+            self._remove_replay(tree)
 
     def _verify_replay(self, replay: Path, checked: str, tree_before: str) -> None:
         """The reviewer reads only: the replay tree has the same head and no edited file."""
