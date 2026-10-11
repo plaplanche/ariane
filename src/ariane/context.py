@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 
 from ariane import git
 from ariane.config import (
+    CONFIG_ENV,
     DEFAULT_DEFINITION_OF_DONE,
     NO_DOCUMENTATION,
     CheckConfig,
@@ -116,9 +117,9 @@ def untrusted_environment(
 ) -> dict[str, str]:
     """The environment of an agent session or of checks running code an agent wrote.
 
-    No credential variable, no SSH agent, and a git that cannot push. With `keep_agent_login`,
-    the runtime's own login variables are kept (an agent session needs them; checks
-    get none). An entry ending in `_` is a prefix, any other is an exact name (ADR 0024).
+    No credential variable, no `ARIANE_CONFIG`, no SSH agent, and a git that cannot push. With
+    `keep_agent_login`, the runtime's own login variables are kept (an agent session needs them;
+    checks get none). An entry ending in `_` is a prefix, any other is an exact name (ADR 0024).
     """
     keep_agent_login = bool(login_variables)
     kept = tuple(v.upper() for v in login_variables)
@@ -128,6 +129,8 @@ def untrusted_environment(
         upper = name.upper()  # Windows environment names are case-insensitive
         if upper == token_name:
             continue  # the tracker token never passes, whatever its name
+        if upper == CONFIG_ENV.upper():
+            continue  # Ariane's own configuration, not that of the code a ticket runs
         if _is_login_variable(upper, kept):
             env[name] = value
         elif upper in _CREDENTIAL_CHANNELS or _SECRET_NAME.search(upper):
