@@ -38,7 +38,7 @@ def test_c10_reviewer_isolation_tree_has_no_instruction_files_but_replay_keeps_t
     def look(session: Session) -> None:
         tree = session.add_dirs[0]
         seen["review"] = [n for n in (*PLANTED, *DEEP) if (tree / n).exists()]
-        seen["kept"] = [str(p.relative_to(tree)) for p in tree.glob("sub/keep.txt")]
+        seen["kept"] = [p.relative_to(tree).as_posix() for p in tree.glob("sub/keep.txt")]
         replay = tree.with_name("7-replay")
         seen["replay"] = [n for n in (*PLANTED, *DEEP) if (replay / n).exists()]
 
@@ -176,7 +176,11 @@ def test_c10_reviewer_isolation_symlinks_leaving_the_tree_are_removed(
     tree = tmp_path / "review-tree"
     git.add_reviewer_worktree(project.root, tree, "HEAD")
     assert not (tree / "notes").is_symlink() and not (tree / "link.txt").is_symlink()
-    assert (tree / "inside.txt").is_symlink()
+    inside = tree / "inside.txt"
+    if git.out(["config", "--default", "true", "--get", "core.symlinks"], tree) == "true":
+        assert inside.is_symlink()
+    else:  # Git for Windows checks links out as plain files holding the target
+        assert inside.read_text(encoding="utf-8") == "app.txt"
     git.remove_worktree(project.root, tree)
 
 
