@@ -1,13 +1,13 @@
 # Checks
 
-Replayed by Ariane on commit `f05f779ce97d23470b5a2e18734b9d7e5d032eb8`.
+Replayed by Ariane on commit `cb516fbbe302dfc0bfcba1120a675c99d21890bc`.
 
 | Check | Blocking | Result | Duration |
 | --- | --- | --- | --- |
-| lint | yes | pass | 0.2 s |
+| lint | yes | pass | 0.1 s |
 | format | yes | pass | 0.1 s |
 | types | yes | pass | 3.7 s |
-| tests | yes | pass | 86.5 s |
+| tests | yes | pass | 92.8 s |
 | file length | yes | pass | 0.1 s |
 | docs: references | yes | pass | 0.2 s |
 
@@ -15,7 +15,7 @@ Replayed by Ariane on commit `f05f779ce97d23470b5a2e18734b9d7e5d032eb8`.
 
 - Command: `uv run ruff check .`
 - Blocking: yes
-- Result: passed (exit 0, 0.2 s)
+- Result: passed (exit 0, 0.1 s)
 
 ```text
 warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
@@ -32,7 +32,7 @@ All checks passed!
 ```text
 warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
 warning: `VIRTUAL_ENV=/home/user/ariane/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
-326 files already formatted
+328 files already formatted
 ```
 
 ## types
@@ -51,7 +51,7 @@ Success: no issues found in 58 source files
 
 - Command: `uv run pytest -q`
 - Blocking: yes
-- Result: passed (exit 0, 86.5 s)
+- Result: passed (exit 0, 92.8 s)
 
 ```text
 warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
@@ -62,7 +62,7 @@ warning: `VIRTUAL_ENV=/home/user/ariane/.venv` does not match the project enviro
 ........................................................................ [ 77%]
 .................s...................................................... [ 96%]
 ..............                                                           [100%]
-373 passed, 1 skipped in 85.85s (0:01:25)
+373 passed, 1 skipped in 92.10s (0:01:32)
 ```
 
 ## file length
