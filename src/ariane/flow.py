@@ -100,6 +100,32 @@ def _prepare(
     return url, refs
 
 
+def remote_changes(
+    cwd: Path, url: str, branch: str, base_branch: str, refs_before: dict[str, str]
+) -> list[str]:
+    """Watched refs that differ from the start (C11, ADR 0017).
+
+    Watched: the ticket's branch, the base branch (a fast-forward, a merge, is tolerated) and
+    every tag. Other people's branches are ignored.
+    """
+    refs = git.remote_refs(cwd, url)
+    base = f"refs/heads/{base_branch}"
+    own = f"refs/heads/{branch}"
+    changed = sorted(
+        r
+        for r in {*refs, *refs_before}
+        if (r in (own, base) or r.startswith("refs/tags/")) and refs.get(r) != refs_before.get(r)
+    )
+    if (
+        base in changed
+        and base in refs
+        and base in refs_before
+        and git.fast_forwarded(cwd, REMOTE, base_branch, refs_before[base], refs[base])
+    ):
+        changed.remove(base)
+    return changed
+
+
 def _token(environ: Mapping[str, str], token_env: str) -> str:
     name = token_env.upper()
     return next((v for k, v in environ.items() if k.upper() == name and v), "")
@@ -294,20 +320,9 @@ class _TicketRun:
         )
 
     def _remote_changes(self, refs_before: dict[str, str]) -> list[str]:
-        """Refs that differ from the start, except a fast-forward of the base branch (a merge)."""
-        refs = git.remote_refs(self.worktree, self.url)
-        base = f"refs/heads/{self.config.base_branch}"
-        changed = sorted(r for r in {*refs, *refs_before} if refs.get(r) != refs_before.get(r))
-        if (
-            base in changed
-            and base in refs
-            and base in refs_before
-            and git.fast_forwarded(
-                self.worktree, REMOTE, self.config.base_branch, refs_before[base], refs[base]
-            )
-        ):
-            changed.remove(base)
-        return changed
+        return remote_changes(
+            self.worktree, self.url, self.branch, self.config.base_branch, refs_before
+        )
 
     def _warn_ignored(self, before: set[str]) -> None:
         """Ignored files the agent created can make checks pass without being delivered."""

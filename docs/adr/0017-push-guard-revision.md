@@ -49,3 +49,20 @@ no longer stops a running ticket. A person pushing another branch still does.
 - An operating-system sandbox or a credential-free container now, on three operating systems:
   the real fix, kept for the security slice because of its cost.
 - The agent runtime's own network sandbox in the cloud: specific to one runtime (ADR 0014).
+
+## Amendment (2026-10-11): the remote check watches only what a ticket could touch
+
+A second user's shared repository (slice 4) has other people pushing all day, and ticket #94
+stopped because the session's own branch was pushed. The check no longer compares every ref.
+It watches:
+
+- the ticket's branch `refs/heads/ariane/<n>`: any change stops;
+- the base branch: a fast-forward is tolerated, any other change stops;
+- every tag: a tag created, moved or deleted stops.
+
+Every other branch is ignored, so other people's pushes no longer stop a ticket. The stop
+message still names the ref. `ariane verify <branch>` applies the same rule with `<branch>` in
+place of the ticket branch, comparing the remote at the start of the run and after the replayed
+checks and the reviewer; it skips the check when the repository has no `origin`. An agent that
+creates a branch other than its own is no longer detected; the branch rules on the repository
+and the credential-free sessions above remain the protection.
