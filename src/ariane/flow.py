@@ -308,20 +308,9 @@ class _TicketRun:
         )
 
     def _remote_changes(self, refs_before: dict[str, str]) -> list[str]:
-        """Refs that differ from the start, except a fast-forward of the base branch (a merge)."""
-        refs = git.remote_refs(self.worktree, self.url)
-        base = f"refs/heads/{self.config.base_branch}"
-        changed = sorted(r for r in {*refs, *refs_before} if refs.get(r) != refs_before.get(r))
-        if (
-            base in changed
-            and base in refs
-            and base in refs_before
-            and git.fast_forwarded(
-                self.worktree, REMOTE, self.config.base_branch, refs_before[base], refs[base]
-            )
-        ):
-            changed.remove(base)
-        return changed
+        return git.remote_changes(
+            self.worktree, self.url, REMOTE, self.branch, self.config.base_branch, refs_before
+        )
 
     def _warn_ignored(self, before: set[str]) -> None:
         """Ignored files the agent created can make checks pass without being delivered."""

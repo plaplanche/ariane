@@ -22,3 +22,6 @@ Each entry: what happened, then the rule, test, check or probe it calls for (C18
 - **Proposal (rule):** while a ticket runs, nobody runs git commands in the repository or its
   working trees. This holds until claims (C13) let the guard tell a person's change from an
   agent's.
+- **Update (2026-10-11):** the remote part of the guard now watches only the ticket's branch,
+  the base branch and tags (ADR 0017, amendment): other people's branches no longer stop a
+  ticket. The rule above still holds for git commands in the repository and its working trees.

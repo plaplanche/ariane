@@ -287,13 +287,13 @@ def test_c11_a_push_that_bypasses_the_guard_is_detected(
         (session.cwd / "app.txt").write_text("version 2\n", encoding="utf-8")
         sh(["git", "commit", "--quiet", "-am", "agent commit"], session.cwd)
         sh(
-            ["git", "push", "--quiet", str(project.remote), "HEAD:refs/heads/elsewhere"],
+            ["git", "push", "--quiet", str(project.remote), "HEAD:refs/tags/elsewhere"],
             session.cwd,
         )
 
     outcome = start(project, tracker, FakeRuntime(action=push_explicitly))
     assert outcome.exit_code == 1
-    assert "the remote changed during the agent session (refs/heads/elsewhere)" in outcome.line
+    assert "the remote changed during the agent session (refs/tags/elsewhere)" in outcome.line
     assert tracker.opened == []
 
 
