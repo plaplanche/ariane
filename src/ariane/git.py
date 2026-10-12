@@ -368,3 +368,29 @@ def fast_forwarded(cwd: Path, remote: str, branch: str, old: str, new: str) -> b
     if not fetched.ok:
         return False
     return is_ancestor(cwd, old, new)
+
+
+def remote_changes(
+    cwd: Path, url: str, remote: str, branch: str, base_branch: str, refs_before: dict[str, str]
+) -> list[str]:
+    """Watched refs of `url` that differ from `refs_before` (C11, ADR 0017).
+
+    Watched: the ticket's branch, the base branch (a fast-forward, a merge, is tolerated) and
+    every tag. Other people's branches are ignored.
+    """
+    refs = remote_refs(cwd, url)
+    base = f"refs/heads/{base_branch}"
+    own = f"refs/heads/{branch}"
+    changed = sorted(
+        r
+        for r in {*refs, *refs_before}
+        if (r in (own, base) or r.startswith("refs/tags/")) and refs.get(r) != refs_before.get(r)
+    )
+    if (
+        base in changed
+        and base in refs
+        and base in refs_before
+        and fast_forwarded(cwd, remote, base_branch, refs_before[base], refs[base])
+    ):
+        changed.remove(base)
+    return changed

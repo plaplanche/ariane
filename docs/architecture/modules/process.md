@@ -7,6 +7,7 @@ Runs external commands from argument lists: PATH resolution, UTF-8 output, timeo
 - `run`: run a command and return a `Completed`.
 - `resolve`: find an executable.
 - `stream`: like `run`, but passes each standard output line to a callback while the command runs; the callback returns True to stop the whole process tree (`Completed.stopped`).
+- Cleanup (C5): the process tree is killed in a `finally` around the wait, so a normal exit, a timeout, Ctrl-C (`KeyboardInterrupt`) or any other exception leaves nothing running; the exception is re-raised.
 - `_shown`: an argument as the `process.started` log line shows it, cut to 200 characters.
 - `kill_tree`: stop a process and its children.
 - `CommandNotFoundError`: raised for an unknown command.

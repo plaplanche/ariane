@@ -11,6 +11,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 - `blocked_push_env`, `push_env`, `push`: push only from Ariane.
 - `commit`: commits only the given paths; returns False when they hold no change, raises `GitError` when `git add` fails (for example an ignored `work/`), except with `tolerate_ignored=True` (used by `ariane verify`), which returns False so that it can say nothing was recorded.
 - `head`, `changed_paths`, `committed_paths`, `is_ancestor`, `fast_forwarded`: history queries.
+- `remote_changes`: the push guard's remote check (C11, ADR 0017): of the refs that differ from the start, only the given branch, the base branch (a fast-forward is tolerated) and tags count; other branches are ignored. Used by `ariane start` and `ariane verify`.
 - `GitError`: raised on a failing git command.
 
 ## Collaborations

@@ -10,7 +10,14 @@ from pathlib import Path
 
 from ariane import checks, context, git, process, review, ticket
 from ariane.config import Config
-from ariane.flow import EXIT_OK, EXIT_STOPPED, REMOTE, SETUP_TIMEOUT_S, Outcome, remote_changes
+from ariane.flow import (
+    EXIT_INTERRUPTED,
+    EXIT_OK,
+    EXIT_STOPPED,
+    REMOTE,
+    SETUP_TIMEOUT_S,
+    Outcome,
+)
 from ariane.redact import redact
 from ariane.review_session import ReviewFailed, ReviewSession
 from ariane.runtime import AgentRuntime, for_role
@@ -55,6 +62,11 @@ def verify(
         issue_source = _issue(tracker, issue_number)
         where = _checkout(repo_root, branch)
         return _Verification(branch, repo_root, config, runtime, environ, where, issue_source).run()
+    except KeyboardInterrupt:
+        return Outcome(
+            EXIT_INTERRUPTED,
+            f"Stopped verifying {branch}: interrupted by the user. Next: run verify again.",
+        )
     except Refused as exc:
         return Outcome(
             EXIT_STOPPED, f"Did not verify {branch}: {exc.reason}. Next: {exc.next_action}."
@@ -227,8 +239,13 @@ class _Verification:
         if git.status(replay) != tree_before:
             raise Refused(f"{after} changed files in the replay tree", "inspect the session")
         if self.url:
-            changed = remote_changes(
-                self.repo_root, self.url, self.branch, self.config.base_branch, self.refs_before
+            changed = git.remote_changes(
+                self.repo_root,
+                self.url,
+                REMOTE,
+                self.branch,
+                self.config.base_branch,
+                self.refs_before,
             )
             if changed:
                 raise Refused(
