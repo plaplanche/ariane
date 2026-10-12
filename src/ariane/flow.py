@@ -19,6 +19,7 @@ REMOTE = "origin"
 SETUP_TIMEOUT_S = 30 * 60
 EXIT_OK = 0
 EXIT_STOPPED = 1
+EXIT_INTERRUPTED = 130
 MAX_FIX_ROUNDS = 2
 _FAILURES = FAILURES
 
@@ -67,17 +68,28 @@ def start(
         issue = tracker.read_issue(number)
     except TrackerError as exc:
         return Outcome(EXIT_STOPPED, f"Did not start #{number}: {exc}. Next: check the number.")
+    except KeyboardInterrupt:
+        return _interrupted_before_start(number)
     branch = branch_name(number)
     worktree = worktree_path(repo_root, number)
     try:
         url, refs_before = _prepare(repo_root, config, branch, worktree)
         run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url)
+    except KeyboardInterrupt:
+        return _interrupted_before_start(number)
     except (Stop, *_FAILURES) as exc:
         reason, next_action = _describe(exc)
         return Outcome(
             EXIT_STOPPED, f"Did not start ticket #{number}: {reason}. Next: {next_action}."
         )
     return run.execute(refs_before)
+
+
+def _interrupted_before_start(number: int) -> Outcome:
+    """Ctrl-C before the ticket folder exists: nothing to record, one line, exit 130."""
+    reason, next_action = _describe(KeyboardInterrupt())
+    line = f"Did not start ticket #{number}: {reason}. Next: {next_action}."
+    return Outcome(EXIT_INTERRUPTED, line)
 
 
 def _prepare(
@@ -106,6 +118,8 @@ def _token(environ: Mapping[str, str], token_env: str) -> str:
 
 
 def _describe(exc: BaseException) -> tuple[str, str]:
+    if isinstance(exc, KeyboardInterrupt):
+        return "interrupted by the user", "check the working tree, then start the ticket again"
     if isinstance(exc, Stop):
         return exc.reason, exc.next_action
     first = str(exc).splitlines()[0].rstrip(":") if str(exc) else type(exc).__name__
@@ -177,7 +191,7 @@ class _TicketRun:
             self._warn_ignored(ignored_before)
             self._commit_agent_work(start_commit, result)
             return self._check_and_deliver(start_commit, guard, refs_before)
-        except (Stop, *_FAILURES) as exc:
+        except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
             return self._stopped(exc)
 
     def _setup(self, cwd: Path) -> Stop | None:
@@ -294,20 +308,9 @@ class _TicketRun:
         )
 
     def _remote_changes(self, refs_before: dict[str, str]) -> list[str]:
-        """Refs that differ from the start, except a fast-forward of the base branch (a merge)."""
-        refs = git.remote_refs(self.worktree, self.url)
-        base = f"refs/heads/{self.config.base_branch}"
-        changed = sorted(r for r in {*refs, *refs_before} if refs.get(r) != refs_before.get(r))
-        if (
-            base in changed
-            and base in refs
-            and base in refs_before
-            and git.fast_forwarded(
-                self.worktree, REMOTE, self.config.base_branch, refs_before[base], refs[base]
-            )
-        ):
-            changed.remove(base)
-        return changed
+        return git.remote_changes(
+            self.worktree, self.url, REMOTE, self.branch, self.config.base_branch, refs_before
+        )
 
     def _warn_ignored(self, before: set[str]) -> None:
         """Ignored files the agent created can make checks pass without being delivered."""
@@ -548,11 +551,8 @@ class _TicketRun:
             self.folder.write(
                 ticket.review_file(round_), review.record(settled, checked, model, round_)
             )
-            self.folder.log(
-                "ticket.review.verdict",
-                f"Review {round_}: {settled.verdict}",
-                review.findings_table(settled),
-            )
+            verdict = f"Review {round_}: {settled.verdict}"
+            self.folder.log("ticket.review.verdict", verdict, review.findings_table(settled))
             return settled
         finally:
             self._remove_replay(tree)
@@ -594,6 +594,7 @@ class _TicketRun:
                 status = exc.status if isinstance(exc, Stop) else "stopped"
                 self.folder.set_status(status, reason, next_action)
                 self._commit_record(f"#{self.number}: record the stop")
+        code = EXIT_INTERRUPTED if isinstance(exc, KeyboardInterrupt) else EXIT_STOPPED
         return Outcome(
-            EXIT_STOPPED, f"Stopped ticket #{self.number}: {reason}. Next: {next_action}.", detail
+            code, f"Stopped ticket #{self.number}: {reason}. Next: {next_action}.", detail
         )

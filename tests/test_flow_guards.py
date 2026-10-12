@@ -106,18 +106,18 @@ def test_c11_a_check_that_moves_the_ticket_branch_is_stopped(
     assert "ariane/7" not in project.remote_branches()
 
 
-def test_c11_a_remote_branch_deleted_during_the_session_is_detected(
+def test_c11_a_remote_tag_deleted_during_the_session_is_detected(
     project: Project, tracker: InMemoryTracker
 ) -> None:
-    sh(["git", "push", "--quiet", "origin", "main:refs/heads/other"], project.root)
+    sh(["git", "push", "--quiet", "origin", "main:refs/tags/other"], project.root)
 
     def delete_branch(session: Session) -> None:
         edit_app(session)
-        sh(["git", "push", "--quiet", str(project.remote), ":refs/heads/other"], session.cwd)
+        sh(["git", "push", "--quiet", str(project.remote), ":refs/tags/other"], session.cwd)
 
     outcome = start(project, tracker, FakeRuntime(action=delete_branch))
     assert outcome.exit_code == 1
-    assert "the remote changed during the agent session (refs/heads/other)" in outcome.line
+    assert "the remote changed during the agent session (refs/tags/other)" in outcome.line
 
 
 def test_c11_a_refused_pull_request_after_the_push_says_how_to_finish(
@@ -346,11 +346,11 @@ def test_c21_redact_commit_messages_a_token_in_the_issue_title_is_masked(
 
 
 def test_c11_guard_message_for_a_changed_remote(project: Project, tracker: InMemoryTracker) -> None:
-    sh(["git", "push", "--quiet", "origin", "main:refs/heads/other"], project.root)
+    sh(["git", "push", "--quiet", "origin", "main:refs/tags/other"], project.root)
 
     def delete_branch(session: Session) -> None:
         edit_app(session)
-        sh(["git", "push", "--quiet", str(project.remote), ":refs/heads/other"], session.cwd)
+        sh(["git", "push", "--quiet", str(project.remote), ":refs/tags/other"], session.cwd)
 
     outcome = start(project, tracker, FakeRuntime(action=delete_branch))
     assert "nobody runs git commands in the repository or pushes to it while a ticket runs" in (
