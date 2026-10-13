@@ -4,19 +4,21 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 import pytest
+from test_cli import VALID_TOML, ariane
 from test_config import VALID
 
 from ariane import config, flow, git
 from ariane.github import GitHubTracker
 from ariane.tracker import IssueRefused
 
-from conftest import FakeRuntime, Project, make_config
+from conftest import FakeRuntime, Project, make_config, sh
 
 LABELLED = "2026-10-01T10:00:00Z"
 BEFORE = "2026-10-01T09:00:00Z"
@@ -63,7 +65,9 @@ class Fake:
         prefix = "/repos/o/n/collaborators/"
         if route.startswith(prefix) and route.endswith("/permission"):
             user = route[len(prefix) : -len("/permission")]
-            return 200, {"permission": PERMISSIONS.get(user, "none")}
+            if user not in PERMISSIONS:
+                return 404, {"message": "Not Found"}
+            return 200, {"permission": PERMISSIONS[user]}
         return 404, {"message": "Not Found"}
 
 
@@ -214,3 +218,45 @@ def test_c21_issue_gate_start_refuses_with_exit_2_and_creates_nothing(
     assert "Did not start #5" in outcome.line
     assert not git.local_branch_exists(project.root, "ariane/5")
     assert not flow.worktree_path(project.root, 5).exists()
+
+
+def _cli(project: Project, url: str, *args: str) -> subprocess.CompletedProcess[str]:
+    toml = VALID_TOML.replace('repository = "owner/name"', f'repository = "o/n"\napi_url = "{url}"')
+    (project.root / "ariane.toml").write_text(toml, encoding="utf-8")
+    env = {**os.environ, "ARIANE_TEST_TOKEN": "t", "NO_PROXY": "127.0.0.1,localhost"}
+    for name in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
+        env.pop(name, None)
+    return ariane(project.root, *args, env=env)
+
+
+def test_c21_issue_gate_cli_start_passes_the_configured_label(
+    project: Project, fake: tuple[Fake, str]
+) -> None:
+    state, url = fake
+    state.labels = ["bug"]
+    done = _cli(project, url, "start", "5")
+    assert done.returncode == 2
+    assert "does not carry the label `ariane`" in done.stderr + done.stdout
+    assert not git.local_branch_exists(project.root, "ariane/5")
+
+
+def test_c21_issue_gate_cli_verify_issue_refuses_and_reviews_nothing(
+    project: Project, fake: tuple[Fake, str]
+) -> None:
+    state, url = fake
+    state.events = [state.labeled("rita", LABELLED)]
+    sh(["git", "branch", "work-branch"], project.root)
+    done = _cli(project, url, "verify", "work-branch", "--issue", "5")
+    assert done.returncode == 2
+    assert "'rita'" in done.stderr + done.stdout
+    assert git.worktree_of(project.root, "work-branch") is None
+    assert not (project.root / "work" / "verify").exists()
+
+
+def test_c21_issue_gate_a_user_without_permission_record_cannot_write(
+    fake: tuple[Fake, str],
+) -> None:
+    state, url = fake
+    state.events = [state.labeled("ghost", LABELLED)]
+    with pytest.raises(IssueRefused, match="'ghost'"):
+        gate(url).read_issue(5)

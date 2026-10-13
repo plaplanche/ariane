@@ -153,7 +153,10 @@ def _verify(root: Path, branch: str, number: int | None) -> int:
             )
         logs.add_secrets([token])
         tracker = GitHubTracker(
-            repository=cfg.tracker.repository, token=token, api_url=cfg.tracker.api_url
+            repository=cfg.tracker.repository,
+            token=token,
+            api_url=cfg.tracker.api_url,
+            ready_label=cfg.tracker.ready_label,
         )
     outcome = verify.verify(
         branch,

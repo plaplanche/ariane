@@ -4,7 +4,7 @@ The `ariane` command line. It parses arguments, wires the configuration, tracker
 
 ## Main types and functions
 
-- `main`: the entry point, returns the exit code. Commands: `start`, `status`, and `verify <branch> [--issue N]` (checks and reviews a local branch finished by hand, C23, ADR 0028).
+- `main`: the entry point, returns the exit code. Commands: `start`, `status`, and `verify <branch> [--issue N]` (checks and reviews a local branch finished by hand, C23, ADR 0028). `start` and `verify --issue` both build the tracker with `[tracker].ready_label`, so both apply the issue gate (C21, ADR 0032).
 
 `_runtime` builds the `RoutedRuntime` from each role's `runtime` in the configuration; `config.load` honours `ARIANE_CONFIG`.
 

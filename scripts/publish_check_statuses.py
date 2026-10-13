@@ -63,6 +63,7 @@ def main() -> int:
         repository=env["GITHUB_REPOSITORY"],
         token=env["GITHUB_TOKEN"],
         api_url=env.get("GITHUB_API_URL", "https://api.github.com"),
+        ready_label=cfg.tracker.ready_label,
     )
     server = env.get("GITHUB_SERVER_URL", "https://github.com").rstrip("/")
     target_url = f"{server}/{env['GITHUB_REPOSITORY']}/actions/runs/{env.get('GITHUB_RUN_ID', '')}"

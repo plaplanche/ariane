@@ -37,9 +37,7 @@ def web_url(api_url: str) -> str:
 
 
 class GitHubTracker:
-    def __init__(
-        self, *, repository: str, token: str, api_url: str, ready_label: str | None = None
-    ) -> None:
+    def __init__(self, *, repository: str, token: str, api_url: str, ready_label: str) -> None:
         self._ready_label = ready_label
         self._repository = repository
         self._token = token
@@ -52,8 +50,7 @@ class GitHubTracker:
         data = self._request("GET", f"/repos/{self._repository}/issues/{number}")
         if "pull_request" in data:
             raise TrackerError(f"#{number} is a pull request, not an issue")
-        if self._ready_label is not None:
-            self._check_trusted(number, data, self._ready_label)
+        self._check_trusted(number, data, self._ready_label)
         try:
             return Issue(
                 number=int(data["number"]),
@@ -140,7 +137,14 @@ class GitHubTracker:
         if not user:
             return False
         quoted = urllib.parse.quote(user, safe="")
-        data = self._request("GET", f"/repos/{self._repository}/collaborators/{quoted}/permission")
+        try:
+            data = self._request(
+                "GET", f"/repos/{self._repository}/collaborators/{quoted}/permission"
+            )
+        except TrackerError as exc:
+            if "HTTP 404" in str(exc):
+                return False
+            raise
         return data.get("permission") in _WRITERS or data.get("role_name") in _WRITERS
 
     def open_pull_request(
