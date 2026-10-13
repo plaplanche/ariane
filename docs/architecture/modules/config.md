@@ -6,6 +6,7 @@ Loads and validates `ariane.toml`. Every error names the faulty key.
 
 - `Config`, `TrackerConfig`, `AgentConfig`, `CheckConfig`, `DoneItem`: the validated settings; `Config.definition_of_done` holds the
   definition of done (C26), `DEFAULT_DEFINITION_OF_DONE` when the table is absent.
+- `TrackerConfig.ready_label`: `[tracker] ready_label` (default `ariane`, non-empty), the label that lets Ariane run an issue (C21, ADR 0032).
 - `AgentConfig.max_tokens`: optional `[agents.<role>] max_tokens`, a positive integer, Ariane's own token cap per session.
 - `Config.reviewer`: the required `[agents.reviewer]` table (same keys as the implementer's); `parse` refuses a reviewer model equal to the implementer's, naming `agents.reviewer.model` (C10).
 - Globs (`documentation.map[].source`): `**/` matches zero or more whole folders (`src/**/*.py` matches `src/a.py`); other `**` crosses segments (ADR 0026).

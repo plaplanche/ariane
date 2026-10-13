@@ -32,8 +32,9 @@ FIX_NEXT = "fix the findings, then run verify again"
 class Refused(Exception):
     """The branch cannot be verified; `reason` and `next_action` go to the user."""
 
-    def __init__(self, reason: str, next_action: str) -> None:
+    def __init__(self, reason: str, next_action: str, exit_code: int = EXIT_STOPPED) -> None:
         super().__init__(reason)
+        self.exit_code = exit_code
         self.reason = reason
         self.next_action = next_action
 
@@ -69,7 +70,7 @@ def verify(
         )
     except Refused as exc:
         return Outcome(
-            EXIT_STOPPED, f"Did not verify {branch}: {exc.reason}. Next: {exc.next_action}."
+            exc.exit_code, f"Did not verify {branch}: {exc.reason}. Next: {exc.next_action}."
         )
     except (git.GitError, process.CommandNotFoundError, OSError) as exc:
         first = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
@@ -84,7 +85,7 @@ def _issue(tracker: Tracker | None, number: int | None) -> Issue | None:
     try:
         return tracker.read_issue(number)
     except TrackerError as exc:
-        raise Refused(str(exc), "check the issue number") from None
+        raise Refused(str(exc), exc.next_action, exc.exit_code) from None
 
 
 def _checkout(repo_root: Path, branch: str) -> Path | None:

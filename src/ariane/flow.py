@@ -67,7 +67,7 @@ def start(
     try:
         issue = tracker.read_issue(number)
     except TrackerError as exc:
-        return Outcome(EXIT_STOPPED, f"Did not start #{number}: {exc}. Next: check the number.")
+        return Outcome(exc.exit_code, f"Did not start #{number}: {exc}. Next: {exc.next_action}.")
     except KeyboardInterrupt:
         return _interrupted_before_start(number)
     branch = branch_name(number)

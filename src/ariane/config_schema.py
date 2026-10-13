@@ -99,6 +99,13 @@ SCHEMA: dict[str, Any] = {
                     "default": "https://api.github.com",
                     "description": "https URL (plain http only to the local machine).",
                 },
+                "ready_label": {
+                    **_STR,
+                    "default": "ariane",
+                    "description": (
+                        "Label a person with write access puts on an issue to let Ariane run it."
+                    ),
+                },
             },
         },
         "agents": {

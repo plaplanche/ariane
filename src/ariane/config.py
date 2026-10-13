@@ -31,6 +31,7 @@ class TrackerConfig:
     repository: str
     token_env: str
     api_url: str
+    ready_label: str = "ariane"
 
 
 @dataclass(frozen=True)
@@ -185,7 +186,7 @@ def parse(data: dict[str, Any]) -> Config:
     project = _table(data, "project")
     _only(project, "project", {"base_branch", "setup"})
     tracker = _table(data, "tracker")
-    _only(tracker, "tracker", {"kind", "repository", "token_env", "api_url"})
+    _only(tracker, "tracker", {"kind", "repository", "token_env", "api_url", "ready_label"})
     agents = _table(data, "agents")
     _only(agents, "agents", {"implementer", "reviewer"})
     implementer = _agent(agents, "implementer")
@@ -214,6 +215,10 @@ def parse(data: dict[str, Any]) -> Config:
             f"{CONFIG_FILE}: tracker.api_url: expected an https:// URL (the token is sent there)"
         )
 
+    ready_label = _str(tracker, "ready_label", "tracker.", "ariane")
+    if not ready_label.strip():
+        raise ConfigError(f"{CONFIG_FILE}: tracker.ready_label: must not be empty")
+
     setup = None
     if "setup" in project:
         setup = _str_list(project, "setup", "project.")
@@ -228,6 +233,7 @@ def parse(data: dict[str, Any]) -> Config:
             repository=repository,
             token_env=_str(tracker, "token_env", "tracker."),
             api_url=api_url,
+            ready_label=ready_label,
         ),
         implementer=implementer,
         reviewer=reviewer,
