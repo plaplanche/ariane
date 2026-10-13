@@ -88,12 +88,14 @@ def test_c10_review_runs_in_the_replay_tree_with_read_only_tools(
     runtime = FakeRuntime()
     assert start(project, tracker, runtime).exit_code == 0
     session = next(s for s in runtime.sessions if s.role == "reviewer")
-    assert session.cwd == worktree(project).with_name("7-replay")
+    assert session.add_dirs == (worktree(project).with_name("7-review"),)
+    assert session.cwd not in session.add_dirs
     assert session.tools == ("Read", "Glob", "Grep")
     assert session.model == "test-reviewer"
     assert session.json_schema == review.SCHEMA
     assert '<untrusted-ticket number="7">' in session.prompt
     assert "+version 2" in session.prompt
+    assert not session.add_dirs[0].exists()
     assert not session.cwd.exists()
 
 
@@ -101,7 +103,7 @@ def test_c10_review_a_reviewer_that_edits_a_file_is_stopped(
     project: Project, tracker: InMemoryTracker
 ) -> None:
     def edit(session: Session) -> None:
-        (session.cwd / "app.txt").write_text("tampered\n", encoding="utf-8")
+        (session.add_dirs[0] / "app.txt").write_text("tampered\n", encoding="utf-8")
 
     runtime = FakeRuntime(review_actions=[edit])
     outcome = start(project, tracker, runtime)
@@ -114,7 +116,7 @@ def test_c10_review_a_reviewer_that_adds_a_file_is_stopped(
     project: Project, tracker: InMemoryTracker
 ) -> None:
     def add(session: Session) -> None:
-        (session.cwd / "new.txt").write_text("x\n", encoding="utf-8")
+        (session.add_dirs[0] / "new.txt").write_text("x\n", encoding="utf-8")
 
     outcome = start(project, tracker, FakeRuntime(review_actions=[add]))
     assert outcome.exit_code == 1

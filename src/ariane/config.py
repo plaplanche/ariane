@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ariane.config_schema import OPENCODE, OPENCODE_TOOLS, RUNTIMES, SCHEMA
+from ariane.config_schema import OPENCODE, OPENCODE_TOOLS, REVIEWER_TOOLS, RUNTIMES, SCHEMA
 
 __all__ = ["OPENCODE", "SCHEMA"]
 
@@ -237,9 +237,6 @@ def parse(data: dict[str, Any]) -> Config:
     )
 
 
-REVIEWER_FORBIDDEN_TOOLS = ("Write", "Edit", "NotebookEdit", "Bash")
-
-
 def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
     where = f"agents.{role}"
     table = _table(agents, role, "agents.")
@@ -263,11 +260,11 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
     if runtime == OPENCODE:
         _opencode_agent(table, tools, where)
     if role == "reviewer" and runtime != OPENCODE:
-        writing = [t for t in tools if t in REVIEWER_FORBIDDEN_TOOLS]
-        if writing:
+        other = [t for t in tools if t not in REVIEWER_TOOLS]
+        if other:
             raise ConfigError(
-                f"{CONFIG_FILE}: {where}.tools: {writing[0]} is not allowed"
-                " (the reviewer is read-only, C10)"
+                f"{CONFIG_FILE}: {where}.tools: {other[0]} is not allowed"
+                f" (the reviewer's tools are an allow list: {', '.join(REVIEWER_TOOLS)}; C10)"
             )
     if "Skill" in tools:
         raise ConfigError(

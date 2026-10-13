@@ -1,10 +1,11 @@
 # Module `ariane.review_session`
 
-The reviewer sessions of one review round (C10): a fresh read-only session in the clean replay tree, and one new session if its answer is invalid.
+The reviewer sessions of one review round (C10): a fresh read-only session on the reviewer tree (the commit without `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md` and `.claude/`, ADR 0031), and one new session if its answer is invalid.
 
 ## Main types and functions
 
 - `ReviewSession`: what the reviewer sessions of a ticket share; `run` returns the validated answer and calls back to verify that the session changed nothing.
+- A Claude Code reviewer runs from a temporary empty folder and reads the tree through `Session.add_dirs`; opencode runs in the tree. `instructions` is the base branch's `CLAUDE.md`, passed to the prompt as data.
 - Its `env` is built by the caller from the reviewer runtime's own login variables only.
 - The journal line of a reviewer session starts with the reviewer's runtime as `runtime.describe` words it (for opencode: its version and that the title call's usage is not reported).
 - `cap_text` words the caps that apply for the journal: for opencode "runtime cost cap none; Ariane stops at … USD of reported cost or … tokens".

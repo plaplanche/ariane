@@ -27,7 +27,9 @@ def acting(project: Project, push: Callable[[Session], None]) -> FakeRuntime:
 
 def _push(project: Project, *args: str) -> Callable[[Session], None]:
     def push(session: Session) -> None:
-        sh(["git", "push", "--quiet", *args], session.cwd)
+        # A reviewer runs from an empty folder and reads its tree through `add_dirs` (ADR 0031).
+        tree = session.add_dirs[0] if session.add_dirs else session.cwd
+        sh(["git", "push", "--quiet", *args], tree)
 
     return push
 

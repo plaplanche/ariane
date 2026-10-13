@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +50,7 @@ class ReviewSession:
     env: Mapping[str, str]
     all_checks: Sequence[CheckConfig]
     definition_of_done: Sequence[DoneItem]
+    instructions: str = ""  # the base branch's CLAUDE.md, shown to the reviewer as data
 
     def run(
         self,
@@ -58,9 +61,27 @@ class ReviewSession:
         not_updated: Sequence[str],
         after_session: Callable[[], None],
     ) -> review.Review:
-        """A fresh read-only reviewer session in `replay`; one retry if its answer is invalid.
-        `after_session` verifies that the session changed nothing."""
+        """A fresh read-only reviewer session on `replay` (the reviewer tree, without instruction
+        files); one retry if its answer is invalid. `after_session` verifies that the session
+        changed nothing. Claude Code starts in an empty folder and reads `replay` (ADR 0031)."""
+        empty = Path(tempfile.mkdtemp(prefix="ariane-reviewer-"))
+        try:
+            return self._run(replay, empty, checked, diff, results, not_updated, after_session)
+        finally:
+            shutil.rmtree(empty, ignore_errors=True)
+
+    def _run(
+        self,
+        replay: Path,
+        empty: Path,
+        checked: str,
+        diff: str,
+        results: list[checks.CheckResult],
+        not_updated: Sequence[str],
+        after_session: Callable[[], None],
+    ) -> review.Review:
         agent = self.agent
+        claude = agent.runtime != "opencode"
         runtime = for_role(self.runtime, "reviewer")
         error = ""
         for attempt in (1, 2):
@@ -71,7 +92,7 @@ class ReviewSession:
                 max_budget_usd=agent.max_budget_usd,
                 max_tokens=agent.max_tokens,
                 timeout_s=agent.timeout_minutes * 60,
-                cwd=replay,
+                cwd=empty if claude else replay,
                 prompt=review.prompt(
                     self.issue,
                     diff,
@@ -80,9 +101,12 @@ class ReviewSession:
                     self.definition_of_done,
                     error=error,
                     not_updated=not_updated,
+                    instructions=self.instructions,
+                    tree=replay,
                 ),
                 env=self.env,
                 json_schema=review.SCHEMA,
+                add_dirs=(replay,) if claude else (),
             )
             self.folder.log(
                 "ticket.review.started",

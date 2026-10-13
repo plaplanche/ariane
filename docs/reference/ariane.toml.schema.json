@@ -162,23 +162,56 @@
               "exclusiveMinimum": 0
             }
           },
-          "if": {
-            "type": "object",
-            "properties": {
-              "runtime": {
-                "const": "opencode"
+          "allOf": [
+            {
+              "if": {
+                "type": "object",
+                "properties": {
+                  "runtime": {
+                    "const": "opencode"
+                  }
+                },
+                "required": [
+                  "runtime"
+                ]
+              },
+              "then": {
+                "type": "object",
+                "required": [
+                  "max_tokens"
+                ]
               }
             },
-            "required": [
-              "runtime"
-            ]
-          },
-          "then": {
-            "type": "object",
-            "required": [
-              "max_tokens"
-            ]
-          },
+            {
+              "if": {
+                "type": "object",
+                "properties": {
+                  "runtime": {
+                    "const": "claude-code"
+                  }
+                },
+                "required": [
+                  "runtime"
+                ]
+              },
+              "then": {
+                "type": "object",
+                "properties": {
+                  "tools": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "Read",
+                        "Glob",
+                        "Grep"
+                      ]
+                    },
+                    "description": "A Claude Code reviewer: Read, Glob, Grep only"
+                  }
+                }
+              }
+            }
+          ],
           "description": "Read-only reviewer (C10); model differs from the implementer."
         }
       }

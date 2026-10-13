@@ -29,7 +29,8 @@ A review on a second vendor needs no change to Ariane's own `ariane.toml`. The r
 - `agents.<role>.max_tokens` is required with opencode and refused at load otherwise, naming the
   key; the journal says "runtime cost cap none; Ariane stops at <max_budget_usd> USD of reported
   cost or <max_tokens> tokens".
-- A Claude Code reviewer's `tools` may not hold `Write`, `Edit`, `NotebookEdit` or `Bash`.
+- A Claude Code reviewer's `tools` may not hold `Write`, `Edit`, `NotebookEdit` or `Bash`
+  (amended by ADR 0031: an allow list, `Read`, `Glob`, `Grep`).
 
 ## Amendment (slice 3 gate)
 
@@ -38,3 +39,8 @@ A review on a second vendor needs no change to Ariane's own `ariane.toml`. The r
   reviewer cannot read the directory Ariane was started from.
 - The configuration schema puts the `max_tokens` rule (`if`/`then`) on the reviewer only: the
   implementer's runtime can only be `claude-code`.
+
+## Amendment (reviewer isolation)
+
+- The reviewer reads a separate tree without instruction files and `.claude/`, and receives the
+  base branch's `CLAUDE.md` in its prompt; see ADR 0031.

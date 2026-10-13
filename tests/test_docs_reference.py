@@ -36,6 +36,8 @@ def errors(value: Any, schema: dict[str, Any], where: str = "") -> list[str]:
         found.append(f"{here}: not {schema['const']!r}")
     if "if" in schema and not errors(value, schema["if"], where) and "then" in schema:
         found += errors(value, schema["then"], where)
+    for part in schema.get("allOf", []):
+        found += errors(value, part, where)
     kind = schema.get("type")
     if kind == "object":
         if not isinstance(value, dict):
@@ -186,3 +188,14 @@ def test_c5_schema_integer_refuses_fraction_and_zero_accepts_ten() -> None:
     assert any("max_tokens" in e for e in errors(_reviewer(max_tokens=1.5), agent))
     assert any("max_tokens" in e for e in errors(_reviewer(max_tokens=0), agent))
     assert any("max_tokens" in e for e in errors(_reviewer(max_tokens=True), agent))
+
+
+def test_c10_reviewer_isolation_schema_refuses_other_tools_for_claude_code() -> None:
+    import json
+
+    schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
+    agent = schema["properties"]["agents"]["properties"]["reviewer"]
+    claude = dict(load_toml(ROOT / "ariane.toml")["agents"]["reviewer"])
+    assert errors(claude, agent) == []
+    claude["tools"] = ["Read", "WebFetch"]
+    assert errors(claude, agent) != []
