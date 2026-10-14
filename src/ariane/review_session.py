@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ariane import checks, review, ticket
 from ariane.config import AgentConfig, CheckConfig, DoneItem
+from ariane.metrics import Metrics
 from ariane.runtime import AgentRuntime, Session, SessionResult, StopReason, describe, for_role
 from ariane.tracker import Issue
 
@@ -51,6 +52,8 @@ class ReviewSession:
     all_checks: Sequence[CheckConfig]
     definition_of_done: Sequence[DoneItem]
     instructions: str = ""  # the base branch's CLAUDE.md, shown to the reviewer as data
+    metrics: Metrics | None = None  # where the sessions' usage is recorded (C19)
+    round: int = 0  # the review round, for the metrics
 
     def run(
         self,
@@ -115,7 +118,11 @@ class ReviewSession:
                 f" {', '.join(agent.tools)}, {cap_text(agent)},"
                 f" time limit {agent.timeout_minutes:g} min, in `{replay}` at `{checked}`.",
             )
-            result = runtime.run(session)
+            result = (
+                self.metrics.run_session(runtime, session, self.round)
+                if self.metrics
+                else runtime.run(session)
+            )
             cost, tokens = result.usage()
             self.folder.log(
                 "ticket.review.stopped",

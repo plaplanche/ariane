@@ -18,6 +18,7 @@ from ariane.flow import (
     SETUP_TIMEOUT_S,
     Outcome,
 )
+from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
 from ariane.review_session import ReviewFailed, ReviewSession
 from ariane.runtime import AgentRuntime, for_role
@@ -136,6 +137,7 @@ class _Verification:
         self.refs_before = git.remote_refs(repo_root, self.url) if self.url else {}
         self.head = git.out(["rev-parse", f"refs/heads/{branch}"], repo_root)
         self.base = self._base()
+        self.metrics = Metrics(issue.number if issue else 0, "verify", lambda text: None)
         self.issue = issue or Issue(
             0,
             f"Branch {branch}",
@@ -227,6 +229,7 @@ class _Verification:
             all_checks,
             self.config.definition_of_done,
             git.base_instructions(self.repo_root, REMOTE, self.config.base_branch),
+            metrics=self.metrics,
         )
         try:
             answer = sessions.run(
@@ -240,14 +243,17 @@ class _Verification:
         except ReviewFailed as exc:
             raise Refused(exc.reason, "read the error, then run verify again") from None
         settled = review.settle(answer, self.config.definition_of_done, results)
+        self.metrics.reviewed(settled.go)
         model = self.config.reviewer.model
         texts = {
             REVIEW: review.record(settled, self.head, model),
             ticket.CHECKS: checks.report(results, self.head),
         }
+        green = settled.go and not checks.blocking_failures(results)
+        self.metrics.finish("delivered" if green else "stopped")
+        texts[METRICS] = self.metrics.render()
         self._before_commit()
         self._commit(texts, checks.summary_line(results))
-        green = settled.go and not checks.blocking_failures(results)
         line = (
             f"Verified {self.branch}: {checks.summary_line(results).removeprefix('Summary: ')}"
             f" Review {settled.verdict}. Records committed on the branch, nothing pushed."

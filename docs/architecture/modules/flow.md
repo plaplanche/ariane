@@ -7,7 +7,9 @@
 - `start`: the whole flow for one ticket number.
 - `Outcome`: the result reported to the command line.
 - The push guard's remote check (C11, ADR 0017) is `git.remote_changes`, called after the agent session with the ticket's branch.
-- `Stop`: ends the flow early with a recorded reason.
+- `Stop` (module `stop`): ends the flow early with a recorded reason.
+- The replay of the checks and the review round are in [replay](replay.md) (ADR 0034).
+- Metrics (C19): `work/<n>/metrics.json` is rewritten after the folder is opened, each session, the checks replayed, and the delivery or stop ([metrics](metrics.md)).
 - Issue gate (C21, ADR 0032): the start exit code comes from `TrackerError.exit_code`; an issue refused by the tracker gate (no label, labelled by someone without write access, or changed after the label) gives exit 2 before any branch, worktree or agent.
 - Environments (C21, ADR 0029): the implementer and fix sessions get an environment built from the implementer runtime's login variables, the reviewer from the reviewer runtime's; the checks get none.
 - Documentation upkeep (C25): after the agent's work is committed, mapped documents of changed files that the ticket did not change are journaled (`ticket.docs.not_updated`) and given to the reviewer; the `generated` documentation commands run in the clean replay as blocking checks `docs: <name>`, in `checks.md` and the statuses.
@@ -33,7 +35,9 @@ flowchart LR
   flow --> delivery
   flow --> redact
   flow --> review
-  flow --> review_session
+  flow --> replay
+  flow --> stop
+  flow --> metrics
   flow --> runtime
   flow --> tracker
   cli --> flow
@@ -42,4 +46,4 @@ flowchart LR
 
 ## Serves
 
-C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026, ADR 0027. See [the component view](../3-components.md).
+C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026, ADR 0027, ADR 0034, C19. See [the component view](../3-components.md).

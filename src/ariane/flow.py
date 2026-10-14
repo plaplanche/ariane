@@ -7,12 +7,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ariane import checks, context, git, logs, process, review, ticket
+from ariane import checks, context, git, logs, process, replay, review, ticket
 from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
+from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
-from ariane.review_session import ReviewFailed, ReviewSession
 from ariane.runtime import AgentRuntime, Session, SessionResult, StopReason, for_role
+from ariane.stop import Stop
 from ariane.tracker import Issue, Tracker, TrackerError
 
 REMOTE = "origin"
@@ -32,19 +33,6 @@ class Outcome:
 
 
 QUIET = "nobody runs git commands in the repository or pushes to it while a ticket runs"
-
-
-class Stop(Exception):
-    """The ticket stops here; `reason` and `next_action` go to the user and the journal."""
-
-    def __init__(
-        self, reason: str, next_action: str, detail: str = "", status: str = "stopped"
-    ) -> None:
-        super().__init__(reason)
-        self.status = status
-        self.reason = reason
-        self.next_action = next_action
-        self.detail = detail
 
 
 def worktree_path(repo_root: Path, number: int) -> Path:
@@ -127,6 +115,8 @@ def _describe(exc: BaseException) -> tuple[str, str]:
 
 
 class _TicketRun:
+    remote = REMOTE
+
     def __init__(
         self,
         issue: Issue,
@@ -150,6 +140,7 @@ class _TicketRun:
         self.not_updated: list[str] = []
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
         self.folder = ticket.TicketFolder(worktree, issue.number, secrets=self.secrets)
+        self.metrics = Metrics(issue.number, "delivered", lambda t: self.folder.write(METRICS, t))
         remotes = git.remotes(worktree)
         token_env = config.tracker.token_env
         # Agent sessions and anything running code an agent wrote get no credential.
@@ -168,8 +159,9 @@ class _TicketRun:
 
     def execute(self, refs_before: dict[str, str]) -> Outcome:
         try:
-            setup_error = self._setup(self.worktree)
+            setup_error = self.setup(self.worktree)
             self.folder.create(self.issue)
+            self.metrics.step("folder opened")
             self.folder.log(
                 "ticket.started",
                 "Ticket started",
@@ -187,14 +179,14 @@ class _TicketRun:
             guard = git.config_snapshot(self.worktree, ignore_ref=self.branch)
             ignored_before = git.ignored(self.worktree)
             result = self._implement()
-            self._verify("the agent session", start_commit, guard, refs_before)
+            self.verify("the agent session", start_commit, guard, refs_before)
             self._warn_ignored(ignored_before)
             self._commit_agent_work(start_commit, result)
             return self._check_and_deliver(start_commit, guard, refs_before)
         except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
             return self._stopped(exc)
 
-    def _setup(self, cwd: Path) -> Stop | None:
+    def setup(self, cwd: Path) -> Stop | None:
         """Run the setup command (C8) in `cwd` without credentials (it may run agent-written code).
 
         An error is journaled once the folder exists.
@@ -255,7 +247,7 @@ class _TicketRun:
             f" time limit {agent.timeout_minutes:g} min.\n\n"
             f"Context given to the agent:\n\n{ticket.fenced(recorded)}",
         )
-        result = self.runtime.run(session)
+        result = self.metrics.run_session(for_role(self.runtime, session.role), session, fix_round)
         cost, tokens = result.usage()
         denials = "\n".join(f"- {d}" for d in result.permission_denials) or "none"
         cap = f"Cap reached: {result.cap}.\n\n" if result.cap else ""
@@ -268,7 +260,7 @@ class _TicketRun:
         )
         return result
 
-    def _verify(
+    def verify(
         self,
         after: str,
         start_commit: str,
@@ -332,6 +324,7 @@ class _TicketRun:
         findings: str,
     ) -> None:
         """C10: a fresh implementer session fixes the findings in the ticket's working tree."""
+        self.metrics.fix_round(round_)
         self.folder.set_status("implementing", f"fix round {round_} running", "wait")
         self.folder.log(
             "ticket.fix.round",
@@ -341,7 +334,7 @@ class _TicketRun:
         )
         ignored_before = git.ignored(self.worktree)
         result = self._implement(round_, findings)
-        self._verify(f"fix session {round_}", start_commit, guard, refs_before)
+        self.verify(f"fix session {round_}", start_commit, guard, refs_before)
         self._warn_ignored(ignored_before)
         self._commit_agent_work(start_commit, result, f"#{self.number}: fix round {round_}")
 
@@ -413,7 +406,7 @@ class _TicketRun:
                     round_, start_commit, guard, refs_before, review.fix_feedback(settled, failed)
                 )
             checked = git.head(self.worktree)
-            replay, results = self._replay(checked, start_commit, guard, refs_before)
+            clean, results = replay.replay(self, checked, start_commit, guard, refs_before)
             try:
                 self.folder.write(ticket.CHECKS, checks.report(results, checked))
                 self.folder.log(
@@ -421,6 +414,7 @@ class _TicketRun:
                     "Checks replayed by Ariane",
                     checks.summary_table(results) + "\n\n" + checks.summary_line(results),
                 )
+                self.metrics.step("checks replayed")
                 failed = checks.blocking_failures(results)
                 if failed and not round_:
                     names = ", ".join(r.name for r in failed)
@@ -430,11 +424,11 @@ class _TicketRun:
                     )
                 if not failed:
                     reviewed = round_
-                    settled = self._review(
-                        checked, start_commit, guard, refs_before, results, round_
+                    settled = replay.review_round(
+                        self, checked, start_commit, guard, refs_before, results, round_
                     )
             finally:
-                self._remove_replay(replay)
+                replay.remove(self, clean)
             if settled is not None and settled.go and not failed:
                 break
         delivery = Delivery(
@@ -453,6 +447,7 @@ class _TicketRun:
             settled,
             reviewed,
         )
+        self.metrics.finish("needs a human" if delivery.draft else "delivered")
         try:
             done = delivery.deliver(results)
         except PullRequestRefused as exc:
@@ -470,113 +465,8 @@ class _TicketRun:
             " review go. Next: review and merge it.",
         )
 
-    def _all_checks(self) -> tuple[CheckConfig, ...]:
+    def all_checks(self) -> tuple[CheckConfig, ...]:
         return (*self.config.checks, *self.config.documentation.checks())
-
-    def _replay(
-        self, checked: str, start_commit: str, guard: dict[str, str], refs_before: dict[str, str]
-    ) -> tuple[Path, list[checks.CheckResult]]:
-        """C9: set up and run every check in a clean working tree at the delivered commit.
-
-        The tree is kept for the reviewer; the caller removes it."""
-        replay = self.worktree.with_name(f"{self.number}-replay")
-        if replay.exists():
-            raise Stop(
-                f"the replay working tree already exists at {replay}", "remove it, then retry"
-            )
-        git.add_detached_worktree(self.worktree, replay, checked)
-        try:
-            self.folder.log(
-                "ticket.checks.worktree",
-                "Checks working tree",
-                f"Setup and checks run in a clean working tree `{replay}` at `{checked}`,"
-                f" not in `{self.worktree}`.",
-            )
-            setup_error = self._setup(replay)
-            if setup_error is not None:
-                raise setup_error
-            results = checks.run_checks(self._all_checks(), replay, self.untrusted_env)
-            if git.current_branch(replay) or git.head(replay) != checked:
-                raise Stop("the checks moved the replay working tree's head", "inspect it")
-            self._verify("the checks", start_commit, guard, refs_before, expected_head=checked)
-        except BaseException:
-            self._remove_replay(replay)
-            raise
-        return replay, results
-
-    def _review(
-        self,
-        checked: str,
-        start_commit: str,
-        guard: dict[str, str],
-        refs_before: dict[str, str],
-        results: list[checks.CheckResult],
-        round_: int,
-    ) -> review.Settled:
-        """C10, C26: review `round_` in the replay tree; the record is `review-<round>.md`."""
-        tree = self.worktree.with_name(f"{self.number}-review")
-        if tree.exists():
-            raise Stop(
-                f"the reviewer working tree already exists at {tree}", "remove it, then retry"
-            )
-        git.add_reviewer_worktree(self.worktree, tree, checked)
-        try:
-            diff = git.diff(self.worktree, start_commit, checked, ticket.WORK_DIR)
-            tree_before = git.status(tree)
-
-            def after_session() -> None:
-                self._verify(
-                    "the reviewer", start_commit, guard, refs_before, expected_head=checked
-                )
-                self._verify_replay(tree, checked, tree_before)
-
-            sessions = ReviewSession(
-                self.runtime,
-                self.config.reviewer,
-                self.folder,
-                self.issue,
-                self.agent_envs["reviewer"],
-                self._all_checks(),
-                self.config.definition_of_done,
-                git.base_instructions(self.worktree, REMOTE, self.config.base_branch),
-            )
-            try:
-                answer = sessions.run(tree, checked, diff, results, self.not_updated, after_session)
-            except ReviewFailed as exc:
-                raise Stop(
-                    exc.reason, exc.next_action, exc.detail, status="needs a human"
-                ) from None
-            settled = review.settle(answer, self.config.definition_of_done, results)
-            model = self.config.reviewer.model
-            self.folder.write(
-                ticket.review_file(round_), review.record(settled, checked, model, round_)
-            )
-            verdict = f"Review {round_}: {settled.verdict}"
-            self.folder.log("ticket.review.verdict", verdict, review.findings_table(settled))
-            return settled
-        finally:
-            self._remove_replay(tree)
-
-    def _verify_replay(self, replay: Path, checked: str, tree_before: str) -> None:
-        """The reviewer reads only: the replay tree has the same head and no edited file."""
-        if git.current_branch(replay) or git.head(replay) != checked:
-            raise Stop("the reviewer moved the replay working tree's head", "inspect it")
-        if git.status(replay) != tree_before:
-            raise Stop(
-                "the reviewer changed files in the working tree",
-                "inspect the review session; Ariane pushed nothing",
-                status="needs a human",
-            )
-
-    def _remove_replay(self, replay: Path) -> None:
-        try:
-            git.remove_worktree(self.worktree, replay)
-        except _FAILURES as exc:
-            self.folder.log(
-                "ticket.warning.replay_not_removed",
-                "Warning: replay working tree not removed",
-                f"`{replay}`: {exc}",
-            )
 
     def _commit_record(self, message: str) -> None:
         self.folder.restore()
@@ -592,6 +482,7 @@ class _TicketRun:
             with contextlib.suppress(*_FAILURES):
                 self.folder.log("ticket.stopped", f"Stopped: {reason}", detail)
                 status = exc.status if isinstance(exc, Stop) else "stopped"
+                self.metrics.finish(status)
                 self.folder.set_status(status, reason, next_action)
                 self._commit_record(f"#{self.number}: record the stop")
         code = EXIT_INTERRUPTED if isinstance(exc, KeyboardInterrupt) else EXIT_STOPPED
