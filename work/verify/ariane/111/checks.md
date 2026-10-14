@@ -1,15 +1,15 @@
 # Checks
 
-Replayed by Ariane on commit `edc80e26ef06731ab11323971bed8b350261002a`.
+Replayed by Ariane on commit `29190f104bfc1a22ba6f838c6084e41f07daf2eb`.
 
 | Check | Blocking | Result | Duration |
 | --- | --- | --- | --- |
 | lint | yes | pass | 0.1 s |
 | format | yes | pass | 0.1 s |
-| types | yes | pass | 4.0 s |
-| tests | yes | pass | 95.3 s |
+| types | yes | pass | 2.9 s |
+| tests | yes | pass | 100.0 s |
 | file length | yes | pass | 0.1 s |
-| docs: references | yes | pass | 0.2 s |
+| docs: references | yes | pass | 0.3 s |
 
 ## lint
 
@@ -32,14 +32,14 @@ All checks passed!
 ```text
 warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
 warning: `VIRTUAL_ENV=/home/user/ariane/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
-336 files already formatted
+338 files already formatted
 ```
 
 ## types
 
 - Command: `uv run mypy`
 - Blocking: yes
-- Result: passed (exit 0, 4.0 s)
+- Result: passed (exit 0, 2.9 s)
 
 ```text
 warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
@@ -51,18 +51,18 @@ Success: no issues found in 59 source files
 
 - Command: `uv run pytest -q`
 - Blocking: yes
-- Result: passed (exit 0, 95.3 s)
+- Result: passed (exit 0, 100.0 s)
 
 ```text
 warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
 warning: `VIRTUAL_ENV=/home/user/ariane/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
 ........................................................................ [ 18%]
 ........................................................................ [ 36%]
-........................................................................ [ 55%]
+........................................................................ [ 54%]
 ........................................................................ [ 73%]
-..................................s..................................... [ 92%]
-...............................                                          [100%]
-390 passed, 1 skipped in 94.68s (0:01:34)
+....................................s................................... [ 91%]
+.................................                                        [100%]
+392 passed, 1 skipped in 99.39s (0:01:39)
 ```
 
 ## file length
@@ -81,7 +81,7 @@ file length OK: no file over 600 lines under src, tests, scripts
 
 - Command: `uv run python scripts/generate_docs.py --check`
 - Blocking: yes
-- Result: passed (exit 0, 0.2 s)
+- Result: passed (exit 0, 0.3 s)
 
 ```text
 warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.

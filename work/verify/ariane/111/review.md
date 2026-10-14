@@ -1,30 +1,22 @@
 # Review 0
 
-- Reviewed commit: `edc80e26ef06731ab11323971bed8b350261002a`
+- Reviewed commit: `29190f104bfc1a22ba6f838c6084e41f07daf2eb`
 - Reviewer model: claude-opus-5-5
-- Verdict: **no-go** (the reviewer answered go)
+- Verdict: **go**
 
 ## Findings
 
-- **minor** (`src/ariane/github.py:109`) The 5 s slack lets a change made right after the label through, but the docs say any later change is refused
+- **minor** (`src/ariane/github.py:135`) Transient permission-endpoint failures now count as refusals (exit 2) instead of tracker errors (exit 1)
 
-  `updated > since + _LABEL_SLACK` accepts any edit made up to 5 seconds after the `labeled` event, by anyone, including the reader who wrote the issue. The old rule (ADR 0032, check 3) failed closed: an edit in the very second of the label counted as after it. An attacker who polls their own issue (about 1 request per second fits inside the authenticated rate limit) can swap the body inside that window, and the gate accepts it. The amendment and the README both say "Any later change refuses the issue" and "not changed since", which overstates what the gate guarantees. With REST only, some slack may be unavoidable because body edits leave no event. Even so, the ADR should state the residual window as an accepted risk. Consider a smaller slack (GitHub normally stamps `updated_at` in the same second as the label event), or add a test or measurement that justifies 5 s.
+  Any error from the permissions endpoint other than 404 now raises IssueRefused. That includes a rate-limit 403/429, a 5xx and a network timeout, so the command exits 2 and says the issue is not trusted. A temporary GitHub outage looks the same as a security refusal, and the suggested fix (add the label again) will not help. `GET /repos/{repo}` failing is still a TrackerError (exit 1), so the two endpoints handle errors differently. This fails closed, so it is safe, and the ADR amendment documents it. A later ticket could keep exit 1 for 5xx and network errors and refuse only on 401/403.
 
-- **minor** (`docs/architecture/modules/flow.md:11`) flow.md still describes the old gate
+- **minor** (`docs/adr/0032-issue-gate.md:1`) ADR title and Consequences still describe the superseded rule
 
-  It still says an issue is refused when "labelled or edited by someone without write access". After this change, any change after the label is refused, by anyone, writers included. The owner of a user repository is also trusted without a permission call. Rule 11 asks for documentation that describes the behaviour to be updated in the same ticket. The ADR title and Consequences ('three to four requests', 'after any later edit by someone else') are superseded only by the amendment. That is acceptable for an ADR, but the module doc should be current.
+  The title still says "not edited by anyone else since". Consequences still say "three to four requests per run" and "after any later edit by someone else". The status line and the amendment make clear they are superseded, which is acceptable for an ADR. A reader who skims only the header and Consequences will still get the wrong rule.
 
-- **minor** (`src/ariane/github.py:109`) Ariane's own activity on the issue can make the gate refuse it later
+- **minor** (`src/ariane/github.py:19`) 1 s slack deviates from the 5 s the commit message cites from the issue
 
-  Only `updated_at` is compared now. Anything that updates the issue after the label makes `ariane verify --issue N` refuse it during a hand takeover after a second no-go, and makes a re-run of `ariane start` refuse it too. That includes another label, a comment, or possibly the cross-reference created when Ariane's own draft pull request says `Closes #N`. The README's 'add it again after any later change' covers this, but neither the ADR amendment nor the README mentions the hand-takeover case. No test covers it either.
-
-- **minor** (`tests/test_c21_issue_gate.py:175`) Some new branches of _can_write are not tested
-
-  No test checks that owner logins are compared without case: the fake owner is 'Olivia' and the labeller is 'olivia', so the comparison happens, but there is no explicit test or comment for it. No test checks that `GET /repos/{repo}` is cached, or what happens when that call itself fails. That failure raises TrackerError (a different exit code from IssueRefused), and this is not documented in the ADR.
-
-- **blocking** Definition of done not met: The documentation the change affects is updated (C25).
-
-  Updated: README, docs/ariane.example.toml, docs/architecture/modules/github.md, and the ADR 0032 amendment. Not updated: docs/architecture/modules/flow.md:11 still describes the old rule ("labelled or edited by someone without write access"). The generated schema description of ready_label is still accurate.
+  The first commit message says 'within 5 s of the last label', and the fix commit narrows it to 1 s. That is stricter and safer, the ADR amendment records it, and tests cover it (accepted at +1 s, refused at +2 s). The owner should still know the value differs from what the ticket asked. Also, updated_at may sometimes be stamped one second after the label event because of clock skew between GitHub services. That would give a refusal that only another label fixes. The fix is clear, so this is not a safety issue.
 
 ## Definition of done
 
@@ -50,18 +42,18 @@
 
 - met: The change is covered by tests that fail without it.
 
-  tests/test_c21_issue_gate.py adds: refused when updated_at is after the label; accepted inside the slack; owner of a user repo trusted with permissions returning 403 and no /graphql or /collaborators call; an organisation owner login not trusted; a 403 on the permission check refused with the user's name. The fake no longer serves /graphql and the old code depended on it, so these tests fail on the base commit. test_github.py's `trust` helper was updated accordingly.
+  tests/test_c21_issue_gate.py adds these tests: refused when changed after the label (AFTER and +2 s); accepted within the 1 s slack; owner of a user repository trusted without a permission call, even when the permission endpoint answers 403 and no /graphql call is made; owner login compared without case, with the repository read once across two read_issue calls; an organisation owner's login not trusted; a 403 from the permission endpoint refused with the user's name. The 403-owner test, the updated_at tests and the 403-refusal test fail against the base code, which called GraphQL and the permission endpoint and ignored updated_at. tests/test_github.py stubs are updated for the new requests.
 
-- **not met**: The documentation the change affects is updated (C25).
+- met: The documentation the change affects is updated (C25).
 
-  Updated: README, docs/ariane.example.toml, docs/architecture/modules/github.md, and the ADR 0032 amendment. Not updated: docs/architecture/modules/flow.md:11 still describes the old rule ("labelled or edited by someone without write access"). The generated schema description of ready_label is still accurate.
+  README.md:72-76, docs/ariane.example.toml:18, docs/architecture/modules/github.md:7 and docs/architecture/modules/flow.md:11 now describe the REST-only gate. That fixes the flow.md gap the earlier review found. ADR 0032 has an amendment and an updated status. verify.md, tracker.md, cli.md and config.md stay accurate. docs/reference has no stale GraphQL or 'edited' wording, and the docs: references check passes.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  The amendment to docs/adr/0032-issue-gate.md records three choices: trusting the owner of a user-owned repository, refusing on a non-404 permission error, and the 5 s updated_at slack that replaces GraphQL and the renamed check. It does not record the residual race window as an accepted risk (see findings).
+  The ADR 0032 amendment (docs/adr/0032-issue-gate.md:38-59) records each open choice: the owner of a user repository is trusted from GET /repos/{repo} with logins compared without case; errors other than 404 refuse; the 1 s slack on updated_at and why; GraphQL and the renamed check are removed; the residual risk of a body edit within the second after the label; Ariane's own cross-reference needing the label again; GET /repos failures are exit 1; organisations still use the permissions endpoint.
 
 ## Proposed learnings (not decided)
 
-- A gate based on time-window slack is not fail-closed. Document the window as an accepted risk instead of claiming that 'any later change' is refused.
-- When a security gate changes, grep every doc for its old wording (here flow.md), not just the module file that was touched.
-- An `updated_at` gate also reacts to Ariane's own side effects on the issue, such as cross-references from its pull requests. Think through the re-run and hand-takeover paths.
+- When a REST-only check uses `updated_at` as a catch-all change detector, record the residual window it cannot see (here, body edits within the slack) as an accepted risk in the ADR.
+- Any change after the label refuses, so Ariane's own activity on the issue (a PR cross-reference from 'Closes #N') makes a later `ariane verify --issue N` need the label again. Hand takeovers should plan for that.
+- Mapping every non-404 error from an authorization endpoint to a refusal fails closed but merges transient outages with security refusals. Keep the exit-code meaning in mind when choosing error classes.
