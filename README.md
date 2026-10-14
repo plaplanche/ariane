@@ -72,8 +72,8 @@ copy it to `ariane.toml` at the root of your repository and adapt it.
 Ariane only runs an issue that carries the label `ariane` (`tracker.ready_label`), put by a person
 with write access (the owner of a personal repository, or a writer), and not changed since;
 otherwise it exits 2 before creating anything. Add the label to each ticket you want to run, and
-add it again after any later change, comments included
-([ADR 0032](docs/adr/0032-issue-gate.md)).
+add it again after any later change, comments and the pull request's own reference included (for
+example before `ariane verify --issue N`) ([ADR 0032](docs/adr/0032-issue-gate.md)).
 
 `ariane start` creates the branch `ariane/12` in a working tree beside the repository
 (`<repo>.ariane/worktrees/12`), runs the setup command, one implementer session and every check. If a blocking check fails

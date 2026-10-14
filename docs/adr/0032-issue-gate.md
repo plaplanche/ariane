@@ -45,9 +45,15 @@ issue there, including the ticket that would fix it. Checks 2 and 3 become:
    `owner.type` is `User`, logins compared without case), with no permission call; anyone else
    goes through the permissions endpoint as before, and an error other than 404 refuses the
    issue with the user's name and the error;
-3. the issue's `updated_at` is not later than that `labeled` event plus 5 seconds (adding a label
-   updates the issue in the same second). Any later change refuses the issue: an edit, a rename,
-   a comment or another label, by anyone. GraphQL and the `renamed` check are removed.
+3. the issue's `updated_at` is not later than that `labeled` event plus 1 second (adding a label
+   stamps `updated_at` in the same second, and both carry seconds only). A later change refuses
+   the issue: an edit, a rename, a comment or another label, by anyone. GraphQL and the
+   `renamed` check are removed.
 
 Stricter than before (a writer's edit or a comment also asks for the label again), and two to
-three requests per run. An organisation-owned repository still needs the permissions endpoint.
+three requests per run (the repository is read once per tracker). Accepted residual risk: REST
+shows no event for a body edit, so an edit within the second after the label passes. Ariane's own
+activity can also update the issue, for example the cross-reference of a pull request that says
+`Closes #N`: a later `ariane start` or `ariane verify --issue N` (a hand takeover) then needs the
+label again. A failing `GET /repos/{repo}` is a tracker error (exit 1), not a refusal. An
+organisation-owned repository still needs the permissions endpoint.

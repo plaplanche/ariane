@@ -15,8 +15,8 @@ from ariane.tracker import Issue, IssueRefused, PullRequest, TrackerError
 _TIMEOUT_S = 30
 _PAGE = 100
 _WRITERS = frozenset({"write", "maintain", "admin"})
-# Adding a label updates the issue in the same second or so; a later update is a change.
-_LABEL_SLACK = timedelta(seconds=5)
+# Adding a label stamps `updated_at` in the same second (seconds only): one second of slack.
+_LABEL_SLACK = timedelta(seconds=1)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

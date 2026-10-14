@@ -23,7 +23,8 @@ from conftest import FakeRuntime, Project, make_config, sh
 LABELLED = "2026-10-01T10:00:00Z"
 BEFORE = "2026-10-01T09:00:00Z"
 AFTER = "2026-10-01T11:00:00Z"
-SAME_MOMENT = "2026-10-01T10:00:03Z"
+SAME_MOMENT = "2026-10-01T10:00:01Z"
+TWO_SECONDS_LATER = "2026-10-01T10:00:02Z"
 PERMISSIONS = {"alice": "admin", "mia": "maintain", "wendy": "write", "rita": "read"}
 
 
@@ -158,6 +159,27 @@ def test_c21_issue_gate_accepts_an_update_in_the_seconds_of_the_label(
     state, url = fake
     state.updated_at = SAME_MOMENT
     assert gate(url).read_issue(5).number == 5
+
+
+def test_c21_issue_gate_refuses_an_update_two_seconds_after_the_label(
+    fake: tuple[Fake, str],
+) -> None:
+    state, url = fake
+    state.updated_at = TWO_SECONDS_LATER
+    with pytest.raises(IssueRefused, match="changed after the label"):
+        gate(url).read_issue(5)
+
+
+def test_c21_issue_gate_compares_the_owner_login_without_case_and_reads_the_repository_once(
+    fake: tuple[Fake, str],
+) -> None:
+    state, url = fake
+    state.owner = {"login": "OLIVIA", "type": "User"}
+    state.events = [state.labeled("olivia", LABELLED)]
+    tracker = gate(url)
+    tracker.read_issue(5)
+    tracker.read_issue(5)
+    assert state.paths.count("/repos/o/n") == 1
 
 
 def test_c21_issue_gate_accepts_a_change_made_before_the_label(fake: tuple[Fake, str]) -> None:
