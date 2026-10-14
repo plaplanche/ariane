@@ -6,7 +6,7 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from ariane import logs
@@ -15,6 +15,8 @@ from ariane.tracker import Issue, IssueRefused, PullRequest, TrackerError
 _TIMEOUT_S = 30
 _PAGE = 100
 _WRITERS = frozenset({"write", "maintain", "admin"})
+# Adding a label updates the issue in the same second or so; a later update is a change.
+_LABEL_SLACK = timedelta(seconds=5)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -43,8 +45,7 @@ class GitHubTracker:
         self._token = token
         self._api_url = api_url.rstrip("/")
         self._web_url = web_url(api_url)
-        base = self._api_url
-        self._graphql_root = base.removesuffix("/v3") if base.endswith("/api/v3") else base
+        self._user_owner: str | None = None
 
     def read_issue(self, number: int) -> Issue:
         data = self._request("GET", f"/repos/{self._repository}/issues/{number}")
@@ -62,8 +63,12 @@ class GitHubTracker:
             raise TrackerError(f"GitHub API: unexpected issue #{number}: {exc!r}") from None
 
     def _check_trusted(self, number: int, data: dict[str, Any], label: str) -> None:
-        """Refuse an issue not labelled by a writer, or edited by a non-writer since (C21)."""
-        fix = f"ask a maintainer to add the label `{label}` again after the last edit"
+        """Refuse an issue not labelled by a writer, or changed since the label (C21, ADR 0032).
+
+        REST only: GraphQL and, for most users, the permissions endpoint are unreachable from
+        some sandboxes. Any change after the label (edit, rename, comment, other label) refuses.
+        """
+        fix = f"ask a maintainer to add the label `{label}` again"
         names = [
             str(item.get("name")) for item in data.get("labels") or [] if isinstance(item, dict)
         ]
@@ -92,50 +97,33 @@ class GitHubTracker:
                 )
             last = max(labelled, key=lambda e: _moment(e["created_at"]))
             since = _moment(last["created_at"])
-            if not self._can_write(_login(last.get("actor"))):
-                raise IssueRefused(
-                    f"#{number}: the label `{label}` was added by {_login(last.get('actor'))!r},"
-                    f" who cannot write to {self._repository}; ask a maintainer to add it"
-                )
-            for event in events:
-                if event.get("event") == "renamed" and _moment(event["created_at"]) >= since:
-                    who = _login(event.get("actor"))
-                    if not self._can_write(who):
-                        raise IssueRefused(
-                            f"#{number}: the title was changed by {who!r} after the label; {fix}"
-                        )
-            edited, editor = self._body_edit(number)
+            updated = _moment(data["updated_at"])
         except (KeyError, TypeError, ValueError) as exc:
             raise TrackerError(f"GitHub API: unexpected events for #{number}: {exc!r}") from None
-        if edited is not None and edited >= since and not self._can_write(editor):
+        labeller = _login(last.get("actor"))
+        if not self._can_write(labeller):
             raise IssueRefused(
-                f"#{number}: the body was edited by {editor!r} after the label; {fix}"
+                f"#{number}: the label `{label}` was added by {labeller!r},"
+                f" who cannot write to {self._repository}; ask a maintainer to add it"
+            )
+        if updated > since + _LABEL_SLACK:
+            raise IssueRefused(
+                f"#{number} changed after the label `{label}` was added"
+                f" (edit, rename, comment or other label); {fix}"
             )
 
-    def _body_edit(self, number: int) -> tuple[datetime | None, str]:
-        """When the body was last edited and by whom (GraphQL `lastEditedAt`, `editor`)."""
-        owner, name = self._repository.split("/")
-        query = (
-            "query($owner: String!, $name: String!, $number: Int!) {"
-            " repository(owner: $owner, name: $name) {"
-            " issue(number: $number) { lastEditedAt editor { login } } } }"
-        )
-        result = self._request_any(
-            "POST",
-            "/graphql",
-            {"query": query, "variables": {"owner": owner, "name": name, "number": number}},
-            base=self._graphql_root,
-        )
-        try:
-            issue = result["data"]["repository"]["issue"]
-            when = issue["lastEditedAt"]
-            return (None, "") if when is None else (_moment(when), _login(issue["editor"]))
-        except (KeyError, TypeError, ValueError):
-            raise TrackerError(f"GitHub API: unexpected GraphQL answer for #{number}") from None
-
     def _can_write(self, user: str) -> bool:
+        """The owner of a user-owned repository, or a writer per the permissions endpoint."""
         if not user:
             return False
+        if self._user_owner is None:
+            repo = self._request("GET", f"/repos/{self._repository}")
+            owner = repo.get("owner")
+            self._user_owner = ""
+            if isinstance(owner, dict) and owner.get("type") == "User":
+                self._user_owner = str(owner.get("login") or "")
+        if self._user_owner and user.casefold() == self._user_owner.casefold():
+            return True
         quoted = urllib.parse.quote(user, safe="")
         try:
             data = self._request(
@@ -144,7 +132,7 @@ class GitHubTracker:
         except TrackerError as exc:
             if "HTTP 404" in str(exc):
                 return False
-            raise
+            raise IssueRefused(f"cannot check whether {user!r} can write: {exc}") from None
         return data.get("permission") in _WRITERS or data.get("role_name") in _WRITERS
 
     def open_pull_request(
@@ -184,11 +172,9 @@ class GitHubTracker:
             raise TrackerError(f"GitHub API {method} {path}: unexpected response")
         return result
 
-    def _request_any(
-        self, method: str, path: str, payload: Any = None, *, base: str | None = None
-    ) -> Any:
+    def _request_any(self, method: str, path: str, payload: Any = None) -> Any:
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
-        request = urllib.request.Request((base or self._api_url) + path, data=data, method=method)
+        request = urllib.request.Request(self._api_url + path, data=data, method=method)
         request.add_header("Accept", "application/vnd.github+json")
         request.add_header("X-GitHub-Api-Version", "2022-11-28")
         request.add_header("User-Agent", "ariane")

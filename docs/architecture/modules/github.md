@@ -4,7 +4,7 @@ The GitHub tracker over the REST API, with the standard library only.
 
 ## Main types and functions
 
-- `GitHubTracker`: implements `Tracker` (read an issue, only if labelled by a writer and not edited since by anyone else (ADR 0032); open a pull request, as a draft when asked, publish statuses).
+- `GitHubTracker`: implements `Tracker` (read an issue, only if labelled by a writer (the owner of a user-owned repository needs no permission call) and not changed since, through REST only (ADR 0032 and its amendment); open a pull request, as a draft when asked, publish statuses).
 - `web_url`: the web address matching an API address.
 
 ## Collaborations

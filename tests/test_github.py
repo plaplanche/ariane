@@ -65,9 +65,9 @@ def stub(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Stub, str]]:
 
 
 def trust(state: Stub, issue: Any) -> None:
-    """Answer the gate's questions (C21) for issue 5: labelled by a writer, never edited."""
+    """Answer the gate's questions (C21) for issue 5: labelled by a writer, unchanged since."""
     if isinstance(issue, dict):
-        issue = {**issue, "labels": [{"name": "ariane"}]}
+        issue = {**issue, "labels": [{"name": "ariane"}], "updated_at": "2026-10-01T10:00:00Z"}
     state.responses[("GET", "/repos/owner/name/issues/5")] = (200, issue)
     event = {
         "event": "labeled",
@@ -83,9 +83,9 @@ def trust(state: Stub, issue: Any) -> None:
         200,
         {"permission": "write"},
     )
-    state.responses[("POST", "/graphql")] = (
+    state.responses[("GET", "/repos/owner/name")] = (
         200,
-        {"data": {"repository": {"issue": {"lastEditedAt": None, "editor": None}}}},
+        {"owner": {"login": "owner", "type": "Organization"}},
     )
 
 
