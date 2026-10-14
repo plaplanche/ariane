@@ -8,6 +8,7 @@ setup = ["uv", "sync", "--locked"]
 kind = "github"
 repository = "plaplanche/ariane"
 token_env = "GH_TOKEN"
+ready_label = "ariane"
 
 [agents.implementer]
 runtime = "claude-code"

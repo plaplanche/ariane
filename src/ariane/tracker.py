@@ -9,6 +9,16 @@ from typing import Any, Protocol
 class TrackerError(Exception):
     """The tracker refused or failed a request."""
 
+    exit_code = 1
+    next_action = "check the number"
+
+
+class IssueRefused(TrackerError):
+    """The issue is not trusted to run (C21): it names the reason and how to fix it."""
+
+    exit_code = 2
+    next_action = "get the issue labelled by a maintainer, then retry"
+
 
 @dataclass(frozen=True)
 class Issue:

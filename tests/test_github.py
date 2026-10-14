@@ -64,16 +64,40 @@ def stub(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Stub, str]]:
     server.server_close()
 
 
+def trust(state: Stub, issue: Any) -> None:
+    """Answer the gate's questions (C21) for issue 5: labelled by a writer, never edited."""
+    if isinstance(issue, dict):
+        issue = {**issue, "labels": [{"name": "ariane"}]}
+    state.responses[("GET", "/repos/owner/name/issues/5")] = (200, issue)
+    event = {
+        "event": "labeled",
+        "label": {"name": "ariane"},
+        "actor": {"login": "w"},
+        "created_at": "2026-10-01T10:00:00Z",
+    }
+    state.responses[("GET", "/repos/owner/name/issues/5/events?per_page=100&page=1")] = (
+        200,
+        [event],
+    )
+    state.responses[("GET", "/repos/owner/name/collaborators/w/permission")] = (
+        200,
+        {"permission": "write"},
+    )
+    state.responses[("POST", "/graphql")] = (
+        200,
+        {"data": {"repository": {"issue": {"lastEditedAt": None, "editor": None}}}},
+    )
+
+
 def tracker(url: str) -> GitHubTracker:
-    return GitHubTracker(repository="owner/name", token=TOKEN, api_url=url + "/")
+    return GitHubTracker(
+        repository="owner/name", token=TOKEN, api_url=url + "/", ready_label="ariane"
+    )
 
 
 def test_c1_reads_title_and_body_with_the_token(stub: tuple[Stub, str]) -> None:
     state, url = stub
-    state.responses[("GET", "/repos/owner/name/issues/5")] = (
-        200,
-        {"number": 5, "title": "Add --version", "body": None, "html_url": "https://x/5"},
-    )
+    trust(state, {"number": 5, "title": "Add --version", "body": None, "html_url": "https://x/5"})
     issue = tracker(url).read_issue(5)
     assert (issue.number, issue.title, issue.body, issue.url) == (
         5,
@@ -194,7 +218,7 @@ def test_c1_an_unexpected_success_body_is_a_tracker_error(
     stub: tuple[Stub, str], payload: Any
 ) -> None:
     state, url = stub
-    state.responses[("GET", "/repos/owner/name/issues/5")] = (200, payload)
+    trust(state, payload)
     with pytest.raises(TrackerError, match="GitHub API"):
         tracker(url).read_issue(5)
 

@@ -9,6 +9,7 @@ The tracker interface: the only way Ariane talks to GitHub, another forge or a t
 - `InMemoryTracker`: the double used by tests; it records whether each pull request is a draft.
 - `open_pull_request(..., draft=False)`: a draft pull request is not ready to merge (C10).
 - `TrackerError`: raised on a tracker failure.
+- `IssueRefused`: a `TrackerError` for an issue not trusted to run (C21, ADR 0032); the commands exit 2.
 
 ## Collaborations
 
