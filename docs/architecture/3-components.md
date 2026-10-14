@@ -60,6 +60,9 @@ flowchart TD
   replay --> ticket
   review_session --> metrics
   verify --> metrics
+  cli --> report
+  report --> metrics
+  report --> ticket
   flow --> runtime
   flow --> tracker
   git --> process
