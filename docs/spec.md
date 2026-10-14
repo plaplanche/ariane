@@ -106,7 +106,7 @@ Twenty-six capabilities in six groups, each with acceptance criteria. A criterio
 Each ticket has a folder in the repository (for example `work/<id>/`) holding all its documents: product brief, architecture, design, plan, journal, review findings. The tracker is the entry point and the notification channel; the truth is in the files. Ariane talks to the tracker only through one interface (read a ticket, comment, set labels, claim, open a pull request): GitHub first, and an in-memory tracker for tests. GitLab is frozen until a user works on GitLab.
 
 - Creating a ticket from an issue creates its folder, with the product brief prefilled from the issue.
-- The issue body follows a format (a project can declare its own required sections, C22), by default: Context, Current state (verified, with `file:line` references), Decided spec, Release note, Acceptance criteria, Acceptance checklist, Out of scope, Related, and an optional Budget. Agents read the title and the body, never the comments: anything decided in a comment must be moved into the body.
+- The issue body follows a format (a project can declare its own required sections, C22), by default: Context, Current state (verified, with `file:line` references), Decided spec, Release note, Acceptance criteria, Acceptance checklist, Out of scope, Related, and two optional sections, Budget and Depends on (issue numbers such as `#95, #97`: `ariane start` refuses a ticket while one of them is not closed by a merged pull request, naming it, before any branch or agent; ADR 0033). Agents read the title and the body, never the comments: anything decided in a comment must be moved into the body.
 - Each document has a readable status (`draft`, `to approve`, `approved`) and its approval date, once stages and approvals (C2) exist; before that, documents carry no approval line.
 - The issue body is stored once in the folder (in the product brief); the journal refers to it instead of copying it. The ticket's status file records Ariane's last action and its date, never a state Ariane cannot know; `ariane status` adds what git shows now, such as `merged` (ADR 0019).
 - An agent reads only the folder's files and the repository, never a conversation history.
@@ -211,7 +211,7 @@ Before delivery, two independent reviews: an adversarial review by a different m
 
 Each ticket works in its own git working tree and branch. Ariane never touches the main checkout and never pushes to the main branch.
 
-- Delivery is the pushed branch plus an open pull request (or merge request); the human merges. If the base branch moved, Ariane rebases the ticket branch, runs the project's regeneration command if one is declared, and replays every check; a conflict goes to the human.
+- Delivery is the pushed branch plus an open pull request (or merge request); the human merges. If the base branch moved, `ariane update` merges it into the ticket branch (never a rebase, never a force-push); a conflict or a red check after the merge goes to one implementer session, then Ariane runs the project's regeneration command if one is declared, replays every check and reviews, and pushes only on go; otherwise the ticket stops as "needs a human" (ADR 0033).
 - Two tickets never share a working tree. A project can declare environment variables that redirect the application's data into the working tree, so no agent writes to real data.
 - An agent cannot push, switch branches or rewrite history: agents hold no git credential and only Ariane pushes, with its own token. Where the network itself supplies credentials (some cloud sandboxes), an agent's push is detected after the session and stops the ticket, until the sandbox of C21 prevents it (ADR 0017). Changes left by the project's formatter or commit hooks are committed by Ariane, not treated as an unexplained dirty tree.
 
@@ -322,7 +322,7 @@ One configuration file in the repository describes the tracker, the ticket forma
 
 #### C23. Command line
 
-One command-line tool, usable on Windows (PowerShell), macOS and Linux: create a ticket, show its status, approve or revise a stage, run the next stage, list tickets, verify a checklist, verify a branch finished by hand (`ariane verify`), review the documentation (`ariane docs-review`, C25), produce reports.
+One command-line tool, usable on Windows (PowerShell), macOS and Linux: create a ticket, show its status, approve or revise a stage, run the next stage, list tickets, verify a checklist, verify a branch finished by hand (`ariane verify`), update a branch with its base (`ariane update`, C11), review the documentation (`ariane docs-review`, C25), produce reports.
 
 - Each command says in one line what it did and what the next possible action is.
 - A ticket's state is readable without Ariane, by opening its folder.
@@ -386,7 +386,7 @@ Revised on 8 October 2026 (ADR 0020); estimates are revised at every gate. Froze
 | 2. Dogfooding | Redaction of everything posted (C21, basic), check results as commit statuses from a replay (C9), one push per ticket, clean-tree replay (C9), cache tokens counted (C5), shorter records and live status (C1, C23), installation for a second user | Ariane's own tickets go through Ariane, each pushed once with checks replayed in a clean tree (a hand takeover allowed by CLAUDE.md, such as a workflow file, is the exception) |
 | 3. Review, vendor-neutral | Ariane's documentation baseline, generated references and technical logs (ADR 0022), runtime-neutral contract and login variables per runtime (C5), one reviewer with fix rounds (C10), the definition of done checked item by item (C26, with C25's documentation item), `ariane verify` (C23), the reviewer on opencode (C5) | A ticket is reviewed on a second runtime; a branch finished by hand is verified; Ariane's documentation checks pass and the reviewer checks the definition of done item by item |
 | 4. Measurement and shadow | C19 (cost, tokens, rounds, first-pass verdict, human time), shadow mode (no push), `ariane report` | A second user installs Ariane on macOS, and their first tickets are measured in shadow mode |
-| 5. Approved stages and slices | C2, C4, C3, per-ticket budget (C5), approve and revise commands (C23) | No stage starts without human approval |
+| 5. Approved stages and slices | Branch update (C11) and ticket dependencies (C1), C2, C4, C3, per-ticket budget (C5), approve and revise commands (C23) | No stage starts without human approval |
 | 6. Stronger checks | C9 complete (pre-change replay, checklist, coverage), rules judge (C10), `ariane docs-review` (C25) | A test that tests nothing is flagged; the rules judge runs; a documentation review runs from Ariane |
 | 7. Mastery | C17 | A quiz follows every delivery |
 | 8. Learnings and skills | C18 (ADR 0011), C6, project instructions (C22), resume after interruption (C5) | An accepted rule reaches a later ticket; only pinned, declared skills load |
