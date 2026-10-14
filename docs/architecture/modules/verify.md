@@ -6,6 +6,7 @@
 
 - `verify`: the entry point; returns an `Outcome` whose line gives the checks' summary, the verdict and the next action. Exit 0 only for a `go` with green blocking checks. Ctrl-C (`KeyboardInterrupt`, also raised through a killed reviewer or setup process tree) gives exit 130 (`EXIT_INTERRUPTED`) and the line "Stopped verifying <branch>: interrupted by the user. Next: run verify again."; the replay tree and the temporary records folder are removed and nothing is committed or journaled.
 - `Refused`: carries the exit code and next action; a tracker refusal (`TrackerError`, `IssueRefused`) passes its own through, so an issue refused by the issue gate (C21, ADR 0032) gives exit 2 before any checkout or review. The branch cannot be verified (unknown branch, uncommitted changes in the working tree that holds it, failed setup or reviewer).
+- Metrics (C19): the records also hold `metrics.json` (mode `verify`, the reviewer sessions, outcome `delivered` when green, else `stopped`).
 - `replay_path`, `relative_folder`: where the replay tree and the records are.
 
 ## Collaborations
@@ -20,6 +21,7 @@ flowchart LR
   verify --> flow
   verify --> git
   verify --> process
+  verify --> metrics
   verify --> redact
   verify --> review
   verify --> review_session
@@ -31,4 +33,4 @@ flowchart LR
 
 ## Serves
 
-C10, C23; ADR 0016, ADR 0020, ADR 0028. See [the component view](../3-components.md).
+C10, C23; ADR 0016, ADR 0020, ADR 0028, ADR 0034, C19. See [the component view](../3-components.md).

@@ -45,7 +45,21 @@ flowchart TD
   flow --> delivery
   flow --> redact
   flow --> review
-  flow --> review_session
+  flow --> replay
+  flow --> stop
+  flow --> metrics
+  metrics --> runtime
+  metrics --> ticket
+  replay --> checks
+  replay --> delivery
+  replay --> git
+  replay --> metrics
+  replay --> review
+  replay --> review_session
+  replay --> stop
+  replay --> ticket
+  review_session --> metrics
+  verify --> metrics
   flow --> runtime
   flow --> tracker
   git --> process

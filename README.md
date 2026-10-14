@@ -81,11 +81,12 @@ before any review, it stops there and pushes nothing. Otherwise a read-only revi
 different model reviews a clean replay; on a no-go, up to two fix rounds follow, each with a fresh
 implementer session, a replay and a review. Then it pushes the branch, opens the pull request (a
 draft that needs a human if the review is still no-go) and publishes each check's result as a
-commit status (`ariane/<check name>`) on its head commit. The ticket's records are in `work/12/`.
+commit status (`ariane/<check name>`) on its head commit. The ticket's records are in `work/12/`, including `work/12/metrics.json`: cost, tokens, durations,
+fix rounds, first-pass verdict and outcome of the ticket, rewritten after each step.
 A GitHub Actions workflow (`check-statuses.yml`) also publishes these statuses from the committed
 report, including when Ariane cannot (for example from a cloud session).
 `ariane verify <branch> [--issue N]` checks and reviews a local branch finished by hand: a clean
-replay of the checks, one review, then `work/verify/<branch>/review.md` and `checks.md` committed
+replay of the checks, one review, then `work/verify/<branch>/review.md`, `checks.md` and `metrics.json` committed
 on the branch (never pushed). It exits 0 only on a `go` with green blocking checks; the issue's
 text goes to the reviewer with `--issue`, else the branch's commit messages.
 The token needs permission to write commit statuses (for a fine-grained token, "Commit statuses:

@@ -9,6 +9,7 @@ The reviewer sessions of one review round (C10): a fresh read-only session on th
 - Its `env` is built by the caller from the reviewer runtime's own login variables only.
 - The journal line of a reviewer session starts with the reviewer's runtime as `runtime.describe` words it (for opencode: its version and that the title call's usage is not reported).
 - `cap_text` words the caps that apply for the journal: for opencode "runtime cost cap none; Ariane stops at … USD of reported cost or … tokens".
+- Each reviewer session is run through `Metrics.run_session` when `metrics` is given (C19), with its review `round`.
 - `read_answer`: the validated answer of a session result, or the reason it is not one.
 - `ReviewFailed`: no valid answer (the session did not finish, or two invalid answers); the flow turns it into a stop with status `needs a human`.
 
@@ -20,11 +21,12 @@ Arrows go from the caller to the callee.
 flowchart LR
   review_session --> checks
   review_session --> config
+  review_session --> metrics
   review_session --> review
   review_session --> runtime
   review_session --> ticket
   review_session --> tracker
-  flow --> review_session
+  replay --> review_session
   verify --> review_session
 ```
 
