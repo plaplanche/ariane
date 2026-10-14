@@ -4,7 +4,7 @@
 
 ## Main types and functions
 
-- `build(root, since)`: returns a `Report` (lines, exit code). Reads `work/*/metrics.json` and `work/verify/*/metrics.json`, keeps tickets started on or after `since`, prints number, mode, outcome, cost ("partly not reported" when a session's cost is null), agent time, rounds and first-pass verdict. Totals give tickets, cost, agent time, rounds and the first-pass go rate (go / reviewed). A file that cannot be read is named and skipped, and the exit code is 1.
+- `build(root, since)`: returns a `Report` (lines, exit code). Reads `work/*/metrics.json` and `work/verify/**/metrics.json` (a hand-takeover record shows its branch), keeps tickets started on or after `since`, prints number, mode, outcome, cost ("partly not reported" when a session's cost is null), agent time, rounds and first-pass verdict. Totals give tickets, cost, agent time, rounds and the first-pass go rate (go / reviewed). A file that cannot be read or has a field of the wrong type is named and skipped, and the exit code is 1.
 
 ## Collaborations
 

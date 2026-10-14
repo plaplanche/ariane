@@ -39,6 +39,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except git.GitError as exc:
         return _say(EXIT_USAGE, f"Did nothing: {exc}. Next: run ariane inside a git repository.")
     if args.command == "report":
+        logs.configure(level, logs.log_path(root, "report"))
         return _report(root, args.since)
     if args.command == "verify":
         logs.configure(level, logs.log_path(root, "verify-" + args.branch.replace("/", "-")))

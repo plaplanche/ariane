@@ -22,7 +22,7 @@ def build(root: Path, since: str | None) -> Report:
     """Read every metrics file under `root/work`, keep tickets started on or after `since`."""
     work = root / ticket.WORK_DIR
     paths = sorted(work.glob(f"*/{metrics.METRICS}")) + sorted(
-        work.glob(f"verify/*/{metrics.METRICS}")
+        work.glob(f"verify/**/{metrics.METRICS}")
     )
     if not paths:
         return Report(["No metrics file found. Next: run ariane start <issue>."], 0)
@@ -32,15 +32,18 @@ def build(root: Path, since: str | None) -> Report:
     for path in paths:
         try:
             data = _read(path)
-        except (OSError, ValueError, KeyError, TypeError) as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             failed += 1
             lines.append(
                 f"Could not read {path.relative_to(root).as_posix()}: {_why(exc)}; skipped."
             )
             continue
+        verify_dir = work / "verify"
+        if path.is_relative_to(verify_dir):
+            data["branch"] = path.parent.relative_to(verify_dir).as_posix()
         if since is None or data["started"][:10] >= since:
             rows.append(data)
-    rows.sort(key=lambda d: (d["started"], d["ticket"]))
+    rows.sort(key=lambda d: (d["started"], d["ticket"], d.get("branch", "")))
     lines.extend(_row(d) for d in rows)
     cost, partial = _cost([s for d in rows for s in d["sessions"]])
     seconds = sum(_duration(d) for d in rows)
@@ -69,8 +72,15 @@ def _read(path: Path) -> dict[str, Any]:
         data[key]
     if not isinstance(data["started"], str) or not isinstance(data["sessions"], list):
         raise TypeError("wrong field type")
+    for key in ("ticket", "rounds"):
+        if isinstance(data[key], bool) or not isinstance(data[key], int):
+            raise TypeError(f"{key} is not an integer")
+    for key in ("mode", "outcome", "first_pass_verdict"):
+        if not isinstance(data[key], str):
+            raise TypeError(f"{key} is not a string")
     for session in data["sessions"]:
-        session.get("cost_usd")
+        if not isinstance(session, dict):
+            raise TypeError("a session is not an object")
         _duration_of(session)
     return data
 
@@ -113,8 +123,9 @@ def _row(data: dict[str, Any]) -> str:
     cost_text = PARTLY if partial else _money(cost, False)
     if partial and cost:
         cost_text = f"{_money(cost, False)}, {PARTLY}"
+    branch = f" ({data['branch']})" if "branch" in data else ""
     return (
-        f"#{data['ticket']} {data['mode']} {data['outcome']}: cost {cost_text},"
+        f"#{data['ticket']}{branch} {data['mode']} {data['outcome']}: cost {cost_text},"
         f" agent time {_time(_duration(data))}, {data['rounds']} rounds,"
         f" first pass {data['first_pass_verdict']}"
     )

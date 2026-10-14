@@ -55,7 +55,7 @@ def test_c19_report_totals_over_three_tickets(
     assert code == 0
     assert len(lines) == 5
     assert lines[0].startswith("#1 delivered delivered: cost $0.75, agent time 2m00s, 1 rounds")
-    assert "#3 verify" in lines[2]
+    assert "#3 (b) verify" in lines[2]
     assert lines[3] == (
         "Totals: 3 tickets, cost $3.00, agent time 5m00s, 1 rounds, first-pass go rate 2/3 (66%)."
     )
@@ -107,3 +107,28 @@ def test_c19_report_summary_line_is_last(repo: Path, capsys: pytest.CaptureFixtu
 def test_c19_report_rejects_a_bad_date(repo: Path) -> None:
     with pytest.raises(SystemExit):
         cli.main(["report", "--since", "yesterday"])
+
+
+def test_c19_report_finds_verify_records_of_slashed_branches(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    put(repo, "work/verify/ariane/3", 0, "2026-10-05T10:00:00Z", [0.5], mode="verify")
+    code, lines = run(capsys)
+    assert code == 0
+    assert lines[0].startswith("#0 (ariane/3) verify")
+    assert "1 tickets, cost $0.50" in lines[1]
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [{"sessions": ["x"]}, {"rounds": "two"}, {"ticket": "7"}, {"mode": 3}],
+)
+def test_c19_report_malformed_fields_are_named_and_skipped(
+    repo: Path, capsys: pytest.CaptureFixture[str], patch: dict[str, Any]
+) -> None:
+    put(repo, "work/1", 1, "2026-09-01T10:00:00Z", [0.5])
+    path = repo / "work/1/metrics.json"
+    path.write_text(json.dumps({**json.loads(path.read_text()), **patch}), encoding="utf-8")
+    code, lines = run(capsys)
+    assert code == 1
+    assert lines[0].startswith("Could not read work/1/metrics.json")
