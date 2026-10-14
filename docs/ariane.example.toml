@@ -15,7 +15,7 @@ repository = "your-account/your-repository"
 # Name of the environment variable that holds the access token.
 token_env = "GH_TOKEN"
 # Label a person with write access puts on an issue to let Ariane run it (default "ariane").
-# Ariane refuses an issue edited by anyone else after the label (ADR 0032).
+# Ariane refuses an issue changed after the label: edit, comment or other label (ADR 0032).
 ready_label = "ariane"
 
 [agents.implementer]

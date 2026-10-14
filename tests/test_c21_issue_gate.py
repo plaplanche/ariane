@@ -23,16 +23,20 @@ from conftest import FakeRuntime, Project, make_config, sh
 LABELLED = "2026-10-01T10:00:00Z"
 BEFORE = "2026-10-01T09:00:00Z"
 AFTER = "2026-10-01T11:00:00Z"
+SAME_MOMENT = "2026-10-01T10:00:01Z"
+TWO_SECONDS_LATER = "2026-10-01T10:00:02Z"
 PERMISSIONS = {"alice": "admin", "mia": "maintain", "wendy": "write", "rita": "read"}
 
 
 class Fake:
-    """A fake GitHub: one issue, its events, the body edit and the users' permissions."""
+    """A fake GitHub: one issue, its events, the repository's owner and users' permissions."""
 
     def __init__(self) -> None:
         self.labels = ["ariane"]
         self.events: list[dict[str, Any]] = [self.labeled("wendy", LABELLED)]
-        self.edit: tuple[str, str] | None = None
+        self.updated_at = LABELLED
+        self.owner = {"login": "Olivia", "type": "User"}
+        self.permission_status = 200
         self.paths: list[str] = []
 
     @staticmethod
@@ -54,16 +58,16 @@ class Fake:
                 "body": "B",
                 "html_url": "https://x/5",
                 "labels": [{"name": n} for n in self.labels],
+                "updated_at": self.updated_at,
             }
         if route == "/repos/o/n/issues/5/events":
             return 200, self.events
-        if route == "/graphql":
-            issue: dict[str, Any] = {"lastEditedAt": None, "editor": None}
-            if self.edit:
-                issue = {"lastEditedAt": self.edit[1], "editor": {"login": self.edit[0]}}
-            return 200, {"data": {"repository": {"issue": issue}}}
+        if route == "/repos/o/n":
+            return 200, {"full_name": "o/n", "owner": self.owner}
         prefix = "/repos/o/n/collaborators/"
         if route.startswith(prefix) and route.endswith("/permission"):
+            if self.permission_status != 200:
+                return self.permission_status, {"message": "Forbidden"}
             user = route[len(prefix) : -len("/permission")]
             if user not in PERMISSIONS:
                 return 404, {"message": "Not Found"}
@@ -142,48 +146,79 @@ def test_c21_issue_gate_uses_the_last_time_the_label_was_added(fake: tuple[Fake,
         gate(url).read_issue(5)
 
 
-def test_c21_issue_gate_refuses_a_body_edited_by_a_reader_after_the_label(
-    fake: tuple[Fake, str],
-) -> None:
+def test_c21_issue_gate_refuses_an_issue_changed_after_the_label(fake: tuple[Fake, str]) -> None:
     state, url = fake
-    state.edit = ("rita", AFTER)
-    with pytest.raises(
-        IssueRefused, match=r"body was edited by 'rita'.*add the label `ariane` again"
-    ):
+    state.updated_at = AFTER
+    with pytest.raises(IssueRefused, match=r"#5 changed after the label `ariane`.*again"):
         gate(url).read_issue(5)
 
 
-def test_c21_issue_gate_accepts_a_body_edited_by_a_writer_after_the_label(
+def test_c21_issue_gate_accepts_an_update_in_the_seconds_of_the_label(
     fake: tuple[Fake, str],
 ) -> None:
     state, url = fake
-    state.edit = ("wendy", AFTER)
+    state.updated_at = SAME_MOMENT
     assert gate(url).read_issue(5).number == 5
 
 
-def test_c21_issue_gate_accepts_a_body_edited_by_a_reader_before_the_label(
+def test_c21_issue_gate_refuses_an_update_two_seconds_after_the_label(
     fake: tuple[Fake, str],
 ) -> None:
     state, url = fake
-    state.edit = ("rita", BEFORE)
-    assert gate(url).read_issue(5).number == 5
-
-
-def test_c21_issue_gate_refuses_a_title_renamed_by_a_reader_after_the_label(
-    fake: tuple[Fake, str],
-) -> None:
-    state, url = fake
-    state.events.append({"event": "renamed", "actor": {"login": "rita"}, "created_at": AFTER})
-    with pytest.raises(IssueRefused, match="title was changed by 'rita'"):
+    state.updated_at = TWO_SECONDS_LATER
+    with pytest.raises(IssueRefused, match="changed after the label"):
         gate(url).read_issue(5)
 
 
-def test_c21_issue_gate_accepts_a_title_renamed_by_a_writer_after_the_label(
+def test_c21_issue_gate_compares_the_owner_login_without_case_and_reads_the_repository_once(
     fake: tuple[Fake, str],
 ) -> None:
     state, url = fake
-    state.events.append({"event": "renamed", "actor": {"login": "wendy"}, "created_at": AFTER})
+    state.owner = {"login": "OLIVIA", "type": "User"}
+    state.events = [state.labeled("olivia", LABELLED)]
+    tracker = gate(url)
+    tracker.read_issue(5)
+    tracker.read_issue(5)
+    assert state.paths.count("/repos/o/n") == 1
+
+
+def test_c21_issue_gate_accepts_a_change_made_before_the_label(fake: tuple[Fake, str]) -> None:
+    state, url = fake
+    state.events = [
+        {"event": "renamed", "actor": {"login": "rita"}, "created_at": BEFORE},
+        state.labeled("wendy", LABELLED),
+    ]
     assert gate(url).read_issue(5).number == 5
+
+
+def test_c21_issue_gate_trusts_the_owner_of_a_user_repository_without_a_permission_call(
+    fake: tuple[Fake, str],
+) -> None:
+    state, url = fake
+    state.events = [state.labeled("olivia", LABELLED)]
+    state.permission_status = 403
+    assert gate(url).read_issue(5).number == 5
+    assert not [p for p in state.paths if "/collaborators/" in p]
+    assert "/graphql" not in state.paths
+
+
+def test_c21_issue_gate_does_not_trust_the_owner_login_of_an_organisation(
+    fake: tuple[Fake, str],
+) -> None:
+    state, url = fake
+    state.owner = {"login": "olivia", "type": "Organization"}
+    state.events = [state.labeled("olivia", LABELLED)]
+    with pytest.raises(IssueRefused, match="'olivia'"):
+        gate(url).read_issue(5)
+
+
+def test_c21_issue_gate_refuses_when_the_permission_check_is_blocked(
+    fake: tuple[Fake, str],
+) -> None:
+    state, url = fake
+    state.permission_status = 403
+    with pytest.raises(IssueRefused, match=r"cannot check whether 'wendy' can write.*403"):
+        gate(url).read_issue(5)
 
 
 def test_c21_issue_gate_uses_the_configured_label(fake: tuple[Fake, str]) -> None:
