@@ -1,0 +1,15 @@
+{
+  "first_pass_verdict": "not reviewed",
+  "mode": "delivered",
+  "outcome": "running",
+  "rounds": 0,
+  "sessions": [],
+  "started": "2026-10-15T05:33:55Z",
+  "steps": [
+    {
+      "at": "2026-10-15T05:33:56Z",
+      "name": "folder opened"
+    }
+  ],
+  "ticket": 97
+}
