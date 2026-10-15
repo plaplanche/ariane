@@ -13,7 +13,8 @@ positional arguments:
   {start,status,report,verify,judge}
     start               run the ticket of an issue up to its pull request
     status              show a ticket's state, read from its folder
-    report              show cost, agent time and verdicts per ticket
+    report              show cost, agent time, human time, gates bypassed,
+                        shadow results
     verify              check and review a local branch finished by hand, then
                         record it on the branch
     judge               record your verdict and time on a shadow ticket

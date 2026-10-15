@@ -114,7 +114,13 @@ replay of the checks, one review, then `work/verify/<branch>/review.md`, `checks
 on the branch (never pushed). It exits 0 only on a `go` with green blocking checks; the issue's
 text goes to the reviewer with `--issue`, else the branch's commit messages.
 `ariane report [--since YYYY-MM-DD]` summarises cost, agent time, rounds and first-pass verdicts per
-ticket from the `metrics.json` files in the checkout.
+ticket from the `metrics.json` files in the checkout. It also gives the two numbers of the success
+measure: human time (a delivered ticket's waiting time from its pull request's opening to its merge
+or close, read from the tracker with the token, "not available" without it, plus each stop to the
+next `ariane verify`; a shadow ticket's minutes from `ariane judge`) and gates bypassed (hand
+takeovers, blocking checks red at delivery, a pull request merged while its last review is no-go).
+Shadow tickets show their judgement, the accept rate, the agents' push and pull-request attempts, and
+`shadow pass: yes|no` over the last 10 (no attempt, no violation, at least 8 accepted).
 The token needs permission to write commit statuses (for a fine-grained token, "Commit statuses:
 read and write"), on top of reading issues and writing pull requests.
 

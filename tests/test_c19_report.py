@@ -53,10 +53,10 @@ def test_c19_report_totals_over_three_tickets(
     three(repo)
     code, lines = run(capsys)
     assert code == 0
-    assert len(lines) == 5
+    assert len(lines) == 7
     assert lines[0].startswith("#1 delivered delivered: cost $0.75, agent time 2m00s, 1 rounds")
     assert "#3 (b) verify" in lines[2]
-    assert lines[3] == (
+    assert lines[5] == (
         "Totals: 3 tickets, cost $3.00, agent time 5m00s, 1 rounds, first-pass go rate 2/3 (66%)."
     )
 
@@ -75,7 +75,7 @@ def test_c19_report_null_cost_is_partly_not_reported(
     put(repo, "work/4", 4, "2026-10-01T10:00:00Z", [None, 0.5])
     _, lines = run(capsys)
     assert "partly not reported" in lines[0]
-    assert "partly not reported" in lines[1]
+    assert "partly not reported" in lines[3]
 
 
 def test_c19_report_without_metrics_says_so(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -116,7 +116,7 @@ def test_c19_report_finds_verify_records_of_slashed_branches(
     code, lines = run(capsys)
     assert code == 0
     assert lines[0].startswith("#0 (ariane/3) verify")
-    assert "1 tickets, cost $0.50" in lines[1]
+    assert "1 tickets, cost $0.50" in lines[3]
 
 
 @pytest.mark.parametrize(

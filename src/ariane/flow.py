@@ -471,6 +471,7 @@ class _TicketRun:
             settled,
             reviewed,
         )
+        self.metrics.delivered_red(len(checks.blocking_failures(results)))
         self.metrics.finish("needs a human" if delivery.draft else "delivered")
         try:
             done = delivery.deliver(results)

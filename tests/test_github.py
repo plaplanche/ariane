@@ -229,3 +229,53 @@ def test_c21_a_redirect_is_refused_so_the_token_never_follows_it(stub: tuple[Stu
     with pytest.raises(TrackerError, match="HTTP 302"):
         tracker(url).read_issue(5)
     assert len(state.requests) == 1
+
+
+def test_c19_report_pull_request_state_reads_the_latest_pull_request(
+    stub: tuple[Stub, str],
+) -> None:
+    state, url = stub
+    path = "/repos/owner/name/pulls?state=all&sort=created&direction=desc&head=owner:ariane%2F5"
+    state.responses[("GET", path)] = (
+        200,
+        [
+            {
+                "created_at": "2026-10-01T10:00:00Z",
+                "merged_at": "2026-10-01T12:00:00Z",
+                "closed_at": "2026-10-01T12:01:00Z",
+            }
+        ],
+    )
+    found = tracker(url).pull_request_state("ariane/5")
+    assert found is not None
+    assert (found.opened, found.ended, found.merged) == (
+        "2026-10-01T10:00:00Z",
+        "2026-10-01T12:00:00Z",
+        True,
+    )
+    state.responses[("GET", path)] = (
+        200,
+        [
+            {
+                "created_at": "2026-10-01T10:00:00Z",
+                "merged_at": None,
+                "closed_at": "2026-10-02T00:00:00Z",
+            }
+        ],
+    )
+    closed = tracker(url).pull_request_state("ariane/5")
+    assert closed is not None
+    assert (closed.ended, closed.merged) == ("2026-10-02T00:00:00Z", False)
+
+
+def test_c19_report_pull_request_state_empty_and_malformed(stub: tuple[Stub, str]) -> None:
+    state, url = stub
+    path = "/repos/owner/name/pulls?state=all&sort=created&direction=desc&head=owner:ariane%2F5"
+    state.responses[("GET", path)] = (200, [])
+    assert tracker(url).pull_request_state("ariane/5") is None
+    state.responses[("GET", path)] = (200, [{"nothing": 1}])
+    with pytest.raises(TrackerError):
+        tracker(url).pull_request_state("ariane/5")
+    state.responses[("GET", path)] = (200, {"not": "a list"})
+    with pytest.raises(TrackerError):
+        tracker(url).pull_request_state("ariane/5")
