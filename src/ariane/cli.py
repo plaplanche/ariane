@@ -9,7 +9,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ariane import __version__, config, flow, git, logs, process, report, ticket, verify
+from ariane import __version__, config, flow, git, logs, process, report, shadow, ticket, verify
 from ariane.claude_code import ClaudeCodeRuntime
 from ariane.github import GitHubTracker
 from ariane.opencode import OpenCodeRuntime
@@ -47,7 +47,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     logs.configure(level, logs.log_path(root, args.issue))
     if args.command == "status":
         return _status(root, args.issue)
-    return _start(root, args.issue)
+    return _start(root, args.issue, args.shadow)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -67,6 +67,11 @@ def _parser() -> argparse.ArgumentParser:
         "start", parents=[common], help="run the ticket of an issue up to its pull request"
     )
     start.add_argument("issue", type=_issue_number, help="issue number")
+    start.add_argument(
+        "--shadow",
+        action="store_true",
+        help="run the ticket in a separate clone, without push or pull request",
+    )
     status = sub.add_parser(
         "status", parents=[common], help="show a ticket's state, read from its folder"
     )
@@ -131,7 +136,7 @@ def _report(root: Path, since: str | None) -> int:
     return result.exit_code
 
 
-def _start(root: Path, number: int) -> int:
+def _start(root: Path, number: int, shadowed: bool = False) -> int:
     try:
         cfg = config.load(root)
     except config.ConfigError as exc:
@@ -150,7 +155,7 @@ def _start(root: Path, number: int) -> int:
         api_url=cfg.tracker.api_url,
         ready_label=cfg.tracker.ready_label,
     )
-    outcome = flow.start(
+    outcome = (shadow.start if shadowed else flow.start)(
         number,
         repo_root=root,
         config=cfg,

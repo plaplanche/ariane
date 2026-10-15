@@ -166,7 +166,7 @@ class _TicketRun:
                 "ticket.started",
                 "Ticket started",
                 f"Issue #{self.number} ({self.issue.url}), branch `{self.branch}` from"
-                f" `{REMOTE}/{self.config.base_branch}`, working tree `{self.worktree}`.",
+                f" `{self.remote}/{self.config.base_branch}`, working tree `{self.worktree}`.",
             )
             if setup_error is not None:
                 raise setup_error
@@ -268,7 +268,21 @@ class _TicketRun:
         refs_before: dict[str, str],
         expected_head: str | None = None,
     ) -> None:
-        """C11: after untrusted code ran, nothing escaped the ticket branch."""
+        """C11: after untrusted code ran, nothing escaped the ticket branch (violations counted)."""
+        try:
+            self._verify(after, start_commit, guard, refs_before, expected_head)
+        except Stop:
+            self.metrics.guard_violation()
+            raise
+
+    def _verify(
+        self,
+        after: str,
+        start_commit: str,
+        guard: dict[str, str],
+        refs_before: dict[str, str],
+        expected_head: str | None,
+    ) -> None:
         keep = "inspect the working tree; Ariane pushed nothing"
         branch = git.current_branch(self.worktree)
         if branch != self.branch:
@@ -431,6 +445,16 @@ class _TicketRun:
                 replay.remove(self, clean)
             if settled is not None and settled.go and not failed:
                 break
+        return self._deliver(checked, settled, reviewed, results)
+
+    def _deliver(
+        self,
+        checked: str,
+        settled: review.Settled | None,
+        reviewed: int,
+        results: list[checks.CheckResult],
+    ) -> Outcome:
+        """Push, open the pull request and publish the statuses (C11)."""
         delivery = Delivery(
             self.issue,
             self.tracker,

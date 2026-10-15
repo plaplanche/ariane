@@ -74,6 +74,7 @@ FUNCTIONAL_TYPES = _declare(
         ),
         ("ticket.fix.round", "info", "A fix round began, with the findings its session was given."),
         ("ticket.delivering", "info", "Delivery began: push and pull request."),
+        ("ticket.shadow.done", "info", "A shadow ticket ended: nothing pushed, no pull request."),
         ("ticket.pushed", "info", "The ticket branch was pushed."),
         ("ticket.delivered", "info", "The pull request was opened."),
         ("ticket.warning.ignored_files", "warning", "The agent created files that git ignores."),

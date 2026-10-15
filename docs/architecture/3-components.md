@@ -11,14 +11,17 @@ flowchart TD
   checks --> process
   checks --> config
   checks --> ticket
+  claude_code --> attempts
   claude_code --> process
   claude_code --> runtime
+  opencode --> attempts
   opencode --> process
   opencode --> runtime
   cli --> config
   config --> config_schema
   cli --> flow
   cli --> verify
+  cli --> shadow
   cli --> git
   cli --> process
   cli --> ticket
@@ -48,7 +51,13 @@ flowchart TD
   flow --> replay
   flow --> stop
   flow --> metrics
+  metrics --> attempts
   metrics --> runtime
+  runtime --> attempts
+  shadow --> flow
+  shadow --> git
+  shadow --> stop
+  shadow --> tracker
   metrics --> ticket
   replay --> checks
   replay --> delivery

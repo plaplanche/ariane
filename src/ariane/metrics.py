@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ariane import ticket
+from ariane.attempts import Attempts
 from ariane.runtime import AgentRuntime, Session, SessionResult
 
 METRICS = "metrics.json"
@@ -28,6 +29,8 @@ class Metrics:
         self.steps: list[dict[str, str]] = []
         self.sessions: list[dict[str, Any]] = []
         self.rounds = 0
+        self.attempts = Attempts()
+        self.guard_violations = 0
         self.first_pass_verdict = NOT_REVIEWED
         self.outcome = "running"
 
@@ -56,6 +59,7 @@ class Metrics:
                 "duration_s": round(time.monotonic() - began, 3),
             }
         )
+        self.attempts += result.attempts
         self.step(f"{session.role} session {len(self.sessions)} stopped")
         return result
 
@@ -68,12 +72,21 @@ class Metrics:
         self.rounds = round_
         self.step(f"fix round {round_} began")
 
+    def guard_violation(self) -> None:
+        """The post-session check found a change it forbids (C11)."""
+        self.guard_violations += 1
+
     def finish(self, outcome: str) -> None:
         self.outcome = outcome
         self.step(f"outcome: {outcome}")
 
     def render(self) -> str:
         data = {
+            "attempts": {
+                "push": self.attempts.push,
+                "pull_request": self.attempts.pull_request,
+                "guard_violations": self.guard_violations,
+            },
             "ticket": self.number,
             "mode": self.mode,
             "started": self.started,
