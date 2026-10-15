@@ -2,118 +2,126 @@
 
 ## Modules and their dependencies
 
-An arrow goes from a module to a module it imports. Each module has a file in
+An arrow goes from the importing module to the imported module; a dashed arrow is an import for
+type checking only. Each module has a file in
 [`modules/`](modules/).
 
+<!-- generated: dependencies -->
 ```mermaid
 flowchart TD
   __main__ --> cli
-  checks --> process
   checks --> config
+  checks --> process
   checks --> ticket
   claude_code --> attempts
   claude_code --> process
   claude_code --> runtime
+  cli --> claude_code
+  cli --> config
+  cli --> flow
+  cli --> git
+  cli --> github
+  cli --> logs
+  cli --> opencode
+  cli --> process
+  cli --> report
+  cli --> runtime
+  cli --> shadow
+  cli --> ticket
+  cli --> verify
+  config --> config_schema
+  context --> config
+  context --> git
+  context --> tracker
+  delivery --> checks
+  delivery --> git
+  delivery --> process
+  delivery --> redact
+  delivery --> review
+  delivery --> ticket
+  delivery --> tracker
+  flow --> checks
+  flow --> config
+  flow --> context
+  flow --> delivery
+  flow --> git
+  flow --> logs
+  flow --> metrics
+  flow --> process
+  flow --> redact
+  flow --> replay
+  flow --> review
+  flow --> runtime
+  flow --> stop
+  flow --> ticket
+  flow --> tracker
+  git --> logs
+  git --> process
+  git --> redact
+  github --> logs
+  github --> tracker
+  logs --> redact
+  measures --> tracker
+  metrics --> attempts
+  metrics --> runtime
+  metrics --> ticket
   opencode --> attempts
   opencode --> process
   opencode --> runtime
-  cli --> config
-  config --> config_schema
-  cli --> flow
-  cli --> verify
-  cli --> shadow
-  cli --> git
-  cli --> process
-  cli --> ticket
-  cli --> claude_code
-  cli --> opencode
-  cli --> runtime
-  cli --> github
-  context --> git
-  context --> config
-  context --> tracker
-  delivery --> checks
-  delivery --> review
-  delivery --> git
-  delivery --> process
-  delivery --> ticket
-  delivery --> redact
-  delivery --> tracker
-  flow --> checks
-  flow --> context
-  flow --> git
-  flow --> process
-  flow --> ticket
-  flow --> config
-  flow --> delivery
-  flow --> redact
-  flow --> review
-  flow --> replay
-  flow --> stop
-  flow --> metrics
-  metrics --> attempts
-  metrics --> runtime
-  runtime --> attempts
-  shadow --> flow
-  shadow --> git
-  shadow --> stop
-  shadow --> tracker
-  metrics --> ticket
+  process --> logs
   replay --> checks
   replay --> delivery
+  replay -.-> flow
   replay --> git
-  replay --> metrics
   replay --> review
   replay --> review_session
   replay --> stop
   replay --> ticket
-  review_session --> metrics
-  verify --> metrics
-  cli --> report
-  report --> metrics
-  report --> ticket
   report --> measures
+  report --> metrics
   report --> shadow
+  report --> ticket
   report --> tracker
-  measures --> tracker
-  flow --> runtime
-  flow --> tracker
-  git --> process
-  review_session --> checks
-  review_session --> config
-  review_session --> review
-  review_session --> runtime
-  review_session --> ticket
-  review_session --> tracker
   review --> checks
   review --> config
   review --> context
   review --> tracker
-  git --> process
-  git --> redact
-  github --> tracker
-  logs --> redact
-  cli --> logs
-  flow --> logs
-  git --> logs
-  github --> logs
-  process --> logs
+  review_session --> checks
+  review_session --> config
+  review_session --> metrics
+  review_session --> review
+  review_session --> runtime
+  review_session --> ticket
+  review_session --> tracker
+  runtime --> attempts
+  shadow --> checks
+  shadow --> config
+  shadow --> flow
+  shadow --> git
+  shadow --> metrics
+  shadow --> review
+  shadow --> runtime
+  shadow --> stop
+  shadow --> ticket
+  shadow --> tracker
   ticket --> logs
   ticket --> redact
   ticket --> tracker
   verify --> checks
+  verify --> config
   verify --> context
   verify --> flow
   verify --> git
+  verify --> metrics
   verify --> process
+  verify --> redact
   verify --> review
   verify --> review_session
-  verify --> ticket
-  verify --> config
-  verify --> redact
   verify --> runtime
+  verify --> ticket
   verify --> tracker
 ```
+<!-- end generated -->
 
 ## `ariane start <n>`
 

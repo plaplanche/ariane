@@ -18,15 +18,17 @@ Attempts (C19, ADR 0036): `Events` reads the `tool_use` events of the `bash` too
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
+  cli --> opencode
   opencode --> attempts
   opencode --> process
   opencode --> runtime
-  cli --> opencode
 ```
+<!-- end generated -->
 
 ## Serves
 

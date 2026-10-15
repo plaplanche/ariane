@@ -10,15 +10,17 @@ Counts the commands an agent attempted that push or open a pull request (C19, AD
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
   claude_code --> attempts
+  metrics --> attempts
   opencode --> attempts
   runtime --> attempts
-  metrics --> attempts
 ```
+<!-- end generated -->
 
 ## Serves
 

@@ -11,17 +11,19 @@ Builds what an agent receives from Ariane: its prompt and a trimmed environment 
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
-  context --> git
   context --> config
+  context --> git
   context --> tracker
   flow --> context
   review --> context
   verify --> context
 ```
+<!-- end generated -->
 
 ## Serves
 

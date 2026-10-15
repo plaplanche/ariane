@@ -17,19 +17,23 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
-  git --> process
-  git --> logs
-  git --> redact
   cli --> git
   context --> git
   delivery --> git
   flow --> git
+  git --> logs
+  git --> process
+  git --> redact
+  replay --> git
+  shadow --> git
   verify --> git
 ```
+<!-- end generated -->
 
 ## Serves
 

@@ -14,20 +14,22 @@ Runs external commands from argument lists: PATH resolution, UTF-8 output, timeo
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
   checks --> process
   claude_code --> process
-  opencode --> process
   cli --> process
   delivery --> process
   flow --> process
   git --> process
+  opencode --> process
   process --> logs
   verify --> process
 ```
+<!-- end generated -->
 
 ## Serves
 

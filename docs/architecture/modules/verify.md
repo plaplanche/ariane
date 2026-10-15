@@ -11,25 +11,27 @@
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
+  cli --> verify
   verify --> checks
   verify --> config
   verify --> context
   verify --> flow
   verify --> git
-  verify --> process
   verify --> metrics
+  verify --> process
   verify --> redact
   verify --> review
   verify --> review_session
   verify --> runtime
   verify --> ticket
   verify --> tracker
-  cli --> verify
 ```
+<!-- end generated -->
 
 ## Serves
 

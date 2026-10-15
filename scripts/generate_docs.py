@@ -1,11 +1,16 @@
 """Generate `docs/logs.md` and the files under `docs/reference/` from the code (ADR 0022, C25).
 
 `--check` exits 1 and names the files that differ from what the code produces.
+
+It also rewrites the blocks between `<!-- generated: <name> -->` and `<!-- end generated -->` in
+the architecture files: the module import graph, each module's collaborations and the module list.
+The rest of those files is hand-written and left untouched (ADR 0039).
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import sys
@@ -68,6 +73,145 @@ def render_logs() -> str:
     return "\n".join(lines)
 
 
+ARCHITECTURE = Path("docs") / "architecture"
+END_MARKER = "<!-- end generated -->"
+Edge = tuple[str, str, bool]
+
+
+class MarkerError(Exception):
+    """A file lacks the markers of a generated block."""
+
+
+def _module_names(package: Path) -> list[str]:
+    return sorted(p.stem for p in package.glob("*.py") if p.stem != "__init__")
+
+
+def _is_type_checking(test: ast.expr) -> bool:
+    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
+        isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+    )
+
+
+def _imported(node: ast.stmt, names: set[str], root: str) -> set[str]:
+    found: set[str] = set()
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            parts = alias.name.split(".")
+            if parts[0] == root and len(parts) > 1 and parts[1] in names:
+                found.add(parts[1])
+    elif isinstance(node, ast.ImportFrom):
+        parts = (node.module or "").split(".") if node.module else []
+        if node.level == 1 or (node.level == 0 and parts[:1] == [root]):
+            rest = parts if node.level == 1 else parts[1:]
+            if rest:
+                if rest[0] in names:
+                    found.add(rest[0])
+            else:
+                found |= {a.name for a in node.names if a.name in names}
+    return found
+
+
+def _walk(node: ast.AST, names: set[str], root: str, type_only: bool, out: dict[str, bool]) -> None:
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.Import | ast.ImportFrom):
+            for target in _imported(child, names, root):
+                out[target] = out.get(target, True) and type_only
+            continue
+        guarded = isinstance(child, ast.If) and _is_type_checking(child.test)
+        if guarded:
+            assert isinstance(child, ast.If)
+            for part in child.body:
+                _walk_stmt(part, names, root, True, out)
+            for part in child.orelse:
+                _walk_stmt(part, names, root, type_only, out)
+        else:
+            _walk(child, names, root, type_only, out)
+
+
+def _walk_stmt(
+    node: ast.stmt, names: set[str], root: str, type_only: bool, out: dict[str, bool]
+) -> None:
+    holder = ast.Module(body=[node], type_ignores=[])
+    _walk(holder, names, root, type_only, out)
+
+
+def import_graph(package: Path) -> list[Edge]:
+    """Sorted, unique edges `(a, b, type_only)`: module `a` of the package imports module `b`."""
+    names = set(_module_names(package))
+    edges: list[Edge] = []
+    for name in sorted(names):
+        tree = ast.parse((package / f"{name}.py").read_text(encoding="utf-8"))
+        found: dict[str, bool] = {}
+        _walk(tree, names, package.name, False, found)
+        edges += [(name, b, t) for b, t in sorted(found.items()) if b != name]
+    return edges
+
+
+def _arrow(edge: Edge) -> str:
+    a, b, type_only = edge
+    return f"  {a} {'-.->' if type_only else '-->'} {b}"
+
+
+def render_dependencies(edges: list[Edge]) -> str:
+    return "\n".join(["```mermaid", "flowchart TD", *map(_arrow, edges), "```"])
+
+
+def render_collaborations(edges: list[Edge], module: str) -> str:
+    mine = [e for e in edges if module in e[:2]]
+    body = list(map(_arrow, mine)) or [f"  {module}"]
+    return "\n".join(["```mermaid", "flowchart LR", *body, "```"])
+
+
+def render_modules(names: list[str]) -> str:
+    return "\n".join(f"- [`{n}`](modules/{n}.md)" for n in names)
+
+
+def blocks(root: Path) -> dict[Path, dict[str, str]]:
+    """The generated blocks of each architecture file, by block name."""
+    package = root / "src" / "ariane"
+    edges = import_graph(package)
+    names = _module_names(package)
+    found: dict[Path, dict[str, str]] = {
+        ARCHITECTURE / "3-components.md": {"dependencies": render_dependencies(edges)},
+        ARCHITECTURE / "README.md": {"modules": render_modules(names)},
+    }
+    for name in names:
+        found[ARCHITECTURE / "modules" / f"{name}.md"] = {
+            "collaborations": render_collaborations(edges, name)
+        }
+    return found
+
+
+def replace_block(text: str, name: str, content: str) -> str:
+    """`text` with what lies between the markers of block `name` replaced by `content`."""
+    start = f"<!-- generated: {name} -->"
+    begin = text.find(start)
+    end = text.find(END_MARKER, begin + len(start)) if begin >= 0 else -1
+    if begin < 0 or end < 0:
+        raise MarkerError(f"no `{start}` ... `{END_MARKER}` markers")
+    return f"{text[: begin + len(start)]}\n{content}\n{text[end:]}"
+
+
+def render_blocks(root: Path) -> tuple[dict[Path, str], list[str]]:
+    """The new text of each architecture file, and the files that cannot be rewritten."""
+    result: dict[Path, str] = {}
+    problems: list[str] = []
+    for relative, wanted in blocks(root).items():
+        path = root / relative
+        if not path.is_file():
+            problems.append(f"{relative.as_posix()}: file is missing")
+            continue
+        text = path.read_text(encoding="utf-8")
+        try:
+            for name, content in wanted.items():
+                text = replace_block(text, name, content)
+        except MarkerError as error:
+            problems.append(f"{relative.as_posix()}: {error}")
+            continue
+        result[relative] = text
+    return result, problems
+
+
 def outputs() -> dict[Path, str]:
     return {
         Path("docs") / "logs.md": render_logs(),
@@ -77,14 +221,19 @@ def outputs() -> dict[Path, str]:
     }
 
 
-def differing(root: Path) -> list[Path]:
+def differing(root: Path) -> tuple[list[Path], list[str]]:
     found = []
     for relative, text in outputs().items():
         path = root / relative
         current = path.read_text(encoding="utf-8") if path.is_file() else None
         if current != text:
             found.append(relative)
-    return found
+    rewritten, problems = render_blocks(root)
+    for relative, text in rewritten.items():
+        path = root / relative
+        if path.read_text(encoding="utf-8") != text:
+            found.append(relative)
+    return found, problems
 
 
 def main(argv: Sequence[str] | None = None, root: Path | None = None) -> int:
@@ -93,16 +242,24 @@ def main(argv: Sequence[str] | None = None, root: Path | None = None) -> int:
     args = parser.parse_args(argv)
     root = root or Path(__file__).resolve().parent.parent
     if args.check:
-        stale = differing(root)
+        stale, problems = differing(root)
         for relative in stale:
             print(f"{relative.as_posix()}: differs from the code; run scripts/generate_docs.py")
-        return 1 if stale else 0
+        for problem in problems:
+            print(problem)
+        return 1 if stale or problems else 0
     for relative, text in outputs().items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8", newline="\n")
         print(f"wrote {relative.as_posix()}")
-    return 0
+    rewritten, problems = render_blocks(root)
+    for relative, text in rewritten.items():
+        (root / relative).write_text(text, encoding="utf-8", newline="\n")
+        print(f"wrote {relative.as_posix()}")
+    for problem in problems:
+        print(problem)
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":

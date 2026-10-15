@@ -14,19 +14,24 @@ The tracker interface: the only way Ariane talks to GitHub, another forge or a t
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
   context --> tracker
   delivery --> tracker
   flow --> tracker
   github --> tracker
-  ticket --> tracker
+  measures --> tracker
+  report --> tracker
   review --> tracker
   review_session --> tracker
+  shadow --> tracker
+  ticket --> tracker
   verify --> tracker
 ```
+<!-- end generated -->
 
 ## Serves
 

@@ -10,20 +10,22 @@ One round of replay and review of a ticket, moved out of `flow` unchanged (ADR 0
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
+  flow --> replay
   replay --> checks
   replay --> delivery
+  replay -.-> flow
   replay --> git
-  replay --> metrics
   replay --> review
   replay --> review_session
   replay --> stop
   replay --> ticket
-  flow --> replay
 ```
+<!-- end generated -->
 
 ## Serves
 

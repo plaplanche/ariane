@@ -14,19 +14,23 @@ The paths of those documents come from the agent, so each goes in its own escape
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
+  delivery --> review
+  flow --> review
+  replay --> review
   review --> checks
   review --> config
   review --> context
   review --> tracker
-  flow --> review
-  delivery --> review
   review_session --> review
+  shadow --> review
   verify --> review
 ```
+<!-- end generated -->
 
 ## Reference
 

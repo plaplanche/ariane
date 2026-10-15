@@ -10,11 +10,15 @@ The success measure of `ariane report` (C19, ADR 0038): human time, gates bypass
 
 ## Collaborations
 
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
+
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
-  report --> measures
   measures --> tracker
+  report --> measures
 ```
+<!-- end generated -->
 
 ## Serves
 
