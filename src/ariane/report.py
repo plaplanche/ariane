@@ -27,12 +27,13 @@ def build(root: Path, since: str | None, tracker: Tracker | None = None) -> Repo
     paths = (
         sorted(work.glob(f"*/{metrics.METRICS}"))
         + sorted(work.glob(f"verify/**/{metrics.METRICS}"))
-        + sorted(shadows.glob(f"*/{ticket.WORK_DIR}/*/{metrics.METRICS}"))
+        + sorted(_shadow_paths(shadows))
     )
     if not paths:
         return Report(["No metrics file found. Next: run ariane start <issue>."], 0)
     lines: list[str] = []
     rows: list[dict[str, Any]] = []
+    recent: list[dict[str, Any]] = []  # every shadow ticket, whatever `since` says
     failed = 0
     for path in paths:
         try:
@@ -45,18 +46,26 @@ def build(root: Path, since: str | None, tracker: Tracker | None = None) -> Repo
         verify_dir = work / "verify"
         if path.is_relative_to(verify_dir):
             data["branch"] = path.parent.relative_to(verify_dir).as_posix()
+        if path.is_relative_to(shadows) and data["mode"] != "shadow":
+            continue
+        if data["mode"] == "shadow":
+            recent.append(data)
         if since is None or data["started"][:10] >= since:
             rows.append(data)
     rows.sort(key=lambda d: (d["started"], d["ticket"], d.get("branch", "")))
     takeovers = [d for d in rows if "branch" in d]
     delivered = [d for d in rows if d["mode"] == "delivered"]
-    people = {id(d): measures.human(d, tracker, takeovers) for d in delivered}
+    people: dict[int, measures.Human] = {}
+    for d in delivered:
+        people[id(d)] = measures.human(d, tracker, takeovers)
+        if people[id(d)].waiting_s is None:
+            tracker = None  # the tracker failed once: do not wait for it again per ticket
     flagged = {id(d): measures.bypassed(d, takeovers, people[id(d)].merged) for d in delivered}
     lines.extend(_row(d) + _extra(d, people, flagged) for d in rows)
     cost, partial = _cost([s for d in rows for s in d["sessions"]])
     seconds = sum(_duration(d) for d in rows)
     rounds = sum(d["rounds"] for d in rows)
-    lines.extend(_measure_lines(rows, delivered, people, flagged))
+    lines.extend(_measure_lines(rows, recent, delivered, people, flagged))
     reviewed = [d for d in rows if d["first_pass_verdict"] != metrics.NOT_REVIEWED]
     go = sum(1 for d in reviewed if d["first_pass_verdict"] == "go")
     rate = f"{go}/{len(reviewed)}" + (f" ({100 * go // len(reviewed)}%)" if reviewed else "")
@@ -71,6 +80,16 @@ def build(root: Path, since: str | None, tracker: Tracker | None = None) -> Repo
         + ("fix the files named above." if failed else "nothing.")
     )
     return Report(lines, 1 if failed else 0)
+
+
+def _shadow_paths(shadows: Path) -> list[Path]:
+    """Only a clone's own ticket: the clone also holds every record that was on the base branch."""
+    found = []
+    for clone in shadows.glob("*"):
+        own = clone / ticket.WORK_DIR / clone.name / metrics.METRICS
+        if clone.name.isdigit() and own.is_file():
+            found.append(own)
+    return found
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -158,6 +177,7 @@ def _extra(
 
 def _measure_lines(
     rows: list[dict[str, Any]],
+    recent: list[dict[str, Any]],
     delivered: list[dict[str, Any]],
     people: dict[int, measures.Human],
     flagged: dict[int, list[str]],
@@ -183,4 +203,4 @@ def _measure_lines(
         f"Gates bypassed: {sum(len(f) for f in flagged.values())} over {len(delivered)}"
         " delivered tickets.",
     ]
-    return lines + measures.shadow_lines(shadows)
+    return lines + measures.shadow_lines(shadows, recent)

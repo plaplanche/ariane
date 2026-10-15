@@ -102,3 +102,22 @@ def test_c19_metrics_file_is_in_the_committed_records(
     text = (worktree(project) / "work/7/metrics.json").read_text(encoding="utf-8")
     assert text == sh(["git", "show", "ariane/7:work/7/metrics.json"], project.root) + "\n"
     assert text == json.dumps(json.loads(text), indent=2, sort_keys=True) + "\n"
+
+
+def test_c19_metrics_blocking_red_at_delivery_is_recorded(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    def action(session: Session) -> None:
+        broken = "fix round" in session.prompt
+        (session.cwd / "app.txt").write_text("broken\n" if broken else "version 2\n")
+
+    runtime = FakeRuntime(action=action, answers=[NO_GO])
+    assert start(project, tracker, runtime).exit_code == 1
+    assert metrics(project)["blocking_red_at_delivery"] == 1
+
+
+def test_c19_metrics_green_delivery_records_no_red_check(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    assert start(project, tracker, FakeRuntime()).exit_code == 0
+    assert not metrics(project).get("blocking_red_at_delivery")

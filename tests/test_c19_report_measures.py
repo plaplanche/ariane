@@ -141,3 +141,15 @@ def test_c19_report_shadow_unjudged_and_too_few(root: Path) -> None:
     assert "accept rate 0/0, 1 not yet judged" in out
     assert "not yet judged" in out.splitlines()[0]
     assert "shadow pass: no" in out
+
+
+def test_c19_report_shadow_clone_copies_of_other_tickets_are_not_counted_again(
+    root: Path,
+) -> None:
+    put(root / "work/5/metrics.json", 5, "2026-10-01T09:00:00Z")
+    clone = shadow.clone_path(root, 8)
+    put(clone / "work/8/metrics.json", 8, "2026-10-02T09:00:00Z", mode="shadow")
+    put(clone / "work/5/metrics.json", 5, "2026-10-01T09:00:00Z")
+    out = text(root, None)
+    assert "Totals: 2 tickets" in out
+    assert "Gates bypassed: 0 over 1 delivered tickets." in out

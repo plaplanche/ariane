@@ -12,7 +12,7 @@ from ariane.tracker import Tracker, TrackerError
 SHADOW_WINDOW = 10
 SHADOW_ACCEPTED = 8
 NOT_AVAILABLE = "not available"
-_STOPPED_OUTCOMES = {"delivered", "needs a human", "running"}
+_NOT_STOPS = {"delivered", "needs a human", "running"}
 
 
 def moment(text: str) -> datetime:
@@ -38,11 +38,11 @@ class Human:
 
 
 def restart_seconds(data: dict[str, Any], restarts: list[dict[str, Any]]) -> float:
-    """Each stop (from `steps`) to the next `start` or `verify` of the same ticket."""
+    """Each stop (from `steps`) to the next `verify` record of the same ticket or branch."""
     total = 0.0
     for step in data.get("steps") or []:
         name = step.get("name", "")
-        if not name.startswith("outcome: ") or name.removeprefix("outcome: ") in _STOPPED_OUTCOMES:
+        if not name.startswith("outcome: ") or name.removeprefix("outcome: ") in _NOT_STOPS:
             continue
         stop = moment(step["at"])
         later = [moment(r["started"]) for r in restarts if moment(r["started"]) > stop]
@@ -54,7 +54,7 @@ def restart_seconds(data: dict[str, Any], restarts: list[dict[str, Any]]) -> flo
 def waiting(tracker: Tracker | None, branch: str) -> tuple[float | None, bool]:
     """Seconds from the pull request's opening to its merge or close, and whether it merged.
 
-    None when the tracker is missing, unreachable, or the pull request is still open."""
+    None when the tracker is missing or unreachable; 0 when the pull request is open or absent."""
     if tracker is None:
         return None, False
     try:
@@ -101,8 +101,9 @@ def attempts(data: dict[str, Any]) -> tuple[int, int, int]:
     )
 
 
-def shadow_lines(shadows: list[dict[str, Any]]) -> list[str]:
-    """Totals and the pass line over the last `SHADOW_WINDOW` shadow tickets."""
+def shadow_lines(shadows: list[dict[str, Any]], recent: list[dict[str, Any]]) -> list[str]:
+    """Totals over `shadows`; the pass line over the last `SHADOW_WINDOW` of `recent`, all the
+    shadow tickets whatever the report's `--since`."""
     if not shadows:
         return []
     judged = [d for d in shadows if judgement(d)]
@@ -116,7 +117,7 @@ def shadow_lines(shadows: list[dict[str, Any]]) -> list[str]:
         f"Shadow: {len(shadows)} tickets, accept rate {rate}, {len(shadows) - len(judged)} not yet"
         f" judged, {push} agent push or pull-request attempts, {violations} guard violations."
     ]
-    last = sorted(shadows, key=lambda d: (d["started"], d["ticket"]))[-SHADOW_WINDOW:]
+    last = sorted(recent, key=lambda d: (d["started"], d["ticket"]))[-SHADOW_WINDOW:]
     ok = (
         len(last) == SHADOW_WINDOW
         and all(attempts(d)[0] + attempts(d)[1] + attempts(d)[2] == 0 for d in last)

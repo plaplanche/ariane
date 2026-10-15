@@ -18,7 +18,10 @@ ADR 0030 items 2, 6 and 7 name the report's success numbers; the spec leaves the
 - Delivery writes `blocking_red_at_delivery` into `metrics.json`.
 - Merged while no-go: the pull request merged and the last `verify` record of its branch is
   no-go, or there is none and the ticket's outcome is `needs a human`. The head is not compared.
-- Shadow pass needs ten shadow tickets; fewer reads "no".
+- Shadow pass needs ten shadow tickets; fewer reads "no". The window is the last ten shadow
+  tickets overall, not filtered by `--since`.
+- Shadow clones are full checkouts: only `shadow/<n>/work/<n>/metrics.json` of mode `shadow` is read.
+- After the first tracker failure the report asks no more per ticket.
 
 ## Consequences
 Per-ticket lines get a suffix; the new total lines come before `Totals:`.
