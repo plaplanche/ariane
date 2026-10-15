@@ -186,24 +186,27 @@ sequenceDiagram
   participant H as shadow
   participant T as tracker (github)
   participant G as git
+  participant F as flow
   participant R as runtime (claude_code or opencode)
-  participant C as checks
-  participant V as review
   participant M as metrics
+  participant P as replay
+  participant S as review_session
   U->>CLI: ariane start --shadow n
   CLI->>H: run_shadow
   H->>T: read the issue (the only call to the tracker)
   H->>G: clone into repo.ariane/shadow/n, remove the origin
-  H->>R: run the implementer session in the clone
-  R-->>H: SessionResult
-  H->>M: write metrics.json in the clone
-  H->>G: commit in the clone
-  H->>C: replay the checks
-  C-->>H: results
-  H->>R: run a read-only reviewer session
-  R-->>H: answer
-  H->>V: validate the answer
-  H->>M: write metrics.json in the clone
+  H->>F: run the ticket in the clone (ShadowRun, a flow run)
+  F->>R: run the implementer session
+  R-->>F: SessionResult
+  F->>M: write metrics.json in the clone
+  F->>G: guard checks, commit in the clone
+  F->>P: replay and review
+  P->>S: review in the reviewer tree
+  S->>R: run a read-only reviewer session
+  R-->>S: answer
+  S-->>P: review result
+  F->>M: write metrics.json in the clone
+  Note over F,H: delivery is replaced by the local record (ShadowRun overrides it)
   H-->>CLI: Outcome (stop before push, pull request and statuses)
   CLI-->>U: one line
 ```
@@ -252,8 +255,8 @@ sequenceDiagram
   CLI->>P: report
   P->>M: read work/*/metrics.json and work/verify/**/metrics.json
   P->>H: read the metrics of the shadow clones
-  P->>T: read pull request states (human time)
   P->>E: lines and totals
+  E->>T: read pull request states (human time)
   E-->>P: measures
   P-->>CLI: the report
   CLI-->>U: the table
