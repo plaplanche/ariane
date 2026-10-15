@@ -5,16 +5,101 @@
     "push": 0
   },
   "blocking_red_at_delivery": 0,
-  "first_pass_verdict": "not reviewed",
+  "first_pass_verdict": "no-go",
   "mode": "delivered",
-  "outcome": "running",
-  "rounds": 0,
-  "sessions": [],
+  "outcome": "delivered",
+  "rounds": 1,
+  "sessions": [
+    {
+      "cache_read_tokens": 90030,
+      "cache_write_tokens": 15829,
+      "cost_usd": 0.102423,
+      "duration_s": 140.782,
+      "input_tokens": 12,
+      "model": "claude-sonnet-5-5",
+      "output_tokens": 3008,
+      "role": "implementer",
+      "round": 0,
+      "runtime": "claude-code",
+      "stop_reason": "finished"
+    },
+    {
+      "cache_read_tokens": 198349,
+      "cache_write_tokens": 29876,
+      "cost_usd": 0.38844980000000007,
+      "duration_s": 64.053,
+      "input_tokens": 18,
+      "model": "claude-opus-5-5",
+      "output_tokens": 5485,
+      "role": "reviewer",
+      "round": 0,
+      "runtime": "claude-code",
+      "stop_reason": "finished"
+    },
+    {
+      "cache_read_tokens": 34497,
+      "cache_write_tokens": 11595,
+      "cost_usd": 0.06610169999999999,
+      "duration_s": 22.557,
+      "input_tokens": 6,
+      "model": "claude-sonnet-5-5",
+      "output_tokens": 1626,
+      "role": "implementer",
+      "round": 1,
+      "runtime": "claude-code",
+      "stop_reason": "finished"
+    },
+    {
+      "cache_read_tokens": 124380,
+      "cache_write_tokens": 23012,
+      "cost_usd": 0.29350800000000005,
+      "duration_s": 50.754,
+      "input_tokens": 14,
+      "model": "claude-opus-5-5",
+      "output_tokens": 4224,
+      "role": "reviewer",
+      "round": 1,
+      "runtime": "claude-code",
+      "stop_reason": "finished"
+    }
+  ],
   "started": "2026-10-15T18:42:37Z",
   "steps": [
     {
       "at": "2026-10-15T18:42:38Z",
       "name": "folder opened"
+    },
+    {
+      "at": "2026-10-15T18:44:59Z",
+      "name": "implementer session 1 stopped"
+    },
+    {
+      "at": "2026-10-15T18:46:48Z",
+      "name": "checks replayed"
+    },
+    {
+      "at": "2026-10-15T18:47:52Z",
+      "name": "reviewer session 2 stopped"
+    },
+    {
+      "at": "2026-10-15T18:47:53Z",
+      "name": "fix round 1 began"
+    },
+    {
+      "at": "2026-10-15T18:48:16Z",
+      "name": "implementer session 3 stopped"
+    },
+    {
+      "at": "2026-10-15T18:50:10Z",
+      "name": "checks replayed"
+    },
+    {
+      "at": "2026-10-15T18:51:01Z",
+      "name": "reviewer session 4 stopped"
+    },
+    {
+      "at": "2026-10-15T18:51:02Z",
+      "name": "outcome: delivered"
     }
   ],
   "ticket": 100
