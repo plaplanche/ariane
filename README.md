@@ -83,6 +83,28 @@ implementer session, a replay and a review. Then it pushes the branch, opens the
 draft that needs a human if the review is still no-go) and publishes each check's result as a
 commit status (`ariane/<check name>`) on its head commit. The ticket's records are in `work/12/`, including `work/12/metrics.json`: cost, tokens, durations,
 fix rounds, first-pass verdict and outcome of the ticket, rewritten after each step.
+`work/12/metrics.json` also counts, in `attempts`, the `git push` and `gh pr create` commands the agent tried and the guard violations ([ADR 0036](docs/adr/0036-shadow-mode-and-attempts.md)).
+
+**Shadow mode** measures Ariane while your current process does the real work. `ariane start --shadow 12`
+runs the same flow in a separate clone, `<repo>.ariane/shadow/12`, cut from your repository's last
+fetched `origin/<base branch>` with `origin` removed: your repository is only read, and nothing is
+pushed, no pull request opened, no status or comment posted. It ends with the clone's
+`work/12/` to read. Remove the clone to start the ticket over.
+
+PowerShell:
+
+```powershell
+git fetch origin
+ariane start --shadow 12
+```
+
+bash:
+
+```bash
+git fetch origin
+ariane start --shadow 12
+```
+
 A GitHub Actions workflow (`check-statuses.yml`) also publishes these statuses from the committed
 report, including when Ariane cannot (for example from a cloud session).
 `ariane verify <branch> [--issue N]` checks and reviews a local branch finished by hand: a clean

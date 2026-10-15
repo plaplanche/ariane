@@ -4,7 +4,7 @@ The `ariane` command line. It parses arguments, wires the configuration, tracker
 
 ## Main types and functions
 
-- `main`: the entry point, returns the exit code. Commands: `start`, `status`, `report [--since YYYY-MM-DD]` (cost, agent time, rounds and verdicts per ticket, from `report`), and `verify <branch> [--issue N]` (checks and reviews a local branch finished by hand, C23, ADR 0028). `start` and `verify --issue` both build the tracker with `[tracker].ready_label`, so both apply the issue gate (C21, ADR 0032).
+- `main`: the entry point, returns the exit code. Commands: `start [--shadow]` (`--shadow`: the ticket runs in a separate clone through `shadow`, C19, ADR 0036), `status`, `report [--since YYYY-MM-DD]` (cost, agent time, rounds and verdicts per ticket, from `report`), and `verify <branch> [--issue N]` (checks and reviews a local branch finished by hand, C23, ADR 0028). `start` and `verify --issue` both build the tracker with `[tracker].ready_label`, so both apply the issue gate (C21, ADR 0032).
 
 `_runtime` builds the `RoutedRuntime` from each role's `runtime` in the configuration; `config.load` honours `ARIANE_CONFIG`.
 
@@ -17,6 +17,7 @@ flowchart LR
   cli --> config
   cli --> flow
   cli --> verify
+  cli --> shadow
   cli --> git
   cli --> process
   cli --> ticket

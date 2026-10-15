@@ -4,6 +4,8 @@ Claude Code as an agent runtime: it starts the `claude` CLI for one session and 
 
 A `reviewer` session (ADR 0031) starts with `--restricted` and one `--add-dir` per `Session.add_dirs`, from an empty working directory, with no `--permission-mode bypassPermissions` and no `--setting-sources`; every other role keeps `bypassPermissions` and `--setting-sources project,local`.
 
+Attempts (C19, ADR 0036): `TokenTally` also reads the `tool_use` blocks of the assistant messages and counts, once per block id, the `Bash` commands that push or open a pull request (`attempts` module); `run` puts the counts on `SessionResult.attempts`, whatever the stop reason.
+
 ## Main types and functions
 
 - `ClaudeCodeRuntime`: implements `AgentRuntime`; it declares `ANTHROPIC_` and `CLAUDE_` as its login variables.
@@ -17,6 +19,7 @@ Arrows go from the caller to the callee.
 
 ```mermaid
 flowchart LR
+  claude_code --> attempts
   claude_code --> process
   claude_code --> runtime
   cli --> claude_code
@@ -24,4 +27,4 @@ flowchart LR
 
 ## Serves
 
-C5, C10; ADR 0007, ADR 0015, ADR 0016. See [the component view](../3-components.md).
+C5, C10; ADR 0007, ADR 0015, ADR 0016, ADR 0036. See [the component view](../3-components.md).

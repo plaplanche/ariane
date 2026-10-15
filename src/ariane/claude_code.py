@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from ariane import process
+from ariane.attempts import AttemptTally
 from ariane.runtime import Session, SessionResult, StopReason
 
 # First layer of the push guard; the worktree push URL and the post-session check are the others.
@@ -80,6 +81,10 @@ class ClaudeCodeRuntime:
 
     def run(self, session: Session) -> SessionResult:
         tally = TokenTally(session.max_tokens)
+        result = self._run(session, tally)
+        return dataclasses.replace(result, attempts=tally.attempts.attempts)
+
+    def _run(self, session: Session, tally: TokenTally) -> SessionResult:
         try:
             completed = process.stream(
                 self.command(session),
@@ -116,6 +121,8 @@ class TokenTally:
     def __init__(self, max_tokens: int | None) -> None:
         self.max_tokens = max_tokens
         self._usage: dict[str, tuple[int, int, int, int]] = {}
+        self.attempts = AttemptTally()
+        self._seen: set[str] = set()
 
     @property
     def parts(self) -> tuple[int, int, int, int]:
@@ -142,6 +149,7 @@ class TokenTally:
             return False
         if not isinstance(message, dict) or not isinstance(message.get("id"), str):
             return False
+        self._count_attempts(message)
         usage = message.get("usage")
         if not isinstance(usage, dict):
             return False
@@ -152,6 +160,18 @@ class TokenTally:
             _int(usage.get("output_tokens")) or 0,
         )
         return self.max_tokens is not None and self.total >= self.max_tokens
+
+    def _count_attempts(self, message: dict[str, Any]) -> None:
+        """Shell commands of the message's `tool_use` blocks (a streamed message repeats them)."""
+        content = message.get("content")
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            tool_input = block.get("input")
+            command = tool_input.get("command") if isinstance(tool_input, dict) else None
+            if isinstance(command, str) and str(block.get("id")) not in self._seen:
+                self._seen.add(str(block.get("id")))
+                self.attempts.add_command(command)
 
     def stopped_result(self) -> SessionResult:
         read, cache_read, cache_write, out = self.parts

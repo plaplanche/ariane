@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ariane import process
+from ariane.attempts import AttemptTally
 from ariane.runtime import Session, SessionResult, StopReason
 
 # opencode has no turn option on its command line: the agent's `steps` is the turn cap.
@@ -151,6 +152,8 @@ class Events:
         self.stopped_normally = False
         self.cap: str | None = None
         self.stop_text = ""
+        self.attempts = AttemptTally()
+        self._seen: set[str] = set()
 
     @property
     def total(self) -> int:
@@ -167,11 +170,24 @@ class Events:
         kind, part = event.get("type"), event.get("part")
         if kind == "text" and isinstance(part, dict) and isinstance(part.get("text"), str):
             self.text = part["text"]
+        elif kind == "tool_use" and isinstance(part, dict):
+            self._tool_use(part)
         elif kind == "error":
             self.error = _error_text(event.get("error"))
         elif kind == "step_finish" and isinstance(part, dict):
             return self._step_finish(part)
         return False
+
+    def _tool_use(self, part: dict[str, Any]) -> None:
+        """A shell tool call: its command counts once, whatever the events repeat."""
+        state = part.get("state")
+        tool_input = state.get("input") if isinstance(state, dict) else None
+        command = tool_input.get("command") if isinstance(tool_input, dict) else None
+        call = str(part.get("callID") or part.get("id") or command)
+        is_shell = str(part.get("tool")).lower() == "bash"
+        if is_shell and isinstance(command, str) and call not in self._seen:
+            self._seen.add(call)
+            self.attempts.add_command(command)
 
     def _step_finish(self, part: dict[str, Any]) -> bool:
         tokens = part.get("tokens")
@@ -228,6 +244,7 @@ class Events:
             summary=summary,
             cap=cap,
             structured_output=structured,
+            attempts=self.attempts.attempts,
         )
 
 

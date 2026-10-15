@@ -25,7 +25,7 @@ options:
 ## `ariane start`
 
 ```text
-usage: ariane start [-h] [--log-level LEVEL] issue
+usage: ariane start [-h] [--log-level LEVEL] [--shadow] issue
 
 positional arguments:
   issue              issue number
@@ -34,6 +34,8 @@ options:
   -h, --help         show this help message and exit
   --log-level LEVEL  technical log level: debug, info, warning or error
                      (default: ARIANE_LOG_LEVEL, else warning)
+  --shadow           run the ticket in a separate clone, without push or pull
+                     request
 ```
 
 ## `ariane status`

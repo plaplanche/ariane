@@ -8,6 +8,8 @@ opencode as an agent runtime, for the reviewer role: it starts `opencode run --p
 - Events are read line by line: `step_finish` tokens (input, cache read, cache write, output) and cost are summed; the session stops (`budget`) when the token cap (`Session.max_tokens`) or the cost cap (`max_budget_usd`) is reached, killing the process tree. An `error` event or a non-zero exit is `error`; `finished` needs a `step_finish` with reason `stop`. A cost of 0 is "cost not reported".
 - The title call has no `step_finish`: its usage is never reported, and `describe` says so with `opencode --version`, for the journal.
 
+Attempts (C19, ADR 0036): `Events` reads the `tool_use` events of the `bash` tool and counts, once per call, the commands that push or open a pull request (`attempts` module), reported on `SessionResult.attempts`.
+
 ## Main types and functions
 
 - `OpenCodeRuntime`: implements `AgentRuntime`; its login variables are the provider keys of its model (`login_variables`).
@@ -20,6 +22,7 @@ Arrows go from the caller to the callee.
 
 ```mermaid
 flowchart LR
+  opencode --> attempts
   opencode --> process
   opencode --> runtime
   cli --> opencode
@@ -27,4 +30,4 @@ flowchart LR
 
 ## Serves
 
-C5; ADR 0014, ADR 0015, ADR 0016, ADR 0029. See [the component view](../3-components.md).
+C5; ADR 0014, ADR 0015, ADR 0016, ADR 0029, ADR 0036. See [the component view](../3-components.md).

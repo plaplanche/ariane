@@ -18,6 +18,8 @@
 - The journal names the runtime of the session's role (`runtime.for_role`).
 - Interruption (C5, C23): Ctrl-C during a ticket is recorded like any stop ("interrupted by the user" in the journal and `status.md`, committed) and the outcome has exit code `EXIT_INTERRUPTED` (130); Ctrl-C before the ticket folder exists (reading the issue, preparing the branch) has nothing to record: one line, same code. `ariane verify` handles its own interruption (see [verify](verify.md)).
 - `worktree_path`, `branch_name`: where a ticket lives.
+- Shadow mode (C19, ADR 0036): delivery is the overridable `_TicketRun._deliver`; [shadow](shadow.md) subclasses the run, with its own preparation, no remote check and a local record instead of the push.
+- Guard violations (C19): `verify` counts each `Stop` of the post-session check in the metrics before raising it.
 
 ## Collaborations
 
@@ -41,9 +43,10 @@ flowchart LR
   flow --> runtime
   flow --> tracker
   cli --> flow
+  shadow --> flow
   verify --> flow
 ```
 
 ## Serves
 
-C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026, ADR 0027, ADR 0034, C19. See [the component view](../3-components.md).
+C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026, ADR 0027, ADR 0034, ADR 0036, C19. See [the component view](../3-components.md).

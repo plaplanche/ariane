@@ -8,6 +8,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
 
+from ariane.attempts import Attempts
+
 
 class StopReason(StrEnum):
     FINISHED = "finished"
@@ -44,6 +46,8 @@ class SessionResult:
     permission_denials: tuple[str, ...] = field(default_factory=tuple)
     cap: str | None = None  # which cap stopped a `budget` session
     structured_output: Any = None  # the answer parsed by the runtime, when a schema was given
+    # pushes and pull requests the agent attempted (ADR 0036)
+    attempts: Attempts = field(default_factory=Attempts)
 
     def usage(self) -> tuple[str, str]:
         """The cost and the tokens as the journal words them."""
