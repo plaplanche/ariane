@@ -12,8 +12,8 @@ flowchart LR
   user -->|ariane start --shadow n| ariane
   user -->|ariane start n| ariane
   user -->|ariane verify branch| ariane
-  user -->|ariane report --since| ariane
-  user -->|ariane judge n accept or reject, minutes| ariane
+  user -->|"ariane report [--since]"| ariane
+  user -->|"ariane judge n accept or reject, --minutes N, [--note]"| ariane
   user -->|ariane status n| ariane
   ariane -->|one line: what was done, what next| user
   ariane -->|read an issue| github

@@ -20,7 +20,10 @@ hand-written dependency graphs drifted: missing and stale edges, and modules abs
   under `docs/architecture/`: a participant whose label starts with a module name is that module
   (actors and other participants are ignored), and every solid arrow `A->>B` between two different
   modules must be an edge `A -> B` of the computed graph (a type-only edge counts). Return arrows
-  and self-calls are not checked.
+  and self-calls are not checked. Any other arrow kind (open `->`, async `-)` and `--)`, cross `-x`
+  and `--x`) fails the check, and so does an arrow written with spaces around it (`A ->> B:`), so
+  that no call can escape the import check; the spec leaves these kinds open and this is the
+  simplest rule. A participant used by an arrow without a declaration is an error too.
 
 ## Consequences
 An import added without regenerating fails `generate_docs.py --check` and its test. Hand-written
