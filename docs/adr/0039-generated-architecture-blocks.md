@@ -16,7 +16,11 @@ hand-written dependency graphs drifted: missing and stale edges, and modules abs
   `<!-- generated: <name> -->` and `<!-- end generated -->`: `dependencies` in `3-components.md`,
   `collaborations` in each module file, `modules` in `docs/architecture/README.md`. The generator
   rewrites only what lies between the markers; a file without its markers is an error.
-- The sequence diagrams and the module texts stay hand-written.
+- The sequence diagrams and the module texts stay hand-written. A test reads every `sequenceDiagram`
+  under `docs/architecture/`: a participant whose label starts with a module name is that module
+  (actors and other participants are ignored), and every solid arrow `A->>B` between two different
+  modules must be an edge `A -> B` of the computed graph (a type-only edge counts). Return arrows
+  and self-calls are not checked.
 
 ## Consequences
 An import added without regenerating fails `generate_docs.py --check` and its test. Hand-written

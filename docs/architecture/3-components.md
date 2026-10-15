@@ -133,7 +133,10 @@ sequenceDiagram
   participant T as tracker (github)
   participant G as git
   participant R as runtime (claude_code or opencode)
+  participant P as replay
   participant C as checks
+  participant S as review_session
+  participant M as metrics
   participant D as delivery
   U->>CLI: ariane start n
   CLI->>F: start
@@ -142,28 +145,66 @@ sequenceDiagram
   F->>F: setup command, ticket folder brief
   F->>R: run the implementer session
   R-->>F: SessionResult
+  F->>M: write metrics.json
   F->>G: guard checks (configuration, branch, untracked files)
   F->>G: commit
-  F->>G: add a clean replay tree
-  F->>C: replay the checks
-  C-->>F: results
+  F->>P: replay and review
+  P->>G: add a clean replay tree
+  P->>C: replay the checks
+  C-->>P: results
   alt a blocking check failed
-    F-->>CLI: stop before any review, push nothing
+    P-->>F: stop before any review, push nothing
   end
-  F->>R: run a read-only reviewer session in the reviewer tree (no instruction files, ADR 0031)
-  R-->>F: answer (validated by review, one retry)
-  F->>G: verify git, the tree and the remote did not change
-  F->>F: review-0.md; go continues
+  P->>S: review in the reviewer tree (no instruction files, ADR 0031)
+  S->>R: run a read-only reviewer session
+  R-->>S: answer (validated by review, one retry)
+  S-->>P: review-0.md; go continues
+  P->>G: verify git, the tree and the remote did not change
   loop at most two fix rounds, while the review is no-go
     F->>R: run a fresh implementer session with the findings
-    F->>G: guard checks, commit, clean replay, checks
-    F->>R: run a read-only reviewer session (review-1.md, review-2.md)
+    F->>M: write metrics.json
+    F->>G: guard checks, commit
+    F->>P: clean replay, checks, review (review-1.md, review-2.md)
   end
   F->>D: deliver
   D->>G: one push
   D->>T: open the pull request (a draft, needs a human, if still no-go)
   D->>T: publish statuses
   F-->>CLI: Outcome
+  CLI-->>U: one line
+```
+
+## `ariane start --shadow <n>`
+
+The run reads the issue only: no push, no pull request, no status, nothing written to the tracker
+(ADR 0036). Everything is recorded in a separate clone with its origin removed.
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant CLI as cli
+  participant H as shadow
+  participant T as tracker (github)
+  participant G as git
+  participant R as runtime (claude_code or opencode)
+  participant C as checks
+  participant V as review
+  participant M as metrics
+  U->>CLI: ariane start --shadow n
+  CLI->>H: run_shadow
+  H->>T: read the issue (the only call to the tracker)
+  H->>G: clone into repo.ariane/shadow/n, remove the origin
+  H->>R: run the implementer session in the clone
+  R-->>H: SessionResult
+  H->>M: write metrics.json in the clone
+  H->>G: commit in the clone
+  H->>C: replay the checks
+  C-->>H: results
+  H->>R: run a read-only reviewer session
+  R-->>H: answer
+  H->>V: validate the answer
+  H->>M: write metrics.json in the clone
+  H-->>CLI: Outcome (stop before push, pull request and statuses)
   CLI-->>U: one line
 ```
 
@@ -176,7 +217,9 @@ sequenceDiagram
   participant V as verify
   participant G as git
   participant C as checks
+  participant S as review_session
   participant R as runtime (claude_code or opencode)
+  participant M as metrics
   U->>CLI: ariane verify branch
   CLI->>V: verify
   V->>G: refuse a checked-out branch with uncommitted changes
@@ -184,9 +227,48 @@ sequenceDiagram
   V->>V: setup command
   V->>C: replay the checks
   C-->>V: results
-  V->>R: run a read-only reviewer session in the `-reviewer` tree (no instruction files, ADR 0031)
-  R-->>V: answer (validated by review, one retry)
-  V->>G: commit work/verify/branch/review.md and checks.md on the branch
+  V->>S: review in the `-reviewer` tree (no instruction files, ADR 0031)
+  S->>R: run a read-only reviewer session
+  R-->>S: answer (validated by review, one retry)
+  S-->>V: review result
+  V->>M: write metrics.json
+  V->>G: commit work/verify/branch/review.md, checks.md and metrics.json on the branch
   V-->>CLI: Outcome
   CLI-->>U: one line (never pushes)
+```
+
+## `ariane report [--since]`
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant CLI as cli
+  participant P as report
+  participant M as metrics
+  participant H as shadow
+  participant T as tracker (github)
+  participant E as measures
+  U->>CLI: ariane report --since
+  CLI->>P: report
+  P->>M: read work/*/metrics.json and work/verify/**/metrics.json
+  P->>H: read the metrics of the shadow clones
+  P->>T: read pull request states (human time)
+  P->>E: lines and totals
+  E-->>P: measures
+  P-->>CLI: the report
+  CLI-->>U: the table
+```
+
+## `ariane judge`
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant CLI as cli
+  participant H as shadow
+  U->>CLI: ariane judge n accept|reject --minutes N
+  CLI->>H: judge
+  H->>H: write the verdict and the minutes into the shadow metrics.json
+  H-->>CLI: Outcome
+  CLI-->>U: one line
 ```
