@@ -5,17 +5,18 @@
 ## `ariane`
 
 ```text
-usage: ariane [-h] [--version] {start,status,report,verify} ...
+usage: ariane [-h] [--version] {start,status,report,verify,judge} ...
 
 Turn tickets into reviewed pull requests.
 
 positional arguments:
-  {start,status,report,verify}
+  {start,status,report,verify,judge}
     start               run the ticket of an issue up to its pull request
     status              show a ticket's state, read from its folder
     report              show cost, agent time and verdicts per ticket
     verify              check and review a local branch finished by hand, then
                         record it on the branch
+    judge               record your verdict and time on a shadow ticket
 
 options:
   -h, --help            show this help message and exit
@@ -78,4 +79,22 @@ options:
                      (default: ARIANE_LOG_LEVEL, else warning)
   --issue ISSUE      give this issue's text to the reviewer (default: the
                      branch's commit messages)
+```
+
+## `ariane judge`
+
+```text
+usage: ariane judge [-h] [--log-level LEVEL] --minutes MINUTES [--note NOTE]
+                    issue {accept,reject}
+
+positional arguments:
+  issue              issue number
+  {accept,reject}    is the diff acceptable?
+
+options:
+  -h, --help         show this help message and exit
+  --log-level LEVEL  technical log level: debug, info, warning or error
+                     (default: ARIANE_LOG_LEVEL, else warning)
+  --minutes MINUTES  human time spent on the ticket, 0 to 1440
+  --note NOTE        free text kept with the verdict
 ```

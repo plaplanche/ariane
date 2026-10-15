@@ -89,7 +89,9 @@ fix rounds, first-pass verdict and outcome of the ticket, rewritten after each s
 runs the same flow in a separate clone, `<repo>.ariane/shadow/12`, cut from your repository's last
 fetched `origin/<base branch>` with `origin` removed: your repository is only read, and nothing is
 pushed, no pull request opened, no status or comment posted. It ends with the clone's
-`work/12/` to read. Remove the clone to start the ticket over.
+`work/12/` to read. Remove the clone to start the ticket over. Then say what you think of the diff and how long it took
+you: `ariane judge 12 accept --minutes 20 --note "fine"` (or `reject`) records it in the shadow
+ticket's `metrics.json`; judging again keeps the earlier judgement in `judgements_before`.
 
 PowerShell:
 
