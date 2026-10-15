@@ -4,12 +4,14 @@ Ariane turns tickets into reviewed pull requests with AI coding agents, while th
 deciding, understanding and approving. The name comes from Ariadne's thread (*le fil d'Ariane*):
 you never lose the thread of your own code.
 
-**Status:** slice 3 (review, vendor-neutral) is done: `ariane start <issue>` takes a GitHub issue to a
+**Status:** slice 4 (measurement and shadow mode) is built; its gate is pending the second user's
+run on macOS (see [Measure Ariane on your project](#measure-ariane-on-your-project-shadow-mode)).
+Slice 3 (review, vendor-neutral) is done: `ariane start <issue>` takes a GitHub issue to a
 pull request whose checks Ariane replayed in a clean tree and that a read-only reviewer on a
 different model approved, after up to two fix rounds (`[agents.reviewer]` in `ariane.toml`; the
 reviewer can run on Claude Code or opencode). `ariane verify <branch>` gives a branch finished by
-hand the same checks and review. Slice 4, measurement and shadow mode, is next, then approvals
-(slice 5) (see the roadmap in [`docs/spec.md`](docs/spec.md)).
+hand the same checks and review. Approvals
+(slice 5) come next (see the roadmap in [`docs/spec.md`](docs/spec.md)).
 
 ## Try it
 
@@ -134,6 +136,62 @@ read and write"), on top of reading issues and writing pull requests.
   go to standard error and to `<repo>.ariane/logs/<n>.log`, at the level of `--log-level` or
   `ARIANE_LOG_LEVEL` (default warning).
 - [`docs/adr/`](docs/adr/): architecture decision records, written as the implementation goes.
+
+## Measure Ariane on your project (shadow mode)
+
+This is the path for a second user on macOS (it works the same on Linux and Windows) who wants to
+know whether Ariane does at least as well as their current process, on their own project.
+
+**Prerequisites:** [uv](https://docs.astral.sh/uv/), git, Claude Code (`claude`) logged in, and a
+GitHub token with read access to the project's issues.
+
+1. **Install Ariane** ([ADR 0021](docs/adr/0021-second-user-distribution-and-contributions.md)).
+2. **Configure it.** Download [`docs/ariane.example.toml`](docs/ariane.example.toml) from Ariane's
+   repository to the root of your repository as `ariane.toml` (commands below) and set
+   `repository`, the checks and the agents.
+3. **Label each ticket** `ariane`, by a person with write access, and again after any later edit or
+   comment; otherwise `ariane start` refuses the ticket and exits 2 (see above, ADR 0032).
+4. **Per ticket**, fetch, run `ariane start --shadow <n>`, read the clone's `work/<n>/`
+   (`<repo>.ariane/shadow/<n>/work/<n>/`), then record your verdict and the minutes you spent with
+   `ariane judge <n> accept|reject --minutes N`.
+5. **After the tickets**, run `ariane report`.
+
+bash (macOS, Linux):
+
+```bash
+uv tool install git+https://github.com/plaplanche/ariane
+export GH_TOKEN="<a token with read access to issues>"
+curl -fsSL -o ariane.toml https://raw.githubusercontent.com/plaplanche/ariane/main/docs/ariane.example.toml   # then edit it
+git fetch origin
+ariane start --shadow 12
+ariane judge 12 accept --minutes 20   # or reject
+ariane report
+```
+
+PowerShell:
+
+```powershell
+uv tool install git+https://github.com/plaplanche/ariane
+$env:GH_TOKEN = "<a token with read access to issues>"
+Invoke-WebRequest https://raw.githubusercontent.com/plaplanche/ariane/main/docs/ariane.example.toml -OutFile ariane.toml   # then edit it
+git fetch origin
+ariane start --shadow 12
+ariane judge 12 accept --minutes 20   # or reject
+ariane report
+```
+
+Shadow mode never pushes, opens a pull request, sets a
+status, posts a comment or writes to your repository: it works in a separate clone.
+
+**Pass criteria over 10 tickets:** no agent push or pull-request attempt, no write to real data, no
+guard violation, Ariane's diff judged acceptable by you in at least 8, cost and duration recorded.
+`ariane report` prints `shadow pass: yes|no` over the last 10 tickets (no attempt, no violation,
+at least 8 accepted); cost, duration and real data are for you to check.
+
+**Keep a short log of your current process** for the same tickets (your minutes per merged pull
+request, and the steps skipped or gates bypassed). The comparison is on two numbers: human time per
+merged pull request and the count of steps skipped or gates bypassed; Ariane's come from
+`ariane report`, and the owner decides on them (spec, "Measuring Ariane").
 
 ## While a ticket runs
 
