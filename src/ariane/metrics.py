@@ -31,6 +31,7 @@ class Metrics:
         self.rounds = 0
         self.attempts = Attempts()
         self.guard_violations = 0
+        self.blocking_red = 0
         self.first_pass_verdict = NOT_REVIEWED
         self.outcome = "running"
 
@@ -76,6 +77,10 @@ class Metrics:
         """The post-session check found a change it forbids (C11)."""
         self.guard_violations += 1
 
+    def delivered_red(self, count: int) -> None:
+        """The number of blocking checks that were red when the ticket was delivered (C19)."""
+        self.blocking_red = count
+
     def finish(self, outcome: str) -> None:
         self.outcome = outcome
         self.step(f"outcome: {outcome}")
@@ -87,6 +92,7 @@ class Metrics:
                 "pull_request": self.attempts.pull_request,
                 "guard_violations": self.guard_violations,
             },
+            "blocking_red_at_delivery": self.blocking_red,
             "ticket": self.number,
             "mode": self.mode,
             "started": self.started,

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ariane import logs
-from ariane.tracker import Issue, IssueRefused, PullRequest, TrackerError
+from ariane.tracker import Issue, IssueRefused, PullRequest, PullRequestState, TrackerError
 
 _TIMEOUT_S = 30
 _PAGE = 100
@@ -165,6 +165,26 @@ class GitHubTracker:
                 "target_url": target_url,
             },
         )
+
+    def pull_request_state(self, branch: str) -> PullRequestState | None:
+        owner = urllib.parse.quote(self._repository.split("/")[0], safe="")
+        head = urllib.parse.quote(f"{owner}:{branch}", safe=":")
+        path = f"/repos/{self._repository}/pulls?state=all&sort=created&direction=desc&head={head}"
+        found = self._request_any("GET", path)
+        if not isinstance(found, list):
+            raise TrackerError(f"GitHub API GET {path}: unexpected response")
+        if not found:
+            return None
+        try:
+            data = found[0]
+            merged = data.get("merged_at")
+            return PullRequestState(
+                opened=str(data["created_at"]),
+                ended=str(merged or data.get("closed_at") or ""),
+                merged=bool(merged),
+            )
+        except (KeyError, TypeError, AttributeError) as exc:
+            raise TrackerError(f"GitHub API: unexpected pull request: {exc!r}") from None
 
     def _request(self, method: str, path: str, payload: Any = None) -> dict[str, Any]:
         result = self._request_any(method, path, payload)

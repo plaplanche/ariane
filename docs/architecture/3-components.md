@@ -72,6 +72,10 @@ flowchart TD
   cli --> report
   report --> metrics
   report --> ticket
+  report --> measures
+  report --> shadow
+  report --> tracker
+  measures --> tracker
   flow --> runtime
   flow --> tracker
   git --> process

@@ -80,7 +80,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     status.add_argument("issue", type=_issue_number, help="issue number")
     rep = sub.add_parser(
-        "report", parents=[common], help="show cost, agent time and verdicts per ticket"
+        "report",
+        parents=[common],
+        help="show cost, agent time, human time, gates bypassed, shadow results",
     )
     rep.add_argument(
         "--since",
@@ -155,10 +157,28 @@ def _date(text: str) -> str:
 
 
 def _report(root: Path, since: str | None) -> int:
-    result = report.build(root, since)
+    result = report.build(root, since, _report_tracker(root))
     for line in result.lines:
         print(line)
     return result.exit_code
+
+
+def _report_tracker(root: Path) -> GitHubTracker | None:
+    """The tracker for the waiting times, or None without configuration or token."""
+    try:
+        cfg = config.load(root)
+    except config.ConfigError:
+        return None
+    token = os.environ.get(cfg.tracker.token_env, "")
+    if not token:
+        return None
+    logs.add_secrets([token])
+    return GitHubTracker(
+        repository=cfg.tracker.repository,
+        token=token,
+        api_url=cfg.tracker.api_url,
+        ready_label=cfg.tracker.ready_label,
+    )
 
 
 def _start(root: Path, number: int, shadowed: bool = False) -> int:

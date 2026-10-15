@@ -34,6 +34,15 @@ class PullRequest:
     url: str
 
 
+@dataclass(frozen=True)
+class PullRequestState:
+    """When a pull request opened and ended (merged or closed); `ended` is empty while open."""
+
+    opened: str
+    ended: str
+    merged: bool
+
+
 class Tracker(Protocol):
     def read_issue(self, number: int) -> Issue:
         """Return the issue's title and body (never its comments); refuse pull requests."""
@@ -47,6 +56,10 @@ class Tracker(Protocol):
 
     def file_url(self, branch: str, path: str) -> str:
         """Where a human with access to the repository reads `path` on `branch`."""
+        ...
+
+    def pull_request_state(self, branch: str) -> PullRequestState | None:
+        """The latest pull request from `branch` (ISO 8601 times), or None if there is none."""
         ...
 
     def set_commit_status(
@@ -65,6 +78,8 @@ class InMemoryTracker:
     opened: list[dict[str, Any]] = field(default_factory=list)
     statuses: list[dict[str, str]] = field(default_factory=list)
     refuse_statuses: bool = False
+    pull_states: dict[str, PullRequestState] = field(default_factory=dict)
+    unreachable: bool = False
 
     def add_issue(self, number: int, title: str, body: str) -> Issue:
         issue = Issue(number, title, body, f"memory://issues/{number}")
@@ -90,6 +105,11 @@ class InMemoryTracker:
 
     def file_url(self, branch: str, path: str) -> str:
         return f"memory://blob/{branch}/{path}"
+
+    def pull_request_state(self, branch: str) -> PullRequestState | None:
+        if self.unreachable:
+            raise TrackerError("the tracker is unreachable")
+        return self.pull_states.get(branch)
 
     def set_commit_status(
         self, sha: str, context: str, state: str, description: str, target_url: str

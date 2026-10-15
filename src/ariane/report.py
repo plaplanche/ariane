@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ariane import metrics, ticket
+from ariane import measures, metrics, shadow, ticket
+from ariane.tracker import Tracker
 
 PARTLY = "partly not reported"
 
@@ -18,11 +19,15 @@ class Report:
     exit_code: int
 
 
-def build(root: Path, since: str | None) -> Report:
-    """Read every metrics file under `root/work`, keep tickets started on or after `since`."""
+def build(root: Path, since: str | None, tracker: Tracker | None = None) -> Report:
+    """Read every metrics file under `root/work` and the shadow clones, keep tickets started on
+    or after `since`. Without a `tracker` the waiting time reads "not available"."""
     work = root / ticket.WORK_DIR
-    paths = sorted(work.glob(f"*/{metrics.METRICS}")) + sorted(
-        work.glob(f"verify/**/{metrics.METRICS}")
+    shadows = shadow.clone_path(root, 0).parent
+    paths = (
+        sorted(work.glob(f"*/{metrics.METRICS}"))
+        + sorted(work.glob(f"verify/**/{metrics.METRICS}"))
+        + sorted(shadows.glob(f"*/{ticket.WORK_DIR}/*/{metrics.METRICS}"))
     )
     if not paths:
         return Report(["No metrics file found. Next: run ariane start <issue>."], 0)
@@ -34,9 +39,8 @@ def build(root: Path, since: str | None) -> Report:
             data = _read(path)
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             failed += 1
-            lines.append(
-                f"Could not read {path.relative_to(root).as_posix()}: {_why(exc)}; skipped."
-            )
+            shown = path.relative_to(root if path.is_relative_to(root) else shadows.parent)
+            lines.append(f"Could not read {shown.as_posix()}: {_why(exc)}; skipped.")
             continue
         verify_dir = work / "verify"
         if path.is_relative_to(verify_dir):
@@ -44,10 +48,15 @@ def build(root: Path, since: str | None) -> Report:
         if since is None or data["started"][:10] >= since:
             rows.append(data)
     rows.sort(key=lambda d: (d["started"], d["ticket"], d.get("branch", "")))
-    lines.extend(_row(d) for d in rows)
+    takeovers = [d for d in rows if "branch" in d]
+    delivered = [d for d in rows if d["mode"] == "delivered"]
+    people = {id(d): measures.human(d, tracker, takeovers) for d in delivered}
+    flagged = {id(d): measures.bypassed(d, takeovers, people[id(d)].merged) for d in delivered}
+    lines.extend(_row(d) + _extra(d, people, flagged) for d in rows)
     cost, partial = _cost([s for d in rows for s in d["sessions"]])
     seconds = sum(_duration(d) for d in rows)
     rounds = sum(d["rounds"] for d in rows)
+    lines.extend(_measure_lines(rows, delivered, people, flagged))
     reviewed = [d for d in rows if d["first_pass_verdict"] != metrics.NOT_REVIEWED]
     go = sum(1 for d in reviewed if d["first_pass_verdict"] == "go")
     rate = f"{go}/{len(reviewed)}" + (f" ({100 * go // len(reviewed)}%)" if reviewed else "")
@@ -129,3 +138,49 @@ def _row(data: dict[str, Any]) -> str:
         f" agent time {_time(_duration(data))}, {data['rounds']} rounds,"
         f" first pass {data['first_pass_verdict']}"
     )
+
+
+def _extra(
+    data: dict[str, Any], people: dict[int, measures.Human], flagged: dict[int, list[str]]
+) -> str:
+    if id(data) in people:
+        found = flagged[id(data)]
+        return f", {people[id(data)].text()}, gates bypassed {len(found)}" + (
+            f" ({', '.join(found)})" if found else ""
+        )
+    if data["mode"] != "shadow":
+        return ""
+    judged = measures.judgement(data)
+    if judged is None:
+        return ", not yet judged"
+    return f", judged {judged.get('verdict')} in {judged.get('minutes')} min"
+
+
+def _measure_lines(
+    rows: list[dict[str, Any]],
+    delivered: list[dict[str, Any]],
+    people: dict[int, measures.Human],
+    flagged: dict[int, list[str]],
+) -> list[str]:
+    """Human time and gates bypassed in total, then the shadow results."""
+    shadows = [d for d in rows if d["mode"] == "shadow"]
+    judged = sum(
+        int((measures.judgement(d) or {}).get("minutes") or 0)
+        for d in shadows
+        if measures.judgement(d)
+    )
+    waits = [p.waiting_s for p in people.values()]
+    missing = any(w is None for w in waits)
+    wait = sum(w for w in waits if w is not None)
+    restart = sum(p.restart_s for p in people.values())
+    merged = sum(1 for p in people.values() if p.merged)
+    shown = measures.NOT_AVAILABLE if missing and not wait else measures.clock(wait)
+    partial = " (partly not available)" if missing and wait else ""
+    per = f", {measures.clock((wait + restart) / merged)} per merged pull request" if merged else ""
+    lines = [
+        f"Human time: waiting {shown}{partial}, restarts {measures.clock(restart)},"
+        f" shadow judged {judged} min{per}.",
+        f"Gates bypassed: {sum(len(f) for f in flagged.values())} over {len(delivered)}"
+        " delivered tickets.",
+    ]
+    return lines + measures.shadow_lines(shadows)
