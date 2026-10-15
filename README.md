@@ -146,23 +146,25 @@ know whether Ariane does at least as well as their current process, on their own
 GitHub token with read access to the project's issues.
 
 1. **Install Ariane** ([ADR 0021](docs/adr/0021-second-user-distribution-and-contributions.md)).
-2. **Configure it.** Copy [`docs/ariane.example.toml`](docs/ariane.example.toml) to the root of your
-   repository as `ariane.toml` and set `repository`, the checks and the agents.
-3. **Per ticket**, fetch, run `ariane start --shadow <n>`, read the clone's `work/<n>/`
+2. **Configure it.** Download [`docs/ariane.example.toml`](docs/ariane.example.toml) from Ariane's
+   repository to the root of your repository as `ariane.toml` (commands below) and set
+   `repository`, the checks and the agents.
+3. **Label each ticket** `ariane`, by a person with write access, and again after any later edit or
+   comment; otherwise `ariane start` refuses the ticket and exits 2 (see above, ADR 0032).
+4. **Per ticket**, fetch, run `ariane start --shadow <n>`, read the clone's `work/<n>/`
    (`<repo>.ariane/shadow/<n>/work/<n>/`), then record your verdict and the minutes you spent with
    `ariane judge <n> accept|reject --minutes N`.
-4. **After the tickets**, run `ariane report`.
+5. **After the tickets**, run `ariane report`.
 
 bash (macOS, Linux):
 
 ```bash
 uv tool install git+https://github.com/plaplanche/ariane
 export GH_TOKEN="<a token with read access to issues>"
-cp docs/ariane.example.toml ariane.toml   # then edit it
+curl -fsSL -o ariane.toml https://raw.githubusercontent.com/plaplanche/ariane/main/docs/ariane.example.toml   # then edit it
 git fetch origin
 ariane start --shadow 12
-ariane judge 12 accept --minutes 20
-ariane judge 12 reject --minutes 20
+ariane judge 12 accept --minutes 20   # or reject
 ariane report
 ```
 
@@ -171,20 +173,20 @@ PowerShell:
 ```powershell
 uv tool install git+https://github.com/plaplanche/ariane
 $env:GH_TOKEN = "<a token with read access to issues>"
-Copy-Item docs/ariane.example.toml ariane.toml   # then edit it
+Invoke-WebRequest https://raw.githubusercontent.com/plaplanche/ariane/main/docs/ariane.example.toml -OutFile ariane.toml   # then edit it
 git fetch origin
 ariane start --shadow 12
-ariane judge 12 accept --minutes 20
-ariane judge 12 reject --minutes 20
+ariane judge 12 accept --minutes 20   # or reject
 ariane report
 ```
 
-(Use one of `accept` or `reject` per ticket.) Shadow mode never pushes, opens a pull request, sets a
+Shadow mode never pushes, opens a pull request, sets a
 status, posts a comment or writes to your repository: it works in a separate clone.
 
 **Pass criteria over 10 tickets:** no agent push or pull-request attempt, no write to real data, no
 guard violation, Ariane's diff judged acceptable by you in at least 8, cost and duration recorded.
-`ariane report` prints `shadow pass: yes|no` for these.
+`ariane report` prints `shadow pass: yes|no` over the last 10 tickets (no attempt, no violation,
+at least 8 accepted); cost, duration and real data are for you to check.
 
 **Keep a short log of your current process** for the same tickets (your minutes per merged pull
 request, and the steps skipped or gates bypassed). The comparison is on two numbers: human time per

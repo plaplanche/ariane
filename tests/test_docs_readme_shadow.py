@@ -30,3 +30,9 @@ def test_c19_readme_shadow_commands_in_bash_and_powershell() -> None:
         assert found, language
         for command in ("--shadow", "ariane judge", "ariane report"):
             assert any(command in block for block in found), (language, command)
+
+
+def test_c19_readme_shadow_mentions_ready_label() -> None:
+    assert "`ariane`" in section()
+    assert "docs/ariane.example.toml" in section()
+    assert "cp docs/" not in section()
