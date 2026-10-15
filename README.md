@@ -89,6 +89,8 @@ report, including when Ariane cannot (for example from a cloud session).
 replay of the checks, one review, then `work/verify/<branch>/review.md`, `checks.md` and `metrics.json` committed
 on the branch (never pushed). It exits 0 only on a `go` with green blocking checks; the issue's
 text goes to the reviewer with `--issue`, else the branch's commit messages.
+`ariane report [--since YYYY-MM-DD]` summarises cost, agent time, rounds and first-pass verdicts per
+ticket from the `metrics.json` files in the checkout.
 The token needs permission to write commit statuses (for a fine-grained token, "Commit statuses:
 read and write"), on top of reading issues and writing pull requests.
 

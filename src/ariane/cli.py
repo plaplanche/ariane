@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ariane import __version__, config, flow, git, logs, process, ticket, verify
+from ariane import __version__, config, flow, git, logs, process, report, ticket, verify
 from ariane.claude_code import ClaudeCodeRuntime
 from ariane.github import GitHubTracker
 from ariane.opencode import OpenCodeRuntime
@@ -37,6 +38,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         root = git.repo_root(Path.cwd())
     except git.GitError as exc:
         return _say(EXIT_USAGE, f"Did nothing: {exc}. Next: run ariane inside a git repository.")
+    if args.command == "report":
+        logs.configure(level, logs.log_path(root, "report"))
+        return _report(root, args.since)
     if args.command == "verify":
         logs.configure(level, logs.log_path(root, "verify-" + args.branch.replace("/", "-")))
         return _verify(root, args.branch, args.issue)
@@ -67,6 +71,15 @@ def _parser() -> argparse.ArgumentParser:
         "status", parents=[common], help="show a ticket's state, read from its folder"
     )
     status.add_argument("issue", type=_issue_number, help="issue number")
+    rep = sub.add_parser(
+        "report", parents=[common], help="show cost, agent time and verdicts per ticket"
+    )
+    rep.add_argument(
+        "--since",
+        type=_date,
+        metavar="YYYY-MM-DD",
+        help="keep tickets started on or after this day (default: all)",
+    )
     verify = sub.add_parser(
         "verify",
         parents=[common],
@@ -102,6 +115,20 @@ def _issue_number(text: str) -> int:
     if not value.isdigit() or int(value) <= 0:
         raise argparse.ArgumentTypeError(f"not an issue number: {text}")
     return int(value)
+
+
+def _date(text: str) -> str:
+    try:
+        return datetime.date.fromisoformat(text).isoformat()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a date (YYYY-MM-DD): {text}") from None
+
+
+def _report(root: Path, since: str | None) -> int:
+    result = report.build(root, since)
+    for line in result.lines:
+        print(line)
+    return result.exit_code
 
 
 def _start(root: Path, number: int) -> int:

@@ -5,14 +5,15 @@
 ## `ariane`
 
 ```text
-usage: ariane [-h] [--version] {start,status,verify} ...
+usage: ariane [-h] [--version] {start,status,report,verify} ...
 
 Turn tickets into reviewed pull requests.
 
 positional arguments:
-  {start,status,verify}
+  {start,status,report,verify}
     start               run the ticket of an issue up to its pull request
     status              show a ticket's state, read from its folder
+    report              show cost, agent time and verdicts per ticket
     verify              check and review a local branch finished by hand, then
                         record it on the branch
 
@@ -47,6 +48,18 @@ options:
   -h, --help         show this help message and exit
   --log-level LEVEL  technical log level: debug, info, warning or error
                      (default: ARIANE_LOG_LEVEL, else warning)
+```
+
+## `ariane report`
+
+```text
+usage: ariane report [-h] [--log-level LEVEL] [--since YYYY-MM-DD]
+
+options:
+  -h, --help          show this help message and exit
+  --log-level LEVEL   technical log level: debug, info, warning or error
+                      (default: ARIANE_LOG_LEVEL, else warning)
+  --since YYYY-MM-DD  keep tickets started on or after this day (default: all)
 ```
 
 ## `ariane verify`
