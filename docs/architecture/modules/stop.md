@@ -8,13 +8,16 @@ The reason a ticket stops (C23), split from `flow` so the replay and review roun
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
   flow --> stop
   replay --> stop
+  shadow --> stop
 ```
+<!-- end generated -->
 
 ## Serves
 

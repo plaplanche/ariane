@@ -11,14 +11,16 @@ The GitHub tracker over the REST API, with the standard library only.
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
-  github --> tracker
-  github --> logs
   cli --> github
+  github --> logs
+  github --> tracker
 ```
+<!-- end generated -->
 
 ## Serves
 

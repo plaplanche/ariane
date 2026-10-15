@@ -12,18 +12,22 @@ The agent runtime interface: one fresh session per stage, whatever the agent CLI
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
   claude_code --> runtime
-  runtime --> attempts
-  flow --> runtime
   cli --> runtime
+  flow --> runtime
+  metrics --> runtime
   opencode --> runtime
   review_session --> runtime
+  runtime --> attempts
+  shadow --> runtime
   verify --> runtime
 ```
+<!-- end generated -->
 
 ## Serves
 

@@ -8,12 +8,14 @@ Lets `python -m ariane` run the command line. It holds no logic of its own.
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
   __main__ --> cli
 ```
+<!-- end generated -->
 
 ## Serves
 

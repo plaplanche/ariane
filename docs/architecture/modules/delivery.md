@@ -10,19 +10,22 @@ Delivers a ticket: one push, the pull request (a draft that can carry failing bl
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
   delivery --> checks
-  delivery --> review
   delivery --> git
   delivery --> process
-  delivery --> ticket
   delivery --> redact
+  delivery --> review
+  delivery --> ticket
   delivery --> tracker
   flow --> delivery
+  replay --> delivery
 ```
+<!-- end generated -->
 
 ## Serves
 

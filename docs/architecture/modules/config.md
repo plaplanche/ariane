@@ -20,19 +20,22 @@ Loads and validates `ariane.toml`. Every error names the faulty key.
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
   checks --> config
   cli --> config
+  config --> config_schema
   context --> config
   flow --> config
-  config --> config_schema
   review --> config
   review_session --> config
+  shadow --> config
   verify --> config
 ```
+<!-- end generated -->
 
 ## Reference
 

@@ -11,19 +11,23 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
-  checks --> process
   checks --> config
+  checks --> process
   checks --> ticket
-  flow --> checks
   delivery --> checks
+  flow --> checks
+  replay --> checks
   review --> checks
   review_session --> checks
+  shadow --> checks
   verify --> checks
 ```
+<!-- end generated -->
 
 ## Serves
 

@@ -10,25 +10,27 @@ The `ariane` command line. It parses arguments, wires the configuration, tracker
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
+  __main__ --> cli
+  cli --> claude_code
   cli --> config
   cli --> flow
-  cli --> verify
-  cli --> shadow
   cli --> git
-  cli --> process
-  cli --> ticket
-  cli --> claude_code
-  cli --> opencode
-  cli --> runtime
   cli --> github
   cli --> logs
+  cli --> opencode
+  cli --> process
   cli --> report
-  __main__ --> cli
+  cli --> runtime
+  cli --> shadow
+  cli --> ticket
+  cli --> verify
 ```
+<!-- end generated -->
 
 ## Reference
 

@@ -13,20 +13,26 @@ The ticket folder `work/<n>/`: every document of a ticket, readable without Aria
 
 ## Collaborations
 
-Arrows go from the caller to the callee.
+Arrows go from the importing module to the imported module; a dashed arrow is an import for type checking only.
 
+<!-- generated: collaborations -->
 ```mermaid
 flowchart LR
-  ticket --> redact
-  ticket --> logs
-  ticket --> tracker
   checks --> ticket
   cli --> ticket
   delivery --> ticket
   flow --> ticket
+  metrics --> ticket
+  replay --> ticket
+  report --> ticket
   review_session --> ticket
+  shadow --> ticket
+  ticket --> logs
+  ticket --> redact
+  ticket --> tracker
   verify --> ticket
 ```
+<!-- end generated -->
 
 ## Serves
 

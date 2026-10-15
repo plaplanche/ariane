@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import shutil
 import tomllib
 from pathlib import Path
 from types import ModuleType
@@ -103,6 +104,8 @@ def test_docs_reference_changed_help_text_fails_check(
 
 def test_docs_reference_missing_file_is_named(tmp_path: Path) -> None:
     script = load_script()
+    shutil.copytree(ROOT / "src" / "ariane", tmp_path / "src" / "ariane")
+    shutil.copytree(ROOT / "docs" / "architecture", tmp_path / "docs" / "architecture")
     assert script.main(["--check"], root=tmp_path) == 1
     assert script.main([], root=tmp_path) == 0
     assert script.main(["--check"], root=tmp_path) == 0
