@@ -6,6 +6,7 @@
 
 - `start`: reads the issue, refuses an existing clone ("remove it to start over"), clones the user's repository with `git clone --local --no-checkout` into `<repo>.ariane/shadow/<n>/`, removes `origin`, checks out `ariane/<n>` at the user's last known `origin/<base branch>` and runs the flow. The user's `.git` is only read, and nothing is fetched.
 - `ShadowRun`: the ticket run of [flow](flow.md) with metrics mode `shadow`, no remote check and a local delivery: the outcome (`delivered`, or `needs a human` when the review is still `no-go`) goes to the journal, `status.md` and `metrics.json`, committed in the clone. The final line is "Shadow ticket #<n> done (<outcome>, review <verdict>). Next: read <clone>/work/<n>/, then run ariane judge <n> accept|reject --minutes N."
+- `judge`: `ariane judge <n> accept|reject --minutes N [--note TEXT]` (ADR 0037) writes `judgement` into the shadow ticket's `metrics.json` and keeps earlier ones in `judgements_before`; no clone or a `running` ticket gives one line and exit 1.
 - `clone_path`: where a shadow ticket lives.
 
 ## Collaborations
@@ -15,6 +16,8 @@ Arrows go from the caller to the callee.
 ```mermaid
 flowchart LR
   shadow --> flow
+  shadow --> metrics
+  shadow --> ticket
   shadow --> git
   shadow --> stop
   shadow --> tracker
@@ -23,4 +26,4 @@ flowchart LR
 
 ## Serves
 
-C19, C23; ADR 0030, ADR 0036. See [the component view](../3-components.md).
+C19, C23; ADR 0030, ADR 0036, ADR 0037. See [the component view](../3-components.md).

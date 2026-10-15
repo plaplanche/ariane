@@ -41,6 +41,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "report":
         logs.configure(level, logs.log_path(root, "report"))
         return _report(root, args.since)
+    if args.command == "judge":
+        logs.configure(level, logs.log_path(root, f"judge-{args.issue}"))
+        return _say_outcome(shadow.judge(root, args.issue, args.verdict, args.minutes, args.note))
     if args.command == "verify":
         logs.configure(level, logs.log_path(root, "verify-" + args.branch.replace("/", "-")))
         return _verify(root, args.branch, args.issue)
@@ -96,6 +99,20 @@ def _parser() -> argparse.ArgumentParser:
         type=_issue_number,
         help="give this issue's text to the reviewer (default: the branch's commit messages)",
     )
+    judge = sub.add_parser(
+        "judge",
+        parents=[common],
+        help="record your verdict and time on a shadow ticket",
+    )
+    judge.add_argument("issue", type=_issue_number, help="issue number")
+    judge.add_argument("verdict", choices=shadow.VERDICTS, help="is the diff acceptable?")
+    judge.add_argument(
+        "--minutes",
+        type=_minutes,
+        required=True,
+        help=f"human time spent on the ticket, 0 to {shadow.MAX_MINUTES}",
+    )
+    judge.add_argument("--note", help="free text kept with the verdict")
     return parser
 
 
@@ -120,6 +137,14 @@ def _issue_number(text: str) -> int:
     if not value.isdigit() or int(value) <= 0:
         raise argparse.ArgumentTypeError(f"not an issue number: {text}")
     return int(value)
+
+
+def _minutes(text: str) -> int:
+    if not text.isdigit() or int(text) > shadow.MAX_MINUTES:
+        raise argparse.ArgumentTypeError(
+            f"not a whole number from 0 to {shadow.MAX_MINUTES}: {text}"
+        )
+    return int(text)
 
 
 def _date(text: str) -> str:
@@ -252,6 +277,10 @@ def _merged(root: Path, number: int) -> tuple[str | None, str]:
     if git.path_exists_on_branch(root, flow.REMOTE, base, ticket.relative_folder(number)):
         return base, ""
     return None, ""
+
+
+def _say_outcome(outcome: flow.Outcome) -> int:
+    return _say(outcome.exit_code, outcome.line)
 
 
 def _say(code: int, line: str) -> int:

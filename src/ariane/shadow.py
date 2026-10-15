@@ -7,10 +7,11 @@ is opened, no commit status or comment is posted.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from pathlib import Path
 
-from ariane import checks, git, review
+from ariane import checks, git, review, ticket
 from ariane.config import Config
 from ariane.flow import (
     _FAILURES,
@@ -22,10 +23,13 @@ from ariane.flow import (
     _TicketRun,
     branch_name,
 )
+from ariane.metrics import METRICS
 from ariane.runtime import AgentRuntime
 from ariane.stop import Stop
 from ariane.tracker import Issue, Tracker, TrackerError
 
+MAX_MINUTES = 1440
+VERDICTS = ("accept", "reject")
 BASE_REF_REMOTE = "shadow"  # only names the base branch's ref in the clone; it is not a remote
 
 
@@ -130,3 +134,41 @@ class ShadowRun(_TicketRun):
             f" {self.worktree}/work/{self.number}/, then run ariane judge {self.number}"
             " accept|reject --minutes N.",
         )
+
+
+def judge(
+    repo_root: Path, number: int, verdict: str, minutes: int, note: str | None = None
+) -> Outcome:
+    """Record the human's verdict and time in the shadow ticket's `metrics.json` (ADR 0037).
+
+    An earlier judgement moves to `judgements_before`, oldest first."""
+    path = clone_path(repo_root, number) / "work" / str(number) / METRICS
+    if not path.is_file():
+        return Outcome(
+            1,
+            f"Did not judge #{number}: no shadow clone for it. Next: run ariane start --shadow"
+            f" {number}.",
+        )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("outcome") == "running":
+        return Outcome(
+            1,
+            f"Did not judge #{number}: its shadow ticket is still running. Next: wait for it to"
+            " end, then judge it.",
+        )
+    earlier = data.get("judgement")
+    if earlier is not None:
+        data["judgements_before"] = [*data.get("judgements_before", []), earlier]
+    data["judgement"] = {
+        "verdict": verdict,
+        "minutes": minutes,
+        "note": note,
+        "at": ticket.now().replace(" ", "T"),
+    }
+    path.write_text(
+        json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    return Outcome(
+        EXIT_OK,
+        f"Judged shadow ticket #{number}: {verdict}, {minutes} minutes. Next: nothing.",
+    )

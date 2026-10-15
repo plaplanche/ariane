@@ -75,6 +75,7 @@ def test_c5_interrupt_kills_the_process_tree_and_reraises(
     _interrupt_wait(monkeypatch, [parent, grandchild])
     with pytest.raises(KeyboardInterrupt):
         process.run([PY, "-c", TREE, str(parent), str(grandchild)], cwd=tmp_path)
+    monkeypatch.undo()  # `_alive` runs `ps` on macOS: it needs the real `Popen.wait`
     pids = [int(parent.read_text()), int(grandchild.read_text())]
     deadline = time.monotonic() + 10
     while any(_alive(pid) for pid in pids) and time.monotonic() < deadline:
