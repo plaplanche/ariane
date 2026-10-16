@@ -21,16 +21,18 @@ Delivers a ticket: one push, the pull request (a draft that can carry failing bl
 
 ```mermaid
 flowchart TD
-  A[Delivery.deliver results] --> B[require a replayed commit]
-  B --> C[git.push with the token]
-  C --> D[build the pull request body: checks, review section, redacted]
-  D --> E{blocking check red or review no-go?}
-  E -- yes --> F[draft pull request, needs a human]
-  E -- no --> G[ready pull request]
-  F --> H[tracker.open_pull_request]
+  A[Delivery.deliver results] --> E{settled review is no-go?}
+  E -- yes --> F[status needs a human]
+  E -- no --> G[status pushed]
+  F --> H[commit the record]
   G --> H
-  H -- refused --> X[raise PullRequestRefused]
-  H -- ok --> I[publish commit statuses]
+  H --> B[require a replayed commit]
+  B -- differs outside the ticket folder --> X[raise PullRequestRefused, nothing pushed]
+  B -- ok --> C[git.push with the token]
+  C --> D[build the pull request body: checks, review section, redacted]
+  D --> O[tracker.open_pull_request, draft only if no-go]
+  O -- refused --> X2[raise PullRequestRefused, branch pushed]
+  O -- ok --> I[publish commit statuses]
   I --> J[return Delivered]
 ```
 
@@ -55,7 +57,7 @@ class Delivery {
   settled Settled
   review_round int
   deliver(results) Delivered
-  draft() bool
+  draft bool
 }
 class Delivered {
   <<dataclass>>

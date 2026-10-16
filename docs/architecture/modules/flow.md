@@ -49,11 +49,18 @@ flowchart TD
   F --> G[guards: config snapshot, remote changes]
   G --> H[commit the agent's work]
   H --> I[replay the checks in a clean tree]
-  I --> J[review round]
-  J --> K{go and blocking checks green?}
-  K -- no, fewer than 2 fix rounds --> L[fix session] --> H
-  K -- yes or rounds spent --> M[Delivery.deliver]
-  M --> N[Outcome exit 0]
+  I --> K{blocking checks red?}
+  K -- "red, round 0" --> S
+  K -- green --> J[review round]
+  K -- "red after a fix round" --> R{fix rounds left?}
+  J --> G2{review go?}
+  G2 -- no --> R
+  G2 -- yes --> M[Delivery.deliver]
+  R -- "yes, fewer than 2 used" --> L[fix session, commit] --> I
+  R -- no --> M
+  M --> N{draft pull request?}
+  N -- no, ready --> O[Outcome exit 0]
+  N -- yes, still no-go --> P[Outcome exit 1]
   B -.-> S[Stop or error: record and Outcome exit 1]
   G -.-> S
   F -.-> S

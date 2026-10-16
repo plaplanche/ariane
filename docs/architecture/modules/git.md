@@ -63,15 +63,13 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 
 ```mermaid
 flowchart TD
-  A[start of a ticket] --> B[add_worktree / add_detached_worktree / add_reviewer_worktree]
-  B --> C[config_snapshot before the agent]
-  C --> D[agent runs under blocked_push_env]
-  D --> E[config_snapshot after, snapshot_changes]
-  E --> F[status, untracked, ignored, diff, changed_paths]
-  F --> G[commit the given paths]
-  G --> H[push with push_env: the single authenticated push]
-  H --> I[remote_refs before and after, remote_changes]
-  I --> J[remove_worktree]
+  A[add_worktree / add_detached_worktree / add_reviewer_worktree] --> B[remove_worktree]
+  C[config_snapshot] --> D[snapshot_changes compares two snapshots]
+  E[remote_refs] --> F[remote_changes compares two listings]
+  G[commit the given paths] --> H{paths hold a change?}
+  H -- no --> I[return False]
+  H -- yes --> J[return True]
+  K[push] --> L[push_env, one authenticated push, return the pushed commit]
   K[git args, cwd] --> L[run with safe options]
   L -- non-zero exit --> X[raise GitError]
   L -- ok --> M[completed process or output]
@@ -95,9 +93,9 @@ class git {
   config_snapshot(worktree, ignore_ref) dict
   snapshot_changes(before, after) list
   blocked_push_env(base, remote_names) dict
-  commit(cwd, pathspec, message, env) bool
+  commit(cwd, pathspec, message, env, tolerate_ignored) bool
   push_env(base, token) dict
-  push(cwd, url, sha, branch) str
+  push(cwd, url, sha, branch, token, environ) str
   remote_changes(cwd, url, remote, branch, base_branch, refs_before) list
 }
 git ..> GitError

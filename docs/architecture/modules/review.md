@@ -79,7 +79,7 @@ class Settled {
   verdict str
   findings tuple
   items tuple
-  go() bool
+  go bool
 }
 Review o-- Finding
 Review o-- DoneResult
