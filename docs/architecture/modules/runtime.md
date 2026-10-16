@@ -1,14 +1,66 @@
 # Module `ariane.runtime`
 
-The agent runtime interface: one fresh session per stage, whatever the agent CLI. Claude Code implements it, and opencode for the reviewer role.
+The agent runtime interface (C5): one fresh session per stage, whatever the agent CLI. Claude Code implements it, and opencode for the reviewer role.
 
-## Main types and functions
+## Public API
 
-- `AgentRuntime`: the protocol of a runtime; `login_variables` lists the exact names and prefixes (ending in `_`) of the variables it keeps in the agent's environment for its login (ADR 0024).
-- `Session`: what to run (`add_dirs`: extra trees the agent may read; the reviewer's cwd is an empty folder and its tree is listed here, ADR 0031), with the runtime's cost cap (`max_budget_usd`) and Ariane's optional token cap (`max_tokens`).
-- `SessionResult`: what came back; `cap` names the cap that stopped a `budget` session. `attempts` counts the pushes and pull requests the agent attempted (C19, ADR 0036). `usage()` words its cost and tokens for the journal (implementer and reviewer sessions).
-- `RoutedRuntime`: one runtime per role (`[agents.<role>] runtime`); a session goes to the runtime of its role, it has no login variables of its own: each session's environment is built from `for_role(role).login_variables` (ADR 0029). `for_role` and `describe` are the helpers the journal uses: the runtime of a role, and its name with its version when it has one.
-- `StopReason`: why a session ended.
+| Name | Kind | What it does |
+| --- | --- | --- |
+| `StopReason` | enum | Why a session ended: `finished`, `budget`, `turns`, `timeout`, `error`. |
+| `Session` | class | What to run: role, model, tools, cost cap `max_budget_usd`, Ariane's optional token cap `max_tokens`, timeout, `cwd`, prompt, complete `env`, optional `json_schema`, and `add_dirs`, the extra trees the agent may read (the reviewer's cwd is an empty folder and its tree is listed here, ADR 0031). |
+| `SessionResult` | class | What came back: stop reason, cost, tokens, summary, permission denials, `cap` (which cap stopped a `budget` session), `structured_output` and `attempts` (pushes and pull requests attempted, C19, ADR 0036); `usage()` words cost and tokens for the journal. |
+| `AgentRuntime` | protocol | `name`, `login_variables` (exact names and prefixes ending in `_` of the variables kept in the agent's environment for its login, ADR 0024) and `run(session)`. |
+| `RoutedRuntime` | class | `RoutedRuntime(runtimes)`: one runtime per role (`[agents.<role>] runtime`, ADR 0029); `for_role(role)` and `run(session)` go to the runtime of the session's role. It has no login variables of its own. |
+| `for_role(runtime, role)` | function | The runtime that serves `role` (the runtime itself unless it routes by role). |
+| `describe(runtime)` | function | The runtime as the journal words it: its name, plus its own description (the version) when it has one. |
+
+## Behaviour and errors
+
+- Reads and writes no file and raises nothing of its own, except `KeyError` from `RoutedRuntime` for a role without a runtime.
+- Each session's environment is built from `for_role(role).login_variables`.
+
+## Workflow
+
+```mermaid
+flowchart TD
+A[session for a role] --> B{routed runtime?}
+  B -->|yes| C[runtime of the role]
+  B -->|no| D[the runtime itself]
+  C --> E[run: SessionResult]
+  D --> E
+```
+
+## Code view (C4 level 4)
+
+```mermaid
+classDiagram
+class StopReason {
+  <<enum>>
+}
+class Session {
+  <<frozen>>
+}
+class SessionResult {
+  <<frozen>>
+  usage() tuple
+}
+class AgentRuntime {
+  <<protocol>>
+  name str
+  login_variables tuple
+  run(session) SessionResult
+}
+class RoutedRuntime {
+  runtimes dict
+  for_role(role) AgentRuntime
+  run(session) SessionResult
+}
+RoutedRuntime ..|> AgentRuntime
+AgentRuntime ..> Session
+AgentRuntime ..> SessionResult
+SessionResult --> StopReason
+SessionResult --> Attempts
+```
 
 ## Collaborations
 

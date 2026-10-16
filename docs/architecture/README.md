@@ -38,8 +38,7 @@ Each module file under `modules/` has these sections, in this order (ADR 0039):
 7. `## Reference` when the module has one, and `## Serves`.
 
 Checked by `tests/test_docs_module_template.py`: the public API table against the code, the
-section order, and the presence of the diagrams. The test covers the modules migrated so far
-(`MIGRATED`); the other module files follow in later tickets.
+section order, and the presence of the diagrams, on every module of `src/ariane/`.
 
 ```mermaid
 flowchart LR

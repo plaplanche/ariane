@@ -8,29 +8,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Modules migrated to the template; later tickets add the others, the last one checks every module.
-MIGRATED = (
-    "__main__",
-    "checks",
-    "cli",
-    "config",
-    "config_schema",
-    "context",
-    "delivery",
-    "flow",
-    "git",
-    "github",
-    "logs",
-    "process",
-    "redact",
-    "replay",
-    "review",
-    "review_session",
-    "stop",
-    "ticket",
-    "tracker",
-    "verify",
-)
 SECTIONS = (
     "Public API",
     "Behaviour and errors",
@@ -223,10 +200,15 @@ def test_c25_module_template_allows_a_one_line_workflow(tmp_path: Path) -> None:
     assert module_file_problems(*write(tmp_path, text)) == []
 
 
-def test_c25_module_template_migrated_module_files_pass() -> None:
+def test_c25_module_template_every_module_file_passes() -> None:
+    sources = sorted((ROOT / "src" / "ariane").glob("*.py"))
+    modules = [p for p in sources if p.stem != "__init__"]
+    assert len(modules) >= 28
     problems: list[str] = []
-    for name in MIGRATED:
-        source = ROOT / "src" / "ariane" / f"{name}.py"
-        doc = ROOT / "docs" / "architecture" / "modules" / f"{name}.md"
+    for source in modules:
+        doc = ROOT / "docs" / "architecture" / "modules" / f"{source.stem}.md"
+        if not doc.is_file():
+            problems.append(f"{doc}: no module file for {source.name}")
+            continue
         problems += module_file_problems(source, doc)
     assert problems == []
