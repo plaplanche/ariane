@@ -69,7 +69,8 @@ flowchart TD
   G[commit the given paths] --> H{paths hold a change?}
   H -- no --> I[return False]
   H -- yes --> J[return True]
-  K[push] --> L[push_env, one authenticated push, return the pushed commit]
+  P[push] --> Q[push_env, one authenticated push, return the pushed commit]
+  Q --> K
   K[git args, cwd] --> L[run with safe options]
   L -- non-zero exit --> X[raise GitError]
   L -- ok --> M[completed process or output]
@@ -86,6 +87,28 @@ class git {
   <<module>>
   git(args, cwd, env, check) Completed
   out(args, cwd, env) str
+  repo_root(cwd) Path
+  remotes(cwd) list
+  push_url(cwd, remote) str
+  fetch(cwd, remote, branch)
+  path_exists_on_branch(cwd, remote, branch, path) bool
+  show_on_branch(cwd, remote, branch, path) str
+  local_branch_exists(cwd, branch) bool
+  worktree_of(cwd, branch) Path
+  merge_base(cwd, first, second) str
+  commit_messages(cwd, since, until) str
+  remote_refs(cwd, url) dict
+  base_instructions(cwd, remote, branch) str
+  head(cwd) str
+  current_branch(cwd) str
+  is_ancestor(cwd, ancestor, descendant) bool
+  untracked(cwd) list
+  ignored(cwd) set
+  changed_paths(cwd, since) list
+  diff(cwd, since, until, exclude) str
+  status(cwd) str
+  committed_paths(cwd, since, pathspec) list
+  fast_forwarded(cwd, remote, branch, old, new) bool
   add_worktree(cwd, path, branch, start)
   add_detached_worktree(cwd, path, commit)
   add_reviewer_worktree(cwd, path, commit)

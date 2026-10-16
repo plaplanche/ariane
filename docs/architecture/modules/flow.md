@@ -80,7 +80,7 @@ class Outcome {
 class _TicketRun {
   execute(refs_before) Outcome
   setup(cwd) Stop
-  verify(...)
+  verify(after, start_commit, guard, refs_before, expected_head)
 }
 class flow {
   <<module>>
