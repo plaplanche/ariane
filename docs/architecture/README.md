@@ -23,6 +23,24 @@ them, `--check` (run by `tests/test_docs_reference.py`) fails when one differs. 
 the markers is hand-written, sequences included: `tests/test_docs_sequences.py` checks that every
 call drawn between two modules is a real import.
 
+### Module file template
+
+Each module file under `modules/` has these sections, in this order (ADR 0039):
+
+1. `# Module \`ariane.<m>\`` and a purpose paragraph.
+2. `## Public API`: a table `Name | Kind | What it does`, one row per public name of the module
+   (top-level function, class or constant defined there, not imported, no leading `_`), with its
+   signature as in the code.
+3. `## Behaviour and errors`: files read and written, errors raised and when.
+4. `## Workflow`: a Mermaid `flowchart TD` of what the module does (one line if it has no behaviour).
+5. `## Code view (C4 level 4)`: a Mermaid `classDiagram` of its classes and functions.
+6. `## Collaborations`: generated (`collaborations`).
+7. `## Reference` when the module has one, and `## Serves`.
+
+Checked by `tests/test_docs_module_template.py`: the public API table against the code, the
+section order, and the presence of the diagrams. The test covers the modules migrated so far
+(`MIGRATED`); the other module files follow in later tickets.
+
 ```mermaid
 flowchart LR
   L0[0 landscape] --> L1[1 context] --> L2[2 containers] --> L3[3 components] --> L4[4 modules]

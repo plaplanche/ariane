@@ -1,22 +1,145 @@
 # Module `ariane.config`
 
-Loads and validates `ariane.toml`. Every error names the faulty key.
+Loads and validates `ariane.toml` (C22). Every error names the faulty key.
 
-## Main types and functions
+## Public API
 
-- `Config`, `TrackerConfig`, `AgentConfig`, `CheckConfig`, `DoneItem`: the validated settings; `Config.definition_of_done` holds the
-  definition of done (C26), `DEFAULT_DEFINITION_OF_DONE` when the table is absent.
-- `TrackerConfig.ready_label`: `[tracker] ready_label` (default `ariane`, non-empty), the label that lets Ariane run an issue (C21, ADR 0032).
-- `AgentConfig.max_tokens`: optional `[agents.<role>] max_tokens`, a positive integer, Ariane's own token cap per session.
-- `Config.reviewer`: the required `[agents.reviewer]` table (same keys as the implementer's); `parse` refuses a reviewer model equal to the implementer's, naming `agents.reviewer.model` (C10).
-- Globs (`documentation.map[].source`): `**/` matches zero or more whole folders (`src/**/*.py` matches `src/a.py`); other `**` crosses segments (ADR 0026).
-- Check names: a `[[checks]]` name starting with `docs: ` is refused (`checks[i].name`); `{ check = "docs: <name>" }` is accepted in the definition of done when `<name>` is a `[documentation.generated]` entry (C26).
-- `Documentation`, `DocMapEntry`, `GeneratedDoc`: the optional `[documentation]` table (C25, ADR 0026): `paths`, `[[documentation.map]]` (`{stem}` expands, `*` stays in a folder), `[[documentation.generated]]`. `Documentation.not_updated` lists mapped documents a change left untouched; `Documentation.checks` turns generated entries into blocking checks `docs: <name>`. `Config.documentation` is empty without the table.
-- `SCHEMA` (re-exported from `config_schema`): the JSON Schema of the file.
-- `load`: read the file at the repository root, or the file `ARIANE_CONFIG` names (relative to the repository root; errors then name `ARIANE_CONFIG (<file>)`), with the same validation (C22).
-- Runtimes (C5, ADR 0029): `runtime` is `claude-code`, or `opencode` for the reviewer only; naming opencode for the implementer is refused with the role. An opencode agent takes `<provider>/<model>` and tools among `read`, `glob`, `grep`. It must set `max_tokens`, else it is refused naming `agents.<role>.max_tokens`; the generated schema states the rule with an `if`/`then` on the agent object. A Claude Code reviewer's `tools` are an allow list, a subset of `Read`, `Glob`, `Grep` (ADR 0031); anything else is refused naming `agents.reviewer.tools`.
-- `parse`: validate a parsed TOML mapping.
-- `ConfigError`: raised for any invalid key.
+| Name | Kind | What it does |
+| --- | --- | --- |
+| `CONFIG_FILE` | constant | The configuration file name, `ariane.toml`. |
+| `CONFIG_ENV` | constant | The variable naming another configuration file, `ARIANE_CONFIG`. |
+| `ConfigError` | exception | The configuration is missing or invalid; the message names the faulty key. |
+| `TrackerConfig` | dataclass | `[tracker]`: `kind`, `repository`, `token_env`, `api_url`, `ready_label` (default `ariane`, C21, ADR 0032). |
+| `AgentConfig` | dataclass | `[agents.<role>]`: `runtime`, `model`, `tools`, `max_budget_usd`, `timeout_minutes`, optional `max_tokens`. |
+| `CheckConfig` | dataclass | One `[[checks]]` entry: `name`, `command`, `blocking`, `timeout_minutes`. |
+| `DoneItem` | dataclass | One item of the definition of done (C26): a declared check or a sentence; `label()` is its text. |
+| `DocMapEntry` | dataclass | Source files (a glob) and the documents that cover them; `documents_for(path)` expands them. |
+| `GeneratedDoc` | dataclass | A `[[documentation.generated]]` entry: `name` and the `check` command. |
+| `Documentation` | dataclass | The optional `[documentation]` table (C25, ADR 0026): `paths`, `map`, `generated`; `documents_for(path)`, `not_updated(changed)`, `checks()`. |
+| `NO_DOCUMENTATION` | constant | The empty `Documentation`, used without the table. |
+| `DEFAULT_DEFINITION_OF_DONE` | constant | The definition of done when the table is absent (C26). |
+| `Config` | dataclass | The validated settings: base branch, setup, tracker, implementer, reviewer, checks, definition of done, documentation. |
+| `load(repo_root, environ=None)` | function | Read `ariane.toml`, or the file `ARIANE_CONFIG` names, and validate it (C22). |
+| `parse(data)` | function | Validate a parsed TOML mapping and return a `Config`. |
+
+## Behaviour and errors
+
+- `load` reads `ariane.toml` at the repository root, or the file `ARIANE_CONFIG` names (relative to the repository root; errors then name `ARIANE_CONFIG (<file>)`). It raises `ConfigError` when the file is missing, unreadable or not valid TOML, then whatever `parse` raises.
+- `Config.reviewer` is the required `[agents.reviewer]` table (same keys as the implementer's); `parse` refuses a reviewer model equal to the implementer's, naming `agents.reviewer.model` (C10).
+- `Config.definition_of_done` is `DEFAULT_DEFINITION_OF_DONE` when the table is absent (C26). A `[[checks]]` name starting with `docs: ` is refused (`checks[i].name`); `{ check = "docs: <name>" }` is accepted when `<name>` is a `[documentation.generated]` entry.
+- Globs (`documentation.map[].source`): `**/` matches zero or more whole folders (`src/**/*.py` matches `src/a.py`); other `**` crosses segments (ADR 0026). In `docs`, `{stem}` expands and `*` stays in a folder.
+- `Documentation.not_updated` lists mapped documents a change left untouched; `Documentation.checks` turns generated entries into blocking checks `docs: <name>`.
+- Runtimes (C5, ADR 0029): `runtime` is `claude-code`, or `opencode` for the reviewer only; an opencode agent takes `<provider>/<model>`, tools among `read`, `glob`, `grep`, and must set `max_tokens` (else `agents.<role>.max_tokens` is refused). A Claude Code reviewer's `tools` are a subset of `Read`, `Glob`, `Grep` (ADR 0031). `AgentConfig.max_tokens` is Ariane's own token cap per session.
+- `SCHEMA` is re-exported from `config_schema`.
+
+## Workflow
+
+```mermaid
+flowchart TD
+  A[load repo_root, environ] --> B{ARIANE_CONFIG set?}
+  B -- yes --> C[path = repo_root / ARIANE_CONFIG]
+  B -- no --> D[path = repo_root / ariane.toml]
+  C --> E[read file]
+  D --> E
+  E -- missing or unreadable --> X[raise ConfigError]
+  E --> F[tomllib.loads]
+  F -- invalid TOML --> X
+  F --> G[parse data]
+  G -- invalid key --> H{ARIANE_CONFIG set?}
+  H -- yes --> I[rename the file in the message, raise ConfigError]
+  H -- no --> X
+  G --> R[return Config]
+```
+
+## Code view (C4 level 4)
+
+```mermaid
+classDiagram
+class Config {
+  <<dataclass>>
+  base_branch str
+  setup tuple
+  tracker TrackerConfig
+  implementer AgentConfig
+  reviewer AgentConfig
+  checks tuple~CheckConfig~
+  definition_of_done tuple~DoneItem~
+  documentation Documentation
+}
+class TrackerConfig {
+  <<dataclass>>
+  kind str
+  repository str
+  token_env str
+  api_url str
+  ready_label str
+}
+class AgentConfig {
+  <<dataclass>>
+  runtime str
+  model str
+  tools tuple
+  max_budget_usd float
+  timeout_minutes float
+  max_tokens int
+}
+class CheckConfig {
+  <<dataclass>>
+  name str
+  command tuple
+  blocking bool
+  timeout_minutes float
+}
+class DoneItem {
+  <<dataclass>>
+  check str
+  text str
+  label() str
+}
+class DocMapEntry {
+  <<dataclass>>
+  source str
+  docs tuple
+  documents_for(path) tuple
+}
+class GeneratedDoc {
+  <<dataclass>>
+  name str
+  check tuple
+}
+class Documentation {
+  <<dataclass>>
+  paths tuple
+  map tuple~DocMapEntry~
+  generated tuple~GeneratedDoc~
+  documents_for(path) list
+  not_updated(changed) list
+  checks() tuple~CheckConfig~
+}
+class ConfigError {
+  <<exception>>
+}
+class load {
+  <<function>>
+  load(repo_root, environ) Config
+}
+class parse {
+  <<function>>
+  parse(data) Config
+}
+Config *-- TrackerConfig
+Config *-- AgentConfig
+Config *-- CheckConfig
+Config *-- DoneItem
+Config *-- Documentation
+Documentation *-- DocMapEntry
+Documentation *-- GeneratedDoc
+Documentation ..> CheckConfig
+load ..> Config
+load ..> parse
+parse ..> Config
+parse ..> ConfigError
+```
 
 ## Collaborations
 
