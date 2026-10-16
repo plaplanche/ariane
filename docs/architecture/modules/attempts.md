@@ -2,11 +2,50 @@
 
 Counts the commands an agent attempted that push or open a pull request (C19, ADR 0036), read from the shell commands of its session.
 
-## Main types and functions
+## Public API
 
-- `Attempts`: `push` and `pull_request` counts; they add up.
-- `count(command)`: the attempts in one shell command. It splits the command like a shell, so a quoted string is one word: `git push origin x`, `git -C dir push` and `gh pr create` count; `git pushd` and `echo "git push"` do not. The string of `sh -c` and `bash -c` is counted too.
-- `AttemptTally`: the running total of one session; the runtime adapters feed it each shell tool call once.
+| Name | Kind | What it does |
+| --- | --- | --- |
+| `Attempts` | class | Frozen counts `push` and `pull_request`; they add up with `+`. |
+| `AttemptTally` | class | The running total of one session (`attempts`); `add_command(command)` adds the attempts of one shell command. The runtime adapters feed it each shell tool call once. |
+| `count(command, depth=0)` | function | The attempts in one shell command. |
+
+## Behaviour and errors
+
+- Reads and writes no file, raises nothing.
+- `count` splits the command like a shell, so a quoted string is one word: `git push origin x`, `git -C dir push` and `gh pr create` count; `git pushd` and `echo "git push"` do not. The string of `sh -c` and `bash -c` is counted too, to a depth of 3.
+- An unbalanced quote falls back on plain words.
+
+## Workflow
+
+```mermaid
+flowchart TD
+A[shell command] --> B[split into simple commands]
+  B --> C{git push or gh pr create?}
+  C -->|yes| D[count one attempt]
+  C -->|sh -c string| E[count the string, depth + 1]
+  C -->|no| F[nothing]
+```
+
+## Code view (C4 level 4)
+
+```mermaid
+classDiagram
+class Attempts {
+  <<frozen>>
+  push int
+  pull_request int
+}
+class AttemptTally {
+  attempts Attempts
+  add_command(command)
+}
+AttemptTally --> Attempts
+AttemptTally ..> count
+class count {
+  <<function>>
+}
+```
 
 ## Collaborations
 
