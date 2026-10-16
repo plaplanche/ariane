@@ -11,16 +11,25 @@ ROOT = Path(__file__).resolve().parent.parent
 # Modules migrated to the template; later tickets add the others, the last one checks every module.
 MIGRATED = (
     "__main__",
+    "checks",
     "cli",
     "config",
     "config_schema",
     "context",
+    "delivery",
+    "flow",
+    "git",
     "github",
     "logs",
     "process",
     "redact",
+    "replay",
+    "review",
+    "review_session",
+    "stop",
     "ticket",
     "tracker",
+    "verify",
 )
 SECTIONS = (
     "Public API",

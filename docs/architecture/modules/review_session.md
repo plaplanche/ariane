@@ -2,7 +2,16 @@
 
 The reviewer sessions of one review round (C10): a fresh read-only session on the reviewer tree (the commit without `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md` and `.claude/`, ADR 0031), and one new session if its answer is invalid.
 
-## Main types and functions
+## Public API
+
+| Name | Kind | What it does |
+| --- | --- | --- |
+| `ReviewFailed` | exception | No valid answer; carries `reason`, `next_action` and `detail`. |
+| `read_answer(result)` | function | The validated answer of a session result, or the reason it is not one. |
+| `ReviewSession` | dataclass | What the reviewer sessions of a ticket share; `run` returns the validated `Review`. |
+| `cap_text(agent)` | function | Words the caps that apply, for the journal. |
+
+## Behaviour and errors
 
 - `ReviewSession`: what the reviewer sessions of a ticket share; `run` returns the validated answer and calls back to verify that the session changed nothing.
 - A Claude Code reviewer runs from a temporary empty folder and reads the tree through `Session.add_dirs`; opencode runs in the tree. `instructions` is the base branch's `CLAUDE.md`, passed to the prompt as data.
@@ -12,6 +21,48 @@ The reviewer sessions of one review round (C10): a fresh read-only session on th
 - Each reviewer session is run through `Metrics.run_session` when `metrics` is given (C19), with its review `round`.
 - `read_answer`: the validated answer of a session result, or the reason it is not one.
 - `ReviewFailed`: no valid answer (the session did not finish, or two invalid answers); the flow turns it into a stop with status `needs a human`.
+
+## Workflow
+
+```mermaid
+flowchart TD
+  A[ReviewSession.run replay, checked, diff, results, ...] --> B[temporary empty folder]
+  B --> C[build the prompt with review.prompt]
+  C --> D[run the reviewer session]
+  D --> E[after_session: verify nothing changed]
+  E --> F[read_answer]
+  F -- valid --> G[return Review]
+  F -- invalid, first time --> H[one new session with the error] --> E
+  F -- unfinished or invalid twice --> X[raise ReviewFailed]
+```
+
+## Code view (C4 level 4)
+
+```mermaid
+classDiagram
+class ReviewSession {
+  <<dataclass>>
+  runtime AgentRuntime
+  agent AgentConfig
+  folder TicketFolder
+  issue Issue
+  env Mapping
+  all_checks Sequence
+  definition_of_done Sequence
+  instructions str
+  metrics Metrics
+  round int
+  run(replay, checked, diff, results, not_updated, after_session) Review
+}
+class ReviewFailed {
+  <<exception>>
+  reason str
+  next_action str
+  detail str
+}
+ReviewSession ..> ReviewFailed
+ReviewSession ..> Review
+```
 
 ## Collaborations
 
