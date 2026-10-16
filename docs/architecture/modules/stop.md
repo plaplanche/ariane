@@ -2,9 +2,33 @@
 
 The reason a ticket stops (C23), split from `flow` so the replay and review round can raise it without importing the flow.
 
-## Main types and functions
+## Public API
 
-- `Stop`: `reason`, `next_action`, `detail` and `status` (`stopped`, or `needs a human`); the flow journals it and ends the ticket.
+| Name | Kind | What it does |
+| --- | --- | --- |
+| `Stop` | exception | Ends the flow early; carries `reason`, `next_action`, `detail` and `status` (`stopped`, or `needs a human`). |
+
+## Behaviour and errors
+
+- `Stop` has no logic: the flow (or `verify`) catches it, journals it and ends the ticket with that reason, next action and status.
+
+## Workflow
+
+No behaviour of its own: the replay and the flow raise `Stop`, the flow catches it.
+
+## Code view (C4 level 4)
+
+```mermaid
+classDiagram
+class Stop {
+  <<exception>>
+  reason str
+  next_action str
+  detail str
+  status str
+}
+Stop --|> Exception
+```
 
 ## Collaborations
 

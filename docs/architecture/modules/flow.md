@@ -2,7 +2,23 @@
 
 `ariane start`: turns one issue into a pull request whose checks Ariane replayed. It sets up the working tree, runs the agent session, applies the guards, commits, replays the checks on a clean tree, runs the read-only reviewer on a separate tree without instruction files or `.claude/` (C10, ADR 0031), runs up to two fix rounds after a negative review and hands over to delivery.
 
-## Main types and functions
+## Public API
+
+| Name | Kind | What it does |
+| --- | --- | --- |
+| `REMOTE` | constant | The remote name, `origin`. |
+| `SETUP_TIMEOUT_S` | constant | Time allowed for the setup command, in seconds. |
+| `EXIT_OK` | constant | Exit code 0: delivered. |
+| `EXIT_STOPPED` | constant | Exit code 1: the ticket stopped. |
+| `EXIT_INTERRUPTED` | constant | Exit code 130: Ctrl-C. |
+| `MAX_FIX_ROUNDS` | constant | Fix rounds after a negative review (2). |
+| `Outcome` | dataclass | What `ariane start` reports: `exit_code`, `line`, `detail`. |
+| `QUIET` | constant | The sentence naming the rule that nobody touches the repository while a ticket runs. |
+| `worktree_path(repo_root, number)` | function | Where the ticket's working tree lives. |
+| `branch_name(number)` | function | The ticket's branch, `ariane/<n>`. |
+| `start(number, ...)` | function | The whole flow for one ticket number; returns an `Outcome`. |
+
+## Behaviour and errors
 
 - `start`: the whole flow for one ticket number.
 - `Outcome`: the result reported to the command line.
@@ -20,6 +36,61 @@
 - `worktree_path`, `branch_name`: where a ticket lives.
 - Shadow mode (C19, ADR 0036): delivery is the overridable `_TicketRun._deliver`; [shadow](shadow.md) subclasses the run, with its own preparation, no remote check and a local record instead of the push.
 - Guard violations (C19): `verify` counts each `Stop` of the post-session check in the metrics before raising it.
+
+## Workflow
+
+```mermaid
+flowchart TD
+  A[start number] --> B[read the issue: TrackerError gives its exit code]
+  B --> C[prepare branch and working tree]
+  C --> D[open the ticket folder]
+  D --> E[setup command]
+  E --> F[implementer session]
+  F --> G[guards: config snapshot, remote changes]
+  G --> H[commit the agent's work]
+  H --> I[replay the checks in a clean tree]
+  I --> K{blocking checks red?}
+  K -- "red, round 0" --> S
+  K -- green --> J[review round]
+  K -- "red after a fix round" --> R{fix rounds left?}
+  J --> G2{review go?}
+  G2 -- no --> R
+  G2 -- yes --> M[Delivery.deliver]
+  R -- "yes, fewer than 2 used" --> L[fix session, commit] --> I
+  R -- no --> M
+  M --> N{draft pull request?}
+  N -- no, ready --> O[Outcome exit 0]
+  N -- yes, still no-go --> P[Outcome exit 1]
+  B -.-> S[Stop or error: record and Outcome exit 1]
+  G -.-> S
+  F -.-> S
+  A -.-> T[Ctrl-C: Outcome exit 130]
+```
+
+## Code view (C4 level 4)
+
+```mermaid
+classDiagram
+class Outcome {
+  <<dataclass>>
+  exit_code int
+  line str
+  detail str
+}
+class _TicketRun {
+  execute(refs_before) Outcome
+  setup(cwd) Stop
+  verify(after, start_commit, guard, refs_before, expected_head)
+}
+class flow {
+  <<module>>
+  worktree_path(repo_root, number) Path
+  branch_name(number) str
+  start(number, repo_root, config, tracker, runtime, environ) Outcome
+}
+flow ..> _TicketRun
+_TicketRun ..> Outcome
+```
 
 ## Collaborations
 

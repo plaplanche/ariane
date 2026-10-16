@@ -2,7 +2,27 @@
 
 The adversarial review (C10) and the definition-of-done answers (C26): the reviewer's prompt, the description and validator of its answer, and the rules Ariane applies to it.
 
-## Main types and functions
+## Public API
+
+| Name | Kind | What it does |
+| --- | --- | --- |
+| `MAX_DIFF_CHARS` | constant | The diff size given to the reviewer, in characters. |
+| `PULL_REQUEST_LIMIT` | constant | Characters of review the pull request body carries before a summary and a link. |
+| `SCHEMA` | constant | The JSON Schema of the reviewer's answer. |
+| `Finding` | dataclass | A finding: `severity`, `file`, `line`, `title`, `detail`. |
+| `DoneResult` | dataclass | The answer to one definition-of-done sentence: `item`, `met`, `evidence`. |
+| `Review` | dataclass | The reviewer's answer: `verdict`, `findings`, `definition_of_done`, `learnings`. |
+| `Settled` | dataclass | A review after Ariane's rules: `verdict`, `findings`, `items`; `go` says whether it passes. |
+| `validate(data)` | function | The problems of an answer against the schema; empty when valid. |
+| `parse(data)` | function | Turns a valid answer into a `Review`. |
+| `settle(review, items, results)` | function | Applies Ariane's rules to a review and the check results. |
+| `prompt(issue, diff, results, check_configs, items, ...)` | function | The reviewer's instructions with the untrusted data. |
+| `findings_table(settled)` | function | The findings as a Markdown table. |
+| `record(settled, commit, model, round_)` | function | The text of `work/<n>/review-<round>.md`. |
+| `fix_feedback(settled, failed)` | function | The findings and failed blocking checks given to a fix session. |
+| `pull_request_section(settled, review_url, review_path)` | function | The review section of the pull request body. |
+
+## Behaviour and errors
 
 - `SCHEMA`, `validate`, `parse`: the answer's description (also passed to the runtime as `--json-schema`; the Claude Code runtime drops its `$schema`), its validator and its typed form.
 - `prompt`: the review instructions, the issue, the diff and the base branch's `CLAUDE.md` under "Project instructions (from the base branch)" (all untrusted data), the checks' summary and the sentence items.
@@ -11,6 +31,62 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 
 The reviewer's prompt also states, as a fact from Ariane, the mapped documents the change left untouched (C25). It says "all blocking checks green" only when they are, else it lists the blocking checks that failed.
 The paths of those documents come from the agent, so each goes in its own escaped `<untrusted-ticket kind="paths">` block; only the sentence saying Ariane found them is outside (C21).
+
+## Workflow
+
+```mermaid
+flowchart TD
+  A[prompt issue, diff, results, ...] --> B[reviewer session]
+  B --> C[validate data against SCHEMA]
+  C -- problems --> X[invalid answer: the session retries once]
+  C -- ok --> D[parse to Review]
+  D --> E[settle review, items, results]
+  E --> F{go with a blocking finding, or an item not met?}
+  F -- yes --> G[Settled no-go]
+  F -- no --> H[Settled as answered]
+  G --> I[record, fix_feedback, pull_request_section, findings_table]
+  H --> I
+```
+
+## Code view (C4 level 4)
+
+```mermaid
+classDiagram
+class Review {
+  <<dataclass>>
+  verdict str
+  findings tuple
+  definition_of_done tuple
+  learnings tuple
+}
+class Finding {
+  <<dataclass>>
+  severity str
+  file str
+  line int
+  title str
+  detail str
+}
+class DoneResult {
+  <<dataclass>>
+  item str
+  met bool
+  evidence str
+}
+class Settled {
+  <<dataclass>>
+  review Review
+  verdict str
+  findings tuple
+  items tuple
+  go bool
+}
+Review o-- Finding
+Review o-- DoneResult
+Settled o-- Review
+Settled o-- Finding
+Settled o-- DoneResult
+```
 
 ## Collaborations
 
