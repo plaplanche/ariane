@@ -8,7 +8,7 @@ C4 level. Each level zooms into the previous one.
 | 0 | [`0-landscape.md`](0-landscape.md) | The people and systems around Ariane. |
 | 1 | [`1-context.md`](1-context.md) | Ariane as one system and what it exchanges with each neighbour. |
 | 2 | [`2-containers.md`](2-containers.md) | The command, the working trees, the ticket folder, the sessions, the CI workflows. |
-| 3 | [`3-components.md`](3-components.md) | The modules, their dependencies, and `ariane start <n>` and `ariane verify <branch>` step by step. |
+| 3 | [`3-components.md`](3-components.md) | The modules, their dependencies, and one sequence per command (`start`, `start --shadow`, `verify`, `report`, `judge`). |
 | 4 | [`modules/`](modules/) | One file per module under `src/ariane/`. |
 
 A test (`tests/test_docs_architecture.py`) fails when a module has no file in `modules/` or a file
@@ -20,7 +20,8 @@ Some parts are generated from the code (ADR 0039), between `<!-- generated: <nam
 "Collaborations" diagram of each module file (`collaborations`) and the module list below
 (`modules`). Do not edit them by hand: run `uv run python scripts/generate_docs.py` to regenerate
 them, `--check` (run by `tests/test_docs_reference.py`) fails when one differs. The text outside
-the markers is hand-written.
+the markers is hand-written, sequences included: `tests/test_docs_sequences.py` checks that every
+call drawn between two modules is a real import.
 
 ```mermaid
 flowchart LR

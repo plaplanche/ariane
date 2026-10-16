@@ -9,10 +9,15 @@ flowchart LR
   github[GitHub]
   runtime[Agent runtime: Claude Code or opencode]
   vendor[Model vendor]
+  user -->|ariane start --shadow n| ariane
   user -->|ariane start n| ariane
   user -->|ariane verify branch| ariane
+  user -->|"ariane report [--since]"| ariane
+  user -->|"ariane judge n accept or reject, --minutes N, [--note]"| ariane
+  user -->|ariane status n| ariane
   ariane -->|one line: what was done, what next| user
   ariane -->|read an issue| github
+  ariane -->|report: read pull request states| github
   ariane -->|push one branch| github
   ariane -->|open a pull request| github
   ariane -->|publish statuses| github
@@ -22,5 +27,6 @@ flowchart LR
 ```
 
 `ariane verify` works on a local branch: it commits its records on it and never pushes.
-Only `ariane start` pushes, and only once, after the checks passed on a clean replay (ADR 0018).
+`ariane start --shadow` never pushes and never writes to the tracker: it reads the issue only.
+Only `ariane start` without `--shadow` pushes, and only once, after the checks passed on a clean replay (ADR 0018).
 Agents never receive the GitHub token.
