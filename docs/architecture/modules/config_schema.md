@@ -1,12 +1,45 @@
 # Module `ariane.config_schema`
 
-The description of `ariane.toml` as a JSON Schema (`SCHEMA`, written to `docs/reference/ariane.toml.schema.json` by `scripts/generate_docs.py`) and the runtimes each role may use: `claude-code` for both roles, `opencode` for the reviewer (ADR 0029). `config.parse` is the validation; a test checks that both agree.
+The description of `ariane.toml` as a JSON Schema, and the runtimes each role may use (C22, C5). `config.parse` is the validation; a test checks that both agree.
 
-## Main types and functions
+## Public API
 
-- `SCHEMA`: the schema of the file. The reviewer (the only role that may run on opencode) carries an `if`/`then` that requires `max_tokens` when `runtime` is `opencode`, as `config.parse` does; the implementer has none.
-- The reviewer also carries an `if`/`then` limiting a Claude Code reviewer's `tools` to `REVIEWER_TOOLS`, as `config.parse` does (ADR 0031).
-- `RUNTIMES`, `OPENCODE_TOOLS`, `REVIEWER_TOOLS`: the runtimes allowed per role, the tools of an opencode agent and those of a Claude Code reviewer.
+| Name | Kind | What it does |
+| --- | --- | --- |
+| `CLAUDE_CODE` | constant | The runtime name `claude-code`. |
+| `OPENCODE` | constant | The runtime name `opencode`. |
+| `RUNTIMES` | constant | The runtimes allowed per role: `claude-code` for both, `opencode` for the reviewer only (ADR 0029). |
+| `OPENCODE_TOOLS` | constant | The tools of an opencode agent: `read`, `glob`, `grep`. |
+| `REVIEWER_TOOLS` | constant | The tools a Claude Code reviewer may be given: `Read`, `Glob`, `Grep` (ADR 0031). |
+| `SCHEMA` | constant | The JSON Schema of the file, written to `docs/reference/ariane.toml.schema.json` by `scripts/generate_docs.py`. |
+
+## Behaviour and errors
+
+- Reads and writes no file itself; `scripts/generate_docs.py` writes `SCHEMA` to `docs/reference/ariane.toml.schema.json`.
+- The reviewer, the only role that may run on opencode, carries an `if`/`then` that requires `max_tokens` when `runtime` is `opencode`, as `config.parse` does; the implementer has none.
+- The reviewer also carries an `if`/`then` limiting a Claude Code reviewer's `tools` to `REVIEWER_TOOLS` (ADR 0031).
+- Raises nothing.
+
+## Workflow
+
+This module has no behaviour of its own: it only declares constants and the schema built from them.
+
+## Code view (C4 level 4)
+
+```mermaid
+classDiagram
+class config_schema {
+  <<module>>
+  CLAUDE_CODE str
+  OPENCODE str
+  RUNTIMES dict
+  OPENCODE_TOOLS tuple
+  REVIEWER_TOOLS tuple
+  SCHEMA dict
+}
+class config
+config ..> config_schema : SCHEMA, RUNTIMES, tool lists
+```
 
 ## Collaborations
 

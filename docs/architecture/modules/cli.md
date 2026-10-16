@@ -1,12 +1,78 @@
 # Module `ariane.cli`
 
-The `ariane` command line. It parses arguments, wires the configuration, tracker and runtime, calls the flow, and ends every command with one line saying what it did and what comes next.
+The `ariane` command line (C23). It parses arguments, wires the configuration, tracker and runtime, calls the flow, and ends every command with one line saying what it did and what comes next.
 
-## Main types and functions
+## Public API
 
-- `main`: the entry point, returns the exit code. Commands: `start [--shadow]` (`--shadow`: the ticket runs in a separate clone through `shadow`, C19, ADR 0036), `status`, `judge <n> accept|reject --minutes N [--note TEXT]` (records the human's verdict and time on a shadow ticket through `shadow.judge`, C19, ADR 0037), `report [--since YYYY-MM-DD]` (cost, agent time, rounds, verdicts, human time, gates bypassed and shadow results, from `report`, C19, ADR 0038), and `verify <branch> [--issue N]` (checks and reviews a local branch finished by hand, C23, ADR 0028). `report` builds a `GitHubTracker` through `_report_tracker` from the configuration and the token variable, or none (waiting time "not available"). `start` and `verify --issue` both build the tracker with `[tracker].ready_label`, so both apply the issue gate (C21, ADR 0032).
+| Name | Kind | What it does |
+| --- | --- | --- |
+| `EXIT_OK` | constant | Exit code 0, re-exported from `flow`. |
+| `EXIT_STOPPED` | constant | Exit code of a stopped ticket, re-exported from `flow`. |
+| `EXIT_USAGE` | constant | Exit code 2: a usage or configuration problem. |
+| `main(argv=None)` | function | The entry point: parse `argv`, run the command, return the exit code. |
 
-`_runtime` builds the `RoutedRuntime` from each role's `runtime` in the configuration; `config.load` honours `ARIANE_CONFIG`.
+## Behaviour and errors
+
+- Commands: `start [--shadow]` (`--shadow`: the ticket runs in a separate clone through `shadow`, C19, ADR 0036), `status`, `judge <n> accept|reject --minutes N [--note TEXT]` (records the human's verdict and time on a shadow ticket through `shadow.judge`, C19, ADR 0037), `report [--since YYYY-MM-DD]` (from `report`, C19, ADR 0038) and `verify <branch> [--issue N]` (checks and reviews a local branch finished by hand, C23, ADR 0028).
+- Reads `ariane.toml` (or the file `ARIANE_CONFIG` names) through `config.load`, the token variable the configuration names, `ARIANE_LOG_LEVEL`; writes the log file `<repo>.ariane/logs/<name>.log` through `logs`.
+- `start` and `verify --issue` build the `GitHubTracker` with `[tracker].ready_label`, so both apply the issue gate (C21, ADR 0032). `report` builds it only when the configuration and the token exist (else waiting time is "not available").
+- The runtime of each role comes from `[agents.<role>].runtime` (`RoutedRuntime`, ADR 0029).
+- Exit codes: `EXIT_OK` when the command did what was asked, `EXIT_STOPPED` for a ticket that stopped, `EXIT_USAGE` (2) for an invalid configuration, an empty token variable, a bad argument or a directory outside a git repository; each prints its reason and `Next:` step.
+- `status` reads `work/<n>/status.md` from the ticket's working tree or the repository, else from the base branch on the remote (merged ticket).
+
+## Workflow
+
+```mermaid
+flowchart TD
+  A[main argv] --> B[parse arguments, set UTF-8 console]
+  B --> C{usage error?}
+  C -- yes --> X[exit 2]
+  C -- no --> D[find repository root]
+  D --> E{inside a git repository?}
+  E -- no --> U[say Did nothing, return EXIT_USAGE]
+  E -- yes --> F{command}
+  F -- report --> R[report.build, print lines]
+  F -- judge --> J[shadow.judge]
+  F -- verify --> V[config.load, tracker if --issue, verify.verify]
+  F -- status --> S[read status.md, else remote base branch]
+  F -- start --> T[config.load, check token, build tracker and runtime]
+  T --> G{shadow?}
+  G -- yes --> H[shadow.start]
+  G -- no --> I[flow.start]
+  V --> Z
+  R --> Z
+  J --> Z
+  S --> Z
+  H --> Z
+  I --> Z
+  Z[print one line, return exit code]
+  T -- ConfigError or empty token --> U
+```
+
+## Code view (C4 level 4)
+
+```mermaid
+classDiagram
+class cli {
+  <<function>>
+  main(argv) int
+  EXIT_OK
+  EXIT_STOPPED
+  EXIT_USAGE
+}
+class flow
+class shadow
+class verify
+class report
+class config
+class GitHubTracker
+cli ..> flow : start, Outcome
+cli ..> shadow : start, judge
+cli ..> verify : verify
+cli ..> report : build
+cli ..> config : load, Config
+cli ..> GitHubTracker : builds
+```
 
 ## Collaborations
 
