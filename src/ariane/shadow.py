@@ -8,7 +8,7 @@ is opened, no commit status or comment is posted.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from ariane import checks, git, review, ticket
@@ -106,6 +106,7 @@ class ShadowRun(_TicketRun):
             issue, config, tracker, runtime, environ, clone, branch_name(issue.number), ""
         )
         self.metrics.mode = "shadow"
+        self.base_instructions = git.base_instructions(clone, BASE_REF_REMOTE, config.base_branch)
 
     def _remote_changes(self, refs_before: dict[str, str]) -> list[str]:
         return []
@@ -117,6 +118,7 @@ class ShadowRun(_TicketRun):
         reviewed: int,
         results: list[checks.CheckResult],
         unchanged: int = 0,
+        last_guard: Callable[[], None] = lambda: None,
     ) -> Outcome:
         draft = settled is not None and not settled.go
         outcome = "needs a human" if draft else "delivered"

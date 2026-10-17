@@ -28,7 +28,8 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `add_reviewer_worktree(cwd, path, commit)` | function | Adds a detached tree without instruction files or symlinks leaving it. |
 | `base_instructions(cwd, remote, branch)` | function | The base branch's `CLAUDE.md`, or empty. |
 | `remove_worktree(cwd, path)` | function | Removes a working tree. |
-| `config_snapshot(worktree, ignore_ref)` | function | A snapshot of the git configuration files, to detect tampering. |
+| `config_snapshot(worktree, ignore_ref, watch_refs=())` | function | A snapshot of the git configuration files, hooks, local refs and the watched refs (the base's remote-tracking ref), to detect tampering. |
+| `push_rewrites(cwd)` | function | The local `url.*.insteadof` and `url.*.pushinsteadof` settings. |
 | `snapshot_changes(before, after)` | function | The entries that differ between two snapshots. |
 | `blocked_push_env(base, remote_names)` | function | An environment in which every remote's push URL is blocked. |
 | `head(cwd)` | function | The current commit. |
@@ -37,16 +38,17 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `untracked(cwd)` | function | Untracked paths. |
 | `ignored(cwd)` | function | Ignored paths. |
 | `changed_paths(cwd, since)` | function | Paths changed since a revision. |
-| `diff(cwd, since, until, exclude)` | function | The diff between two revisions, without the excluded pathspec. |
+| `diff(cwd, since, until, exclude)` | function | The diff between two revisions, without the excluded pathspec and without external diff or textconv drivers. |
+| `changed_between(cwd, since, until)` | function | Paths that differ between two commits. |
 | `status(cwd)` | function | The short status of the tree. |
 | `committed_paths(cwd, since, pathspec)` | function | Paths committed since a revision under a pathspec. |
-| `commit(cwd, pathspec, message, env, tolerate_ignored)` | function | Commits only the given paths; False when they hold no change. |
+| `commit(cwd, pathspec, message, env, tolerate_ignored, unstage)` | function | Commits only the given paths; False when they hold no change; the `unstage` paths leave the index first. |
 | `token_free_environment(base=None)` | function | The environment without any variable the credential filter withholds; the default of `git` and `out` (C21). |
 | `SECRET_NAME` | constant | The pattern of credential variable names, shared with `context`. |
 | `CREDENTIAL_CHANNELS` | constant | The credential channels (SSH agent, askpass) the filter withholds. |
 | `push_env(base, token)` | function | An environment carrying the push credential. |
 | `push(cwd, url, sha, branch, token, environ)` | function | The single authenticated push; returns the pushed commit. |
-| `fast_forwarded(cwd, remote, branch, old, new)` | function | Whether a branch moved by fast-forward. |
+| `fast_forwarded(cwd, url, branch, old, new)` | function | Whether a branch moved by fast-forward. |
 | `remote_changes(cwd, url, remote, branch, base_branch, refs_before)` | function | The push guard's check of the remote refs. |
 
 ## Behaviour and errors
@@ -55,9 +57,10 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 - `add_worktree`, `add_detached_worktree`, `remove_worktree`: ticket and replay trees.
 - `add_reviewer_worktree`: a detached tree without `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md` and `.claude/` at any depth, and without symlinks that leave the tree; a tree that cannot be built is removed (ADR 0031). `base_instructions`: the base branch's `CLAUDE.md` read with git, or empty.
 - `worktree_of`, `merge_base`, `commit_messages`: where a branch is checked out, and what `ariane verify` reads of a branch (ADR 0028).
-- `config_snapshot`, `snapshot_changes`: detect configuration tampering.
+- `config_snapshot`, `snapshot_changes`: detect configuration tampering; the snapshot also holds the refs in `watch_refs` (`refs/remotes/<remote>/<base>`). `push_rewrites`: the local URL-rewriting keys that would reroute a push (ADR 0017).
+- Every git command runs with `protocol.ext.allow=never`; every diff with `--no-ext-diff --no-textconv`, so that no configured driver runs (ADR 0017). `fast_forwarded` fetches from the URL, so the base's tracking ref (part of the snapshot) stays where `fetch` left it.
 - `blocked_push_env`, `push_env`, `push`: push only from Ariane.
-- `commit`: commits only the given paths; returns False when they hold no change, raises `GitError` when `git add` fails (for example an ignored `work/`), except with `tolerate_ignored=True` (used by `ariane verify`), which returns False so that it can say nothing was recorded.
+- `commit`: commits only the given paths; returns False when they hold no change, raises `GitError` when `git add` fails (for example an ignored `work/`), except with `tolerate_ignored=True` (used by `ariane verify`), which returns False so that it can say nothing was recorded. The `unstage` paths are removed from the index (`git rm --cached`) before the add, so that a link committed earlier becomes a regular file (`100644`) on every platform.
 - `head`, `changed_paths`, `committed_paths`, `is_ancestor`, `fast_forwarded`: history queries.
 - `remote_changes`: the push guard's remote check (C11, ADR 0017): of the refs that differ from the start, only the given branch, the base branch (a fast-forward is tolerated) and tags count; other branches are ignored. Used by `ariane start` and `ariane verify`.
 - `GitError`: raised on a failing git command.
@@ -111,15 +114,17 @@ class git {
   diff(cwd, since, until, exclude) str
   status(cwd) str
   committed_paths(cwd, since, pathspec) list
-  fast_forwarded(cwd, remote, branch, old, new) bool
+  fast_forwarded(cwd, url, branch, old, new) bool
+  changed_between(cwd, since, until) list
+  push_rewrites(cwd) list
   add_worktree(cwd, path, branch, start)
   add_detached_worktree(cwd, path, commit)
   add_reviewer_worktree(cwd, path, commit)
   remove_worktree(cwd, path)
-  config_snapshot(worktree, ignore_ref) dict
+  config_snapshot(worktree, ignore_ref, watch_refs) dict
   snapshot_changes(before, after) list
   blocked_push_env(base, remote_names) dict
-  commit(cwd, pathspec, message, env, tolerate_ignored) bool
+  commit(cwd, pathspec, message, env, tolerate_ignored, unstage) bool
   push_env(base, token) dict
   push(cwd, url, sha, branch, token, environ) str
   remote_changes(cwd, url, remote, branch, base_branch, refs_before) list

@@ -138,6 +138,9 @@ class _Verification:
         self.refs_before = git.remote_refs(repo_root, self.url) if self.url else {}
         self.head = git.out(["rev-parse", f"refs/heads/{branch}"], repo_root)
         self.base = self._base()
+        # Read once, before any check runs: a check cannot change what the reviewer is told.
+        self.base_instructions = git.base_instructions(repo_root, REMOTE, self.config.base_branch)
+        self.guard = self._snapshot()
         self.metrics = Metrics(issue.number if issue else 0, "verify", lambda text: None)
         self.issue = issue or Issue(
             0,
@@ -154,6 +157,13 @@ class _Verification:
         raise Refused(
             f"the base branch {self.config.base_branch} is not known locally",
             f"fetch {REMOTE}/{self.config.base_branch}",
+        )
+
+    def _snapshot(self) -> dict[str, str]:
+        return git.config_snapshot(
+            self.repo_root,
+            ignore_ref=self.branch,
+            watch_refs=[f"refs/remotes/{REMOTE}/{self.config.base_branch}"],
         )
 
     def run(self) -> Outcome:
@@ -204,9 +214,7 @@ class _Verification:
             env=self.untrusted_env,
             trees=[],
         )
-        changed = git.out(
-            ["diff", "--name-only", self.base, self.head, "--"], self.repo_root
-        ).splitlines()
+        changed = git.changed_between(self.repo_root, self.base, self.head)
         folder = ticket.TicketFolder(records, self.issue.number, secrets=self.secrets)
         folder.create(self.issue)
         diff = git.diff(self.repo_root, self.base, self.head, ticket.WORK_DIR)
@@ -238,7 +246,7 @@ class _Verification:
             self.reviewer_env,
             all_checks,
             self.config.definition_of_done,
-            git.base_instructions(self.repo_root, REMOTE, self.config.base_branch),
+            self.base_instructions,
             metrics=self.metrics,
         )
         try:
@@ -273,7 +281,14 @@ class _Verification:
         return Outcome(EXIT_OK if green else EXIT_STOPPED, line)
 
     def _unchanged(self, replay: Path, after: str, tree_before: str) -> None:
-        """Untrusted code ran: the branch and the replay tree are as they were."""
+        """Untrusted code ran: git, the branch and the replay tree are as they were."""
+        changes = git.snapshot_changes(self.guard, self._snapshot())
+        if changes:
+            raise Refused(
+                f"{after} changed git configuration, hooks or local branches"
+                f" ({'; '.join(changes)})",
+                "inspect .git/config, .git/hooks and the branches",
+            )
         moved = git.out(["rev-parse", f"refs/heads/{self.branch}"], self.repo_root) != self.head
         if git.current_branch(replay) or git.head(replay) != self.head or moved:
             raise Refused(f"{after} moved a head", "inspect the branch and the replay tree")
@@ -325,11 +340,9 @@ class _Verification:
             git.git(["worktree", "add", "--quiet", str(tree), self.branch], self.repo_root)
         try:
             folder = tree / relative_folder(self.branch)
-            folder.mkdir(parents=True, exist_ok=True)
+            ticket.ensure_folder(tree, folder)
             for name, text in texts.items():
-                (folder / name).write_text(
-                    redact(text, self.secrets), encoding="utf-8", newline="\n"
-                )
+                ticket.write_file(folder / name, redact(text, self.secrets))
             message = redact(
                 f"Verify {self.branch}: record the checks and the review", self.secrets
             )
@@ -339,6 +352,7 @@ class _Verification:
                 f"{message}\n\n{summary}",
                 env=self.untrusted_env,
                 tolerate_ignored=True,
+                unstage=[f"{relative_folder(self.branch)}/{name}" for name in texts],
             )
             if not committed:
                 raise Refused(

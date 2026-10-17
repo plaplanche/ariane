@@ -82,3 +82,16 @@ and the credential-free sessions above remain the protection.
 - **Residuals.** On macOS, on Windows and when running as root, a same-user process can still read
   Ariane's memory; only the operating-system sandbox of the security slice (C21) closes it. The
   README recommends a fine-grained token limited to the one repository.
+
+## Amendment (2026-10-17): guards that cover what Ariane reads and pushes
+
+- **`verify` guards git like `start`.** `ariane verify` takes the git snapshot before its first
+  check and compares it after every check and the reviewer, before any other git command; a
+  change is refused with the wording of `start`.
+- **Safer reads.** Every diff Ariane runs has `--no-ext-diff --no-textconv`, and every git
+  command `-c protocol.ext.allow=never`: a configured driver or the `ext::` transport never runs.
+- **The base's tracking ref is guarded.** The snapshot holds `refs/remotes/<remote>/<base>`. The
+  tolerance for a fast-forward of the base branch fetches from the URL, so that it does not move
+  that ref.
+- **A last guard before the push.** The delivery runs the guard once more right before
+  `git.push`, and any local `url.*.insteadof` or `url.*.pushinsteadof` key stops it.

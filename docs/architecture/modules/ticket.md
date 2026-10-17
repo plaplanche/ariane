@@ -20,6 +20,8 @@ The ticket folder `work/<n>/` (C1, C10, C23): every document of a ticket, readab
 | `fence(text)` | function | A backtick fence longer than any backtick run inside `text`. |
 | `fenced(text, info='text')` | function | `text` in a code block that it cannot close early (quotes untrusted text safely). |
 | `TicketFolder` | class | Ariane's records of one ticket: `create(issue)`, `exists()`, `log(kind, step, detail='')`, `set_status(state, detail, next_action)`, `write(name, text)`, `restore()`. |
+| `ensure_folder(root, path)` | function | Makes every folder from `root` down to `path` a real directory (a link or file in the way is removed). |
+| `write_file(target, text)` | function | Writes a record; a link or folder in its place is removed, never followed. Also used by `verify` (ADR 0028). |
 | `brief(issue)` | function | The issue as a document. |
 | `read_status(path)` | function | Parse the `status.md` of a ticket folder into its fields (Last action, At, Detail, Next). |
 | `parse_status(text)` | function | Parse status text in the current wording (Last action, At) or the old one (State, Updated). |

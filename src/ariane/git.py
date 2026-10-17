@@ -7,7 +7,7 @@ import hashlib
 import os
 import re
 import shutil
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from ariane import logs, process
@@ -25,7 +25,11 @@ _SAFE_OPTIONS = [
     # No background housekeeping: it rewrites files (`info/refs`) in the middle of a ticket.
     *("-c", "gc.auto=0"),
     *("-c", "maintenance.auto=false"),
+    # No `ext::` transport: a URL must never run a command.
+    *("-c", "protocol.ext.allow=never"),
 ]
+# Every diff Ariane runs: no external diff driver or textconv filter from the configuration.
+_PLAIN_DIFF = ["diff", "--no-ext-diff", "--no-textconv"]
 # Listings `git update-server-info` regenerates for the dumb HTTP transport: not part of the guard.
 # Markers of a push refused for authentication, in git's output (lowercase).
 _AUTH_REFUSALS = (
@@ -201,16 +205,32 @@ def base_instructions(cwd: Path, remote: str, branch: str) -> str:
     return show_on_branch(cwd, remote, branch, "CLAUDE.md")
 
 
+def push_rewrites(cwd: Path) -> list[str]:
+    """Local `url.*.insteadof` and `url.*.pushinsteadof` keys: they would reroute a push."""
+    listing = git(["config", "--list", "--show-scope"], cwd).stdout
+    rewrites = []
+    for line in listing.splitlines():
+        scope, _, setting = line.partition("\t")
+        key = setting.partition("=")[0].lower()
+        rewriting = key.startswith("url.") and key.endswith((".insteadof", ".pushinsteadof"))
+        if scope in ("local", "worktree", "command") and rewriting:
+            rewrites.append(setting)
+    return rewrites
+
+
 def remove_worktree(cwd: Path, path: Path) -> None:
     git(["worktree", "remove", "--force", str(path)], cwd)
 
 
-def config_snapshot(worktree: Path, *, ignore_ref: str) -> dict[str, str]:
+def config_snapshot(
+    worktree: Path, *, ignore_ref: str, watch_refs: Sequence[str] = ()
+) -> dict[str, str]:
     """Everything that makes git run code or reroute a push, by part.
 
     Parts: each file of the shared configuration, hooks and info folders and of this working
     tree's own configuration (as a digest), every configuration scope git reads (global
-    included), and the local branches and tags except branch `ignore_ref` (the ticket's own).
+    included), the local branches and tags except branch `ignore_ref` (the ticket's own), and
+    the refs in `watch_refs` (the remote-tracking ref of the base branch).
     Ariane compares two snapshots taken before and after untrusted code runs: a difference
     means that code edited git itself, and `snapshot_changes` names what changed.
     """
@@ -245,6 +265,9 @@ def config_snapshot(worktree: Path, *, ignore_ref: str) -> dict[str, str]:
         if not line.startswith(own):
             ref, _, sha = line.partition(" ")
             snapshot[f"ref {ref}"] = sha
+    for ref in watch_refs:
+        found = git(["rev-parse", "--verify", "--quiet", ref], worktree, check=False)
+        snapshot[f"ref {ref}"] = found.stdout.strip() if found.ok else ""
     return snapshot
 
 
@@ -309,13 +332,13 @@ def ignored(cwd: Path) -> set[str]:
 
 def changed_paths(cwd: Path, since: str) -> list[str]:
     """Paths that differ from commit `since`: committed, staged, unstaged or untracked."""
-    committed = out(["diff", "--name-only", since, "--"], cwd).splitlines()
+    committed = out([*_PLAIN_DIFF, "--name-only", since, "--"], cwd).splitlines()
     return sorted({*committed, *untracked(cwd)} - {""})
 
 
 def diff(cwd: Path, since: str, until: str, exclude: str) -> str:
     """The diff from `since` to `until`, without the paths under `exclude`."""
-    return out(["diff", since, until, "--", ".", f":(exclude){exclude}"], cwd)
+    return out([*_PLAIN_DIFF, since, until, "--", ".", f":(exclude){exclude}"], cwd)
 
 
 def status(cwd: Path) -> str:
@@ -323,9 +346,14 @@ def status(cwd: Path) -> str:
     return out(["status", "--porcelain", "--untracked-files=all"], cwd)
 
 
+def changed_between(cwd: Path, since: str, until: str) -> list[str]:
+    """Paths that differ between commits `since` and `until`."""
+    return out([*_PLAIN_DIFF, "--name-only", since, until, "--"], cwd).splitlines()
+
+
 def committed_paths(cwd: Path, since: str, pathspec: str) -> list[str]:
     """Paths under `pathspec` changed by commits since `since`."""
-    listing = out(["diff", "--name-only", since, "HEAD", "--", pathspec], cwd)
+    listing = out([*_PLAIN_DIFF, "--name-only", since, "HEAD", "--", pathspec], cwd)
     return [line for line in listing.splitlines() if line]
 
 
@@ -336,21 +364,26 @@ def commit(
     *,
     env: Mapping[str, str],
     tolerate_ignored: bool = False,
+    unstage: Sequence[str] = (),
 ) -> bool:
     """Commit the changes under `pathspec` only; return False when it holds none.
 
     An ignored path makes `git add` fail: that raises `GitError`, unless `tolerate_ignored`, which
     returns False instead. The index is reset to HEAD first: whatever an agent or a check staged
-    does not ride along.
+    does not ride along. Each path in `unstage` is dropped from the index before the add, so that
+    it is committed as the regular file now in the working tree.
     """
     git(["reset", "--quiet"], cwd, env=env)
+    for path in unstage:
+        # A link committed earlier is not kept as a link when checked out as a plain file.
+        git(["rm", "--cached", "--quiet", "--ignore-unmatch", "--", path], cwd, env=env)
     # English messages, so that "ignored" can be recognised whatever the user's locale.
     added = git(["add", "--all", "--", *pathspec], cwd, env={**env, "LC_ALL": "C"}, check=False)
     if not added.ok:
         if tolerate_ignored and "ignored" in added.output:
             return False
         raise GitError(redact(f"git add failed:\n{added.output.strip()}"))
-    if git(["diff", "--cached", "--quiet"], cwd, env=env, check=False).ok:
+    if git([*_PLAIN_DIFF, "--cached", "--quiet"], cwd, env=env, check=False).ok:
         return False
     git(["commit", "--quiet", "-m", message], cwd, env=env)
     return True
@@ -423,15 +456,13 @@ def push(
     return how
 
 
-def fast_forwarded(cwd: Path, remote: str, branch: str, old: str, new: str) -> bool:
+def fast_forwarded(cwd: Path, url: str, branch: str, old: str, new: str) -> bool:
     """Whether the remote `branch` moved from `old` to `new` by a fast-forward (fetches `new`)."""
     if git(["cat-file", "-e", f"{old}^{{commit}}"], cwd, check=False).ok is False:
         return False
-    fetched = git(
-        ["fetch", "--quiet", remote, f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}"],
-        cwd,
-        check=False,
-    )
+    # Fetched from the URL, not the remote: the base branch's remote-tracking ref is part of the
+    # guard, and a fetch from a named remote would update it.
+    fetched = git(["fetch", "--quiet", url, f"refs/heads/{branch}"], cwd, check=False)
     if not fetched.ok:
         return False
     return is_ancestor(cwd, old, new)
@@ -457,7 +488,7 @@ def remote_changes(
         base in changed
         and base in refs
         and base in refs_before
-        and fast_forwarded(cwd, remote, base_branch, refs_before[base], refs[base])
+        and fast_forwarded(cwd, url, base_branch, refs_before[base], refs[base])
     ):
         changed.remove(base)
     return changed
