@@ -11,7 +11,7 @@ The GitHub tracker over the REST API, with the standard library only (C1, C10, C
 
 ## Behaviour and errors
 
-- `read_issue` returns an issue only if it carries the ready label put by a user with write permission (the owner of a user-owned repository needs no permission call) and has not changed since, through REST only (ADR 0032 and its amendment); otherwise it raises `IssueRefused`, naming the reason and how to fix it.
+- `read_issue` returns an issue only if it carries the ready label put by a user with write permission (the owner of a user-owned repository needs no permission call) and has not changed since, through REST only (ADR 0032 and its amendment); otherwise it raises `IssueRefused`, naming the reason and how to fix it. When the events show no `labeled` event for the label, or an issue changed after the last one listed, they are read again up to 4 more times after 1, 2, 4 and 8 s (`sleep` is injectable; log `github.label_event_retry`), and the last read decides; the issue is not read again.
 - `open_pull_request` opens a draft when asked and returns the `PullRequest`; `set_commit_status` publishes a status.
 - `pull_request_state(branch)`: `GET /pulls?state=all&head=<owner>:<branch>`, newest first; the end is `merged_at`, else `closed_at`; none when the branch has no pull request.
 - `read_issue` also raises `TrackerError` for a pull request number.

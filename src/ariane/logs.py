@@ -91,6 +91,11 @@ TECHNICAL_TYPES = _declare(
         ("process.started", "debug", "A subprocess started."),
         ("process.exited", "debug", "A subprocess ended, with its exit code and duration."),
         ("github.request", "info", "A GitHub API call and its status."),
+        (
+            "github.label_event_retry",
+            "info",
+            "The issue's label events are read again: not listed yet.",
+        ),
         ("guard.verified", "info", "A guard verification passed."),
         ("journal.warning", "warning", "A warning was written to the ticket journal."),
         ("run.stopped", "error", "A ticket run stopped."),

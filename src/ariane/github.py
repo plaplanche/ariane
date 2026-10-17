@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -17,6 +19,16 @@ _PAGE = 100
 _WRITERS = frozenset({"write", "maintain", "admin"})
 # Adding a label stamps `updated_at` in the same second (seconds only): one second of slack.
 _LABEL_SLACK = timedelta(seconds=1)
+# GitHub lists a label event a few seconds late: waits before the 4 more reads (ADR 0032).
+_EVENT_RETRY_DELAYS = (1, 2, 4, 8)
+
+
+class _EventsLag(IssueRefused):
+    """A refusal the events may only show because they lag behind the issue."""
+
+    def __init__(self, message: str, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -39,7 +51,16 @@ def web_url(api_url: str) -> str:
 
 
 class GitHubTracker:
-    def __init__(self, *, repository: str, token: str, api_url: str, ready_label: str) -> None:
+    def __init__(
+        self,
+        *,
+        repository: str,
+        token: str,
+        api_url: str,
+        ready_label: str,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self._sleep = sleep
         self._ready_label = ready_label
         self._repository = repository
         self._token = token
@@ -68,7 +89,6 @@ class GitHubTracker:
         REST only: GraphQL and, for most users, the permissions endpoint are unreachable from
         some sandboxes. Any change after the label (edit, rename, comment, other label) refuses.
         """
-        fix = f"ask a maintainer to add the label `{label}` again"
         names = [
             str(item.get("name")) for item in data.get("labels") or [] if isinstance(item, dict)
         ]
@@ -76,6 +96,20 @@ class GitHubTracker:
             raise IssueRefused(
                 f"#{number} does not carry the label `{label}`; ask a maintainer to add it"
             )
+        for attempt, delay in enumerate((*_EVENT_RETRY_DELAYS, None), start=1):
+            try:
+                self._judge(number, data, label, self._read_events(number))
+                return
+            except _EventsLag as lag:
+                if delay is None:
+                    raise IssueRefused(str(lag)) from None
+                logs.emit(
+                    "github.label_event_retry",
+                    f"#{number}: read {attempt} of the events retried in {delay} s: {lag.reason}",
+                )
+                self._sleep(delay)
+
+    def _read_events(self, number: int) -> list[dict[str, Any]]:
         path = f"/repos/{self._repository}/issues/{number}/events"
         events: list[dict[str, Any]] = []
         page = 1
@@ -85,15 +119,20 @@ class GitHubTracker:
                 raise TrackerError(f"GitHub API GET {path}: unexpected response")
             events += [e for e in batch if isinstance(e, dict)]
             if len(batch) < _PAGE:
-                break
+                return events
             page += 1
+
+    def _judge(self, number: int, data: dict[str, Any], label: str, events: list[Any]) -> None:
+        """Decide on one read of the events; `_EventsLag` when they may lag behind the issue."""
+        fix = f"ask a maintainer to add the label `{label}` again"
         try:
             labelled = [
                 e for e in events if e.get("event") == "labeled" and e["label"]["name"] == label
             ]
             if not labelled:
-                raise IssueRefused(
-                    f"#{number}: no event shows who added the label `{label}`; {fix}"
+                raise _EventsLag(
+                    f"#{number}: no event shows who added the label `{label}`; {fix}",
+                    "no event lists the label",
                 )
             last = max(labelled, key=lambda e: _moment(e["created_at"]))
             since = _moment(last["created_at"])
@@ -107,9 +146,10 @@ class GitHubTracker:
                 f" who cannot write to {self._repository}; ask a maintainer to add it"
             )
         if updated > since + _LABEL_SLACK:
-            raise IssueRefused(
+            raise _EventsLag(
                 f"#{number} changed after the label `{label}` was added"
-                f" (edit, rename, comment or other label); {fix}"
+                f" (edit, rename, comment or other label); {fix}",
+                "the issue changed after the last listed label event",
             )
 
     def _can_write(self, user: str) -> bool:

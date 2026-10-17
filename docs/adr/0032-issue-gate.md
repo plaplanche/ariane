@@ -57,3 +57,5 @@ activity can also update the issue, for example the cross-reference of a pull re
 `Closes #N`: a later `ariane start` or `ariane verify --issue N` (a hand takeover) then needs the
 label again. A failing `GET /repos/{repo}` is a tracker error (exit 1), not a refusal. An
 organisation-owned repository still needs the permissions endpoint.
+
+Amendment: the events are read again for up to 15 s when they lag behind the issue.
