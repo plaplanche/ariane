@@ -29,7 +29,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `base_instructions(cwd, remote, branch)` | function | The base branch's `CLAUDE.md`, or empty. |
 | `remove_worktree(cwd, path)` | function | Removes a working tree. |
 | `config_snapshot(worktree, ignore_ref, watch_refs=())` | function | A snapshot of the git configuration files, hooks, local refs and the watched refs (the base's remote-tracking ref), to detect tampering. |
-| `push_rewrites(cwd, url)` | function | The `url.*.insteadof` and `url.*.pushinsteadof` settings (local, worktree, command scopes) whose prefix is a prefix of `url`. |
+| `push_rewrites(cwd, url)` | function | The `url.*.insteadof` and `url.*.pushinsteadof` settings (any scope; read with `--null`, from the push's environment) whose prefix is a prefix of `url`. |
 | `snapshot_changes(before, after)` | function | The entries that differ between two snapshots. |
 | `blocked_push_env(base, remote_names)` | function | An environment in which every remote's push URL is blocked. |
 | `head(cwd)` | function | The current commit. |

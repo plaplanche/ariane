@@ -99,7 +99,7 @@ class Delivery:
     def _last_guard(self) -> None:
         """C11: git is as at the last agent session, and no rewrite applies to the push URL."""
         self.guard()
-        rewrites = git.push_rewrites(self.worktree, self.url)
+        rewrites = git.push_rewrites(self.worktree, self.url, self.environ)
         if rewrites:
             raise PullRequestRefused(
                 "git configuration rewrites URLs, which could reroute the push"

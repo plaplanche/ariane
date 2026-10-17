@@ -205,22 +205,24 @@ def base_instructions(cwd: Path, remote: str, branch: str) -> str:
     return show_on_branch(cwd, remote, branch, "CLAUDE.md")
 
 
-def push_rewrites(cwd: Path, url: str) -> list[str]:
-    """`url.*.insteadof` and `url.*.pushinsteadof` settings that apply to `url`.
+def push_rewrites(cwd: Path, url: str, env: Mapping[str, str] | None = None) -> list[str]:
+    """`url.*.insteadof` and `url.*.pushinsteadof` settings, in any scope, that apply to `url`.
 
-    A rewrite applies when its prefix (the value) is a prefix of `url`, git's own rule. Only the
-    local, worktree and command scopes are listed; other prefixes are ignored.
+    A rewrite applies when its prefix (the value) is a prefix of `url`, git's own rule; other
+    prefixes are ignored. `env` is the environment the push uses (default: Ariane's).
     """
-    listing = git(["config", "--list", "--show-scope"], cwd).stdout
+    env = token_free_environment(env)
+    listing = git(["config", "--list", "--null"], cwd, env=env).stdout
     rewrites = []
-    for line in listing.splitlines():
-        scope, _, setting = line.partition("\t")
-        key, _, prefix = setting.partition("=")
-        rewriting = key.lower().startswith("url.") and key.lower().endswith(
-            (".insteadof", ".pushinsteadof")
-        )
-        if scope in ("local", "worktree", "command") and rewriting and url.startswith(prefix):
-            rewrites.append(setting)
+    for entry in listing.split("\0"):
+        key, _, prefix = entry.partition("\n")
+        lowered = key.lower()
+        if (
+            lowered.startswith("url.")
+            and lowered.endswith((".insteadof", ".pushinsteadof"))
+            and url.startswith(prefix)
+        ):
+            rewrites.append(f"{key}={prefix}")
     return rewrites
 
 
