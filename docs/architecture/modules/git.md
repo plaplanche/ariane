@@ -29,7 +29,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `base_instructions(cwd, remote, branch)` | function | The base branch's `CLAUDE.md`, or empty. |
 | `remove_worktree(cwd, path)` | function | Removes a working tree. |
 | `config_snapshot(worktree, ignore_ref, watch_refs=())` | function | A snapshot of the git configuration files, hooks, local refs and the watched refs (the base's remote-tracking ref), to detect tampering. |
-| `push_rewrites(cwd)` | function | The local `url.*.insteadof` and `url.*.pushinsteadof` settings. |
+| `push_rewrites(cwd, url)` | function | The `url.*.insteadof` and `url.*.pushinsteadof` settings (any scope; read with `--null`, from the push's environment) whose prefix is a prefix of `url`. |
 | `snapshot_changes(before, after)` | function | The entries that differ between two snapshots. |
 | `blocked_push_env(base, remote_names)` | function | An environment in which every remote's push URL is blocked. |
 | `head(cwd)` | function | The current commit. |
@@ -57,7 +57,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 - `add_worktree`, `add_detached_worktree`, `remove_worktree`: ticket and replay trees.
 - `add_reviewer_worktree`: a detached tree without `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md` and `.claude/` at any depth, and without symlinks that leave the tree; a tree that cannot be built is removed (ADR 0031). `base_instructions`: the base branch's `CLAUDE.md` read with git, or empty.
 - `worktree_of`, `merge_base`, `commit_messages`: where a branch is checked out, and what `ariane verify` reads of a branch (ADR 0028).
-- `config_snapshot`, `snapshot_changes`: detect configuration tampering; the snapshot also holds the refs in `watch_refs` (`refs/remotes/<remote>/<base>`). `push_rewrites`: the local URL-rewriting keys that would reroute a push (ADR 0017).
+- `config_snapshot`, `snapshot_changes`: detect configuration tampering; the snapshot also holds the refs in `watch_refs` (`refs/remotes/<remote>/<base>`). `push_rewrites`: the URL-rewriting keys that apply to the push URL and would reroute it (ADR 0017).
 - Every git command runs with `protocol.ext.allow=never`; every diff with `--no-ext-diff --no-textconv`, so that no configured driver runs (ADR 0017). `fast_forwarded` fetches from the URL, so the base's tracking ref (part of the snapshot) stays where `fetch` left it.
 - `blocked_push_env`, `push_env`, `push`: push only from Ariane.
 - `commit`: commits only the given paths; returns False when they hold no change, raises `GitError` when `git add` fails (for example an ignored `work/`), except with `tolerate_ignored=True` (used by `ariane verify`), which returns False so that it can say nothing was recorded. The `unstage` paths are removed from the index (`git rm --cached`) before the add, so that a link committed earlier becomes a regular file (`100644`) on every platform.
@@ -116,7 +116,7 @@ class git {
   committed_paths(cwd, since, pathspec) list
   fast_forwarded(cwd, url, branch, old, new) bool
   changed_between(cwd, since, until) list
-  push_rewrites(cwd) list
+  push_rewrites(cwd, url) list
   add_worktree(cwd, path, branch, start)
   add_detached_worktree(cwd, path, commit)
   add_reviewer_worktree(cwd, path, commit)

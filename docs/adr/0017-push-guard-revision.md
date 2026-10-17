@@ -95,3 +95,12 @@ and the credential-free sessions above remain the protection.
   that ref.
 - **A last guard before the push.** The delivery runs the guard once more right before
   `git.push`, and any local `url.*.insteadof` or `url.*.pushinsteadof` key stops it.
+
+## Amendment (2026-10-17): the last guard is about the push URL
+
+The last guard stops only on `url.<base>.insteadof` and `url.<base>.pushinsteadof` settings,
+in any scope (a global or system key reroutes a push as well as a local one), whose value is a prefix of the URL Ariane pushes to
+(git's own matching rule); `git.push_rewrites(cwd, url)` takes that URL. Other rewrite keys
+are ignored. Stopping on every key was too broad: a cloud container injects command-scope keys
+(`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_n`) that rewrite `git@github.com:` to `https://github.com/`,
+which never apply to an `https://` remote. The message and the `Next:` line are unchanged.

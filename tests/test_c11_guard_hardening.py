@@ -88,7 +88,7 @@ def _arm_pushinsteadof(project: Project, monkeypatch: pytest.MonkeyPatch) -> lis
 
     def late(self: delivery.Delivery) -> None:
         original(self)
-        sh(["git", "config", "url.https://elsewhere.invalid/.pushInsteadOf", "x"], self.worktree)
+        sh(["git", "config", "url.https://elsewhere.invalid/.pushInsteadOf", ""], self.worktree)
 
     monkeypatch.setattr(delivery.Delivery, "_require_replayed", late)
     return pushes
@@ -115,7 +115,8 @@ def test_c11_guard_hardening_a_local_insteadof_key_stops_the_delivery_by_itself(
         original(self)
         # The snapshot comparison is blinded: only the explicit check can still see the key.
         monkeypatch.setattr(git, "snapshot_changes", lambda before, after: [])
-        sh(["git", "config", "url.https://elsewhere.invalid/.insteadOf", "x"], self.worktree)
+        remote = sh(["git", "config", "remote.origin.url"], self.worktree).strip()
+        sh(["git", "config", f"url.{remote}.insteadOf", remote], self.worktree)
 
     monkeypatch.setattr(delivery.Delivery, "_require_replayed", late)
     outcome = start(project, tracker, FakeRuntime())
