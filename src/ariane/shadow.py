@@ -54,8 +54,8 @@ def start(
         return _interrupted_before_start(number)
     clone = clone_path(repo_root, number)
     try:
-        _prepare(repo_root, config, branch_name(number), clone)
-        run = ShadowRun(issue, config, tracker, runtime, environ, clone)
+        instructions = _prepare(repo_root, config, branch_name(number), clone)
+        run = ShadowRun(issue, config, tracker, runtime, environ, clone, instructions)
     except KeyboardInterrupt:
         return _interrupted_before_start(number)
     except (Stop, *_FAILURES) as exc:
@@ -64,9 +64,10 @@ def start(
     return run.execute({})
 
 
-def _prepare(repo_root: Path, config: Config, branch: str, clone: Path) -> None:
+def _prepare(repo_root: Path, config: Config, branch: str, clone: Path) -> str:
     """Clone the user's repository (read only) at its last known remote base branch, cut the
-    clone from every remote, and check out the ticket's branch there."""
+    clone from every remote, and check out the ticket's branch there. Returns the base branch's
+    instructions, read once before any agent runs."""
     if clone.exists():
         raise Stop(f"its shadow clone already exists at {clone}", "remove it to start over")
     base = f"refs/remotes/{REMOTE}/{config.base_branch}"
@@ -85,7 +86,9 @@ def _prepare(repo_root: Path, config: Config, branch: str, clone: Path) -> None:
     )
     git.git(["remote", "remove", REMOTE], clone)
     git.git(["update-ref", f"refs/remotes/{BASE_REF_REMOTE}/{config.base_branch}", sha], clone)
+    instructions = git.base_instructions(clone, BASE_REF_REMOTE, config.base_branch)
     git.git(["checkout", "--quiet", "-b", branch, sha], clone)
+    return instructions
 
 
 class ShadowRun(_TicketRun):
@@ -101,9 +104,18 @@ class ShadowRun(_TicketRun):
         runtime: AgentRuntime,
         environ: Mapping[str, str],
         clone: Path,
+        base_instructions: str = "",
     ) -> None:
         super().__init__(
-            issue, config, tracker, runtime, environ, clone, branch_name(issue.number), ""
+            issue,
+            config,
+            tracker,
+            runtime,
+            environ,
+            clone,
+            branch_name(issue.number),
+            "",
+            base_instructions,
         )
         self.metrics.mode = "shadow"
 

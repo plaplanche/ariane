@@ -55,7 +55,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 
 - Safer reads (ADR 0017): `_SAFE_OPTIONS` has `protocol.ext.allow=never` and every diff has `NO_DRIVERS`, so a configured external diff, textconv driver or `ext::` transport never runs.
 - `config_snapshot(worktree, ignore_ref, base_ref)`: also covers the remote-tracking ref `base_ref`. `fast_forwarded` fetches into the private ref `refs/ariane/base-check`, so Ariane's own check does not move it.
-- `url_rewrites(cwd)`: the local `url.*.insteadof` and `url.*.pushinsteadof` keys; the delivery stops on any.
+- `url_rewrites(cwd)`: the local `url.*.insteadof` and `url.*.pushinsteadof` keys, included files followed; the delivery stops on any.
 
 - `git`, `out`: run git and return output.
 - `add_worktree`, `add_detached_worktree`, `remove_worktree`: ticket and replay trees.

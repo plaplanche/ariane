@@ -47,7 +47,8 @@ def test_c11_guard_hardening_verify_refuses_when_a_check_changes_git_config(
     assert outcome.exit_code == 1
     assert "the checks changed git configuration, hooks or local branches" in outcome.line
     assert not runtime.sessions
-    # After the refusal: no status, rev-parse of the branch, ls-remote or commit.
+    # After the refusal: no status, ls-remote or commit. Only the cleanup of the reviewed
+    # worktree (`worktree remove`, with the safe options) still runs.
     after = seen[[i for i, a in enumerate(seen) if a[:1] == ["config"]][-1] :]
     assert not any(a[:1] in (["status"], ["commit"], ["ls-remote"]) for a in after)
 

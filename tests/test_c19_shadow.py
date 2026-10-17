@@ -95,3 +95,16 @@ def test_c19_shadow_metrics_have_the_shadow_mode(
     assert data["mode"] == "shadow"
     assert data["outcome"] == "delivered"
     assert data["attempts"] == {"push": 0, "pull_request": 0, "guard_violations": 0}
+
+
+def test_c19_shadow_reviewer_prompt_holds_the_base_branch_instructions(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    (project.root / "CLAUDE.md").write_text("Base rule: be kind.\n", encoding="utf-8")
+    sh(["git", "add", "CLAUDE.md"], project.root)
+    sh(["git", "commit", "-q", "-m", "add instructions"], project.root)
+    sh(["git", "push", "-q", "origin", "HEAD:main"], project.root)
+    runtime = FakeRuntime()
+    assert run_shadow(project, tracker, runtime).exit_code == 0
+    review = next(s for s in runtime.sessions if s.role == "reviewer")
+    assert "Base rule: be kind." in review.prompt

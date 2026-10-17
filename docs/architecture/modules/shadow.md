@@ -16,7 +16,7 @@
 
 ## Behaviour and errors
 
-- `start` reads the issue, refuses an existing clone ("remove it to start over") and an unknown `origin/<base branch>` in the user's repository, clones it with `git clone --local --no-checkout` into `<repo>.ariane/shadow/<n>/`, removes `origin`, checks out `ariane/<n>` at the user's last known `origin/<base branch>` and runs the flow. The user's `.git` is only read, and nothing is fetched. A tracker error or a stop before the start gives an `Outcome` with a next action.
+- `start` reads the issue, refuses an existing clone ("remove it to start over") and an unknown `origin/<base branch>` in the user's repository, clones it with `git clone --local --no-checkout` into `<repo>.ariane/shadow/<n>/`, removes `origin`, reads the base branch's `CLAUDE.md` once from the clone (the reviewer's instructions, before any agent runs), checks out `ariane/<n>` at the user's last known `origin/<base branch>` and runs the flow. The user's `.git` is only read, and nothing is fetched. A tracker error or a stop before the start gives an `Outcome` with a next action.
 - `ShadowRun` delivers locally: the outcome (`delivered`, or `needs a human` when the review is still `no-go`) goes to the journal, `status.md` and `metrics.json`, committed in the clone. The final line is "Shadow ticket #<n> done (<outcome>, review <verdict>). Next: read <clone>/work/<n>/, then run ariane judge <n> accept|reject --minutes N."
 - `judge` (`ariane judge <n> accept|reject --minutes N [--note TEXT]`) writes `judgement` into the shadow ticket's `metrics.json` and keeps earlier ones in `judgements_before`; no clone or a `running` ticket gives one line and exit 1.
 

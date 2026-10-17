@@ -322,7 +322,7 @@ class _TicketRun:
         return git.config_snapshot(
             self.worktree,
             ignore_ref=self.branch,
-            base_ref=f"refs/remotes/{REMOTE}/{self.config.base_branch}",
+            base_ref=f"refs/remotes/{self.remote}/{self.config.base_branch}",
         )
 
     def _guard_delivery(
