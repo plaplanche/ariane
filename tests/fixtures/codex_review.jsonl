@@ -1,0 +1,5 @@
+{"type": "thread.started", "thread_id": "t1"}
+{"type": "turn.started"}
+{"type": "item.completed", "item": {"id": "i1", "type": "command_execution", "command": "cat calc.py"}}
+{"type": "item.completed", "item": {"id": "i2", "type": "agent_message", "text": "Found a bug.\n```json\n{\"verdict\": \"no-go\", \"findings\": [{\"file\": \"calc.py\", \"line\": 2, \"severity\": \"blocking\", \"title\": \"add subtracts\", \"detail\": \"use +\"}], \"definition_of_done\": [], \"learnings\": []}\n```"}}
+{"type": "turn.completed", "usage": {"input_tokens": 4000, "cached_input_tokens": 3000, "cache_write_input_tokens": 0, "output_tokens": 240, "reasoning_output_tokens": 100}}

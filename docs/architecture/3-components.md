@@ -17,6 +17,7 @@ flowchart TD
   claude_code --> process
   claude_code --> runtime
   cli --> claude_code
+  cli --> codex
   cli --> config
   cli --> flow
   cli --> git
@@ -29,6 +30,8 @@ flowchart TD
   cli --> shadow
   cli --> ticket
   cli --> verify
+  codex --> process
+  codex --> runtime
   config --> config_schema
   context --> config
   context --> git
@@ -136,7 +139,7 @@ sequenceDiagram
   participant F as flow
   participant T as tracker (github)
   participant G as git
-  participant R as runtime (claude_code or opencode)
+  participant R as runtime (claude_code, opencode or codex)
   participant P as replay
   participant C as checks
   participant S as review_session
@@ -194,7 +197,7 @@ sequenceDiagram
   participant T as tracker (github)
   participant G as git
   participant F as flow
-  participant R as runtime (claude_code or opencode)
+  participant R as runtime (claude_code, opencode or codex)
   participant M as metrics
   participant P as replay
   participant S as review_session
@@ -233,7 +236,7 @@ sequenceDiagram
   participant G as git
   participant C as checks
   participant S as review_session
-  participant R as runtime (claude_code or opencode)
+  participant R as runtime (claude_code, opencode or codex)
   participant M as metrics
   U->>CLI: ariane verify branch
   CLI->>V: verify

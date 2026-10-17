@@ -13,9 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ariane.config_schema import OPENCODE, OPENCODE_TOOLS, REVIEWER_TOOLS, RUNTIMES, SCHEMA
+from ariane.config_schema import CODEX, OPENCODE, OPENCODE_TOOLS, REVIEWER_TOOLS, RUNTIMES, SCHEMA
 
-__all__ = ["OPENCODE", "SCHEMA"]
+__all__ = ["CODEX", "OPENCODE", "SCHEMA"]
 
 CONFIG_FILE = "ariane.toml"
 CONFIG_ENV = "ARIANE_CONFIG"
@@ -42,6 +42,7 @@ class AgentConfig:
     max_budget_usd: float
     timeout_minutes: float
     max_tokens: int | None = None
+    api_key_env: str | None = None  # codex: variable holding the API key, if not a plan login
 
 
 @dataclass(frozen=True)
@@ -257,13 +258,21 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
     _only(
         table,
         where,
-        {"runtime", "model", "tools", "max_budget_usd", "timeout_minutes", "max_tokens"},
+        {
+            "runtime",
+            "model",
+            "tools",
+            "max_budget_usd",
+            "timeout_minutes",
+            "max_tokens",
+            "api_key_env",
+        },
     )
     prefix = f"{where}."
     runtime = _str(table, "runtime", prefix)
-    if runtime == OPENCODE and role == "implementer":
+    if runtime in (OPENCODE, CODEX) and role == "implementer":
         raise ConfigError(
-            f"{CONFIG_FILE}: {where}.runtime: opencode is not supported for the {role} role yet"
+            f"{CONFIG_FILE}: {where}.runtime: {runtime} is not supported for the {role} role yet"
         )
     if runtime not in RUNTIMES[role]:
         allowed = ", ".join(RUNTIMES[role])
@@ -271,6 +280,9 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
             f"{CONFIG_FILE}: {where}.runtime: unsupported value {runtime!r} ({allowed})"
         )
     tools = _str_list(table, "tools", prefix)
+    api_key_env = _str(table, "api_key_env", prefix) if "api_key_env" in table else None
+    if api_key_env is not None and runtime != CODEX:
+        raise ConfigError(f'{CONFIG_FILE}: {where}.api_key_env: only with runtime = "codex"')
     if runtime == OPENCODE:
         _opencode_agent(table, tools, where)
     if role == "reviewer" and runtime != OPENCODE:
@@ -291,6 +303,7 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
         max_budget_usd=_positive(table, "max_budget_usd", prefix),
         timeout_minutes=_positive(table, "timeout_minutes", prefix),
         max_tokens=_max_tokens(table, where),
+        api_key_env=api_key_env,
     )
 
 

@@ -35,6 +35,8 @@ timeout_minutes = 30
 # The reviewer reads the result after the checks pass (C10). Its model must differ from the
 # implementer's; give it read-only tools.
 [agents.reviewer]
+# runtime = "codex" runs the reviewer on Codex: a read-only `codex exec` on a ChatGPT plan
+# (after `codex login`) or on an API key (api_key_env = "<variable>"); see the README.
 # runtime = "opencode" runs the reviewer on opencode (see ariane.opencode-reviewer.example.toml).
 runtime = "claude-code"
 model = "claude-opus-5-5"

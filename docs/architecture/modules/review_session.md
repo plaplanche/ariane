@@ -19,6 +19,7 @@ The reviewer sessions of one review round (C10): a fresh read-only session on th
 - The journal line of a reviewer session starts with the reviewer's runtime as `runtime.describe` words it (for opencode: its version and that the title call's usage is not reported).
 - `cap_text` words the caps that apply for the journal: for opencode "runtime cost cap none; Ariane stops at … USD of reported cost or … tokens".
 - A reviewer session stopped at a cap: the `ticket.review.stopped` entry starts with "Cap reached: <cap>."; `ReviewFailed` says "the reviewer session stopped at <cap>" and its next action names `agents.reviewer.max_tokens` or `agents.reviewer.max_budget_usd` (#139). Other stop reasons keep "the reviewer session stopped: <reason>".
+- A `quota` stop ends the ticket with "reviewer quota reached" and the result's next step ("restart the ticket after <time>"), never a no-go; a result with a `next_step` (Codex not logged in) stops with its summary and that step (ADR 0043). `cap_text` for Codex says the cost is billed by the plan or the API key.
 - Each reviewer session is run through `Metrics.run_session` when `metrics` is given (C19), with its review `round`.
 - `read_answer`: the validated answer of a session result, or the reason it is not one.
 - `ReviewFailed`: no valid answer (the session did not finish, or two invalid answers); the flow turns it into a stop with status `needs a human`.

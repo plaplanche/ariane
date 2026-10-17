@@ -7,7 +7,7 @@ flowchart LR
   user([Owner or second user])
   ariane[Ariane]
   github[GitHub]
-  runtime[Agent runtime: Claude Code or opencode]
+  runtime[Agent runtime: Claude Code, opencode or Codex]
   vendor[Model vendor]
   user -->|ariane start --shadow n| ariane
   user -->|ariane start n| ariane

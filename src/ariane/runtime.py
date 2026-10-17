@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
@@ -54,6 +54,7 @@ class StopReason(StrEnum):
     BUDGET = "budget"
     TURNS = "turns"
     TIMEOUT = "timeout"
+    QUOTA = "quota"  # a subscription's usage limit is reached (ADR 0043)
     ERROR = "error"
 
 
@@ -86,17 +87,24 @@ class SessionResult:
     structured_output: Any = None  # the answer parsed by the runtime, when a schema was given
     # pushes and pull requests the agent attempted (ADR 0036)
     attempts: Attempts = field(default_factory=Attempts)
+    billing: str | None = None  # "plan" (covered by a subscription) or "api"; None when unknown
+    next_step: str | None = None  # what to do, when the runtime knows (quota, login)
 
     @classmethod
     def failed(cls, reason: StopReason, summary: str, cap: str | None = None) -> SessionResult:
         """A session that reported no usage."""
         return cls(reason, None, None, None, None, None, summary, cap=cap)
 
+    def with_next(self, next_step: str) -> SessionResult:
+        return replace(self, next_step=next_step)
+
     def usage_text(self) -> str:
         """The cap line, then the cost and the tokens, as the journal words them."""
         cost, tokens = self.usage()
         cap = f"Cap reached: {self.cap}.\n\n" if self.cap else ""
-        return f"{cap}Cost {cost} (as reported), tokens {tokens}."
+        quota = f"{self.summary}\n\n" if self.stop_reason is StopReason.QUOTA else ""
+        plan = " Billing: covered by the plan." if self.billing == "plan" else ""
+        return f"{cap}{quota}Cost {cost} (as reported), tokens {tokens}.{plan}"
 
     def usage(self) -> tuple[str, str]:
         """The cost and the tokens as the journal words them."""

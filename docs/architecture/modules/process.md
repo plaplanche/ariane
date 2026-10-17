@@ -84,6 +84,7 @@ flowchart LR
   checks --> process
   claude_code --> process
   cli --> process
+  codex --> process
   delivery --> process
   flow --> process
   git --> process

@@ -60,6 +60,7 @@ class Metrics:
                 "cache_write_tokens": result.cache_write_tokens,
                 "duration_s": round(time.monotonic() - began, 3),
             }
+            | ({"billing": result.billing} if result.billing else {})
         )
         self.attempts += result.attempts
         self.step(f"{session.role} session {len(self.sessions)} stopped")

@@ -6,8 +6,9 @@ from typing import Any
 
 CLAUDE_CODE = "claude-code"
 OPENCODE = "opencode"
-# Runtimes per role: opencode starts with the reviewer (ADR 0029).
-RUNTIMES = {"implementer": (CLAUDE_CODE,), "reviewer": (CLAUDE_CODE, OPENCODE)}
+CODEX = "codex"
+# Runtimes per role: opencode and codex start with the reviewer (ADR 0029, ADR 0043).
+RUNTIMES = {"implementer": (CLAUDE_CODE,), "reviewer": (CLAUDE_CODE, OPENCODE, CODEX)}
 OPENCODE_TOOLS = ("read", "glob", "grep")
 REVIEWER_TOOLS = ("Read", "Glob", "Grep")
 
@@ -21,7 +22,7 @@ _AGENT: dict[str, Any] = {
     "additionalProperties": False,
     "required": ["runtime", "model", "tools", "max_budget_usd", "timeout_minutes"],
     "properties": {
-        "runtime": {"enum": [CLAUDE_CODE, OPENCODE]},
+        "runtime": {"enum": [CLAUDE_CODE, OPENCODE, CODEX]},
         "model": _STR,
         "tools": {**_ARGV, "description": "Tools the agent may use (not Skill)."},
         "max_budget_usd": _POSITIVE,
@@ -32,6 +33,11 @@ _AGENT: dict[str, Any] = {
             " required when runtime is opencode.",
         },
         "timeout_minutes": _POSITIVE,
+        "api_key_env": {
+            **_STR,
+            "description": "Codex reviewer only: variable holding an API key, passed to the"
+            " session as CODEX_API_KEY; without it the CLI's own login (ChatGPT plan) is used.",
+        },
     },
 }
 

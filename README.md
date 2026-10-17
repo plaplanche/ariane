@@ -9,7 +9,7 @@ run on macOS (see [Measure Ariane on your project](#measure-ariane-on-your-proje
 Slice 3 (review, vendor-neutral) is done: `ariane start <issue>` takes a GitHub issue to a
 pull request whose checks Ariane replayed, each in its own clean tree, and that a read-only reviewer on a
 different model approved, after up to two fix rounds (`[agents.reviewer]` in `ariane.toml`; the
-reviewer can run on Claude Code or opencode). `ariane verify <branch>` gives a branch finished by
+reviewer can run on Claude Code, opencode or Codex). `ariane verify <branch>` gives a branch finished by
 hand the same checks and review. Approvals
 (slice 5) come next (see the roadmap in [`docs/spec.md`](docs/spec.md)).
 
@@ -49,6 +49,20 @@ The reviewer is given the ticket's Out of scope section, and a finding about out
 The reviewer also checks the order of side effects: a write before the check that should guard it, or a retry that can write twice, is a blocking finding.
 
 The reviewer loads nothing from the tree under review (no hooks, settings or instruction files; ADR 0031): a Claude Code reviewer's `tools` are a subset of `Read`, `Glob`, `Grep`, and it gets the base branch's `CLAUDE.md` in its prompt as data.
+
+### Reviewer on Codex
+
+The reviewer can run on the [Codex CLI](https://github.com/openai/codex) (install it and put
+`codex` on the PATH): `runtime = "codex"`, `model = "<model>"` and `tools = ["Read", "Glob", "Grep"]`
+in `[agents.reviewer]`. Ariane only drives the official CLI: a read-only `codex exec` with the
+prompt on standard input. Log in once with `codex login` (or `codex login --device-auth`); the
+session then bills your ChatGPT plan and `ariane report` shows it as "covered by plan". Keep
+`~/.codex/auth.json` private, like a password: Ariane never reads, copies or logs it. Or set
+`api_key_env = "<variable>"` in `[agents.reviewer]`: that variable's value is given to the Codex
+process only, as `CODEX_API_KEY`, and the session is billed per token. Without `api_key_env`, every
+OpenAI key variable is removed from the process's environment. When the plan's usage limit is
+reached the ticket stops with "reviewer quota reached", never a no-go: restart it after the reset
+time. Not logged in and no `api_key_env`: the ticket stops with "Codex is not logged in" (ADR 0043).
 
 ### Reviewer on opencode
 
