@@ -259,7 +259,3 @@ def _error_text(error: Any) -> str:
     name = str(error.get("name", "error"))
     detail = f"{message} (HTTP {status})" if message and status else str(message or "")
     return f"{name}: {detail}" if detail else name
-
-
-def _int(value: Any) -> int:
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0

@@ -38,7 +38,7 @@ class Attempts {
 }
 class AttemptTally {
   attempts Attempts
-  add_command(command)
+  add_command(command, call_id)
 }
 AttemptTally --> Attempts
 AttemptTally ..> count

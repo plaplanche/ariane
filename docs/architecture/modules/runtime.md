@@ -52,6 +52,8 @@ class Session {
 class SessionResult {
   <<frozen>>
   usage() tuple
+  usage_text() str
+  failed(reason, summary, cap) SessionResult
 }
 class AgentRuntime {
   <<protocol>>
