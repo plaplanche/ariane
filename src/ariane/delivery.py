@@ -48,6 +48,7 @@ class Delivery:
     checked: str = ""
     settled: review.Settled | None = None
     review_round: int = 0
+    guard: Callable[[], None] = lambda: None
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
@@ -71,6 +72,7 @@ class Delivery:
         self.commit_record(f"#{number}: record the checks and the delivery")
         self._require_replayed()
         pushed = git.head(self.worktree)
+        self._last_guard()
         way = git.push(
             self.worktree, self.url, pushed, self.branch, token=self.token, environ=self.environ
         )
@@ -94,6 +96,17 @@ class Delivery:
         self._publish_statuses(results, pushed)
         return Delivered(pull.url, self.draft)
 
+    def _last_guard(self) -> None:
+        """C11: git is as it was at the last agent session, and nothing reroutes the push."""
+        self.guard()
+        rewrites = git.push_rewrites(self.worktree)
+        if rewrites:
+            raise PullRequestRefused(
+                "git configuration rewrites URLs, which could reroute the push"
+                f" ({'; '.join(rewrites)})",
+                "remove the url.*.insteadOf keys; Ariane pushed nothing",
+            )
+
     @property
     def draft(self) -> bool:
         """A draft pull request carries a review that is still `no-go` after the fix rounds."""
@@ -104,7 +117,7 @@ class Delivery:
         if not self.checked:
             return
         own = ticket.relative_folder(self.issue.number) + "/"
-        listing = git.out(["diff", "--name-only", self.checked, "HEAD"], self.worktree)
+        listing = "\n".join(git.changed_between(self.worktree, self.checked, "HEAD"))
         outside = [p for p in listing.splitlines() if p and not p.startswith(own)]
         if outside:
             raise PullRequestRefused(

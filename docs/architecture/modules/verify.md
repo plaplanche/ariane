@@ -20,6 +20,8 @@
 - `verify`: the entry point; returns an `Outcome` whose line gives the checks' summary, the verdict and the next action. Exit 0 only for a `go` with green blocking checks. Ctrl-C (`KeyboardInterrupt`, also raised through a killed reviewer or setup process tree) gives exit 130 (`EXIT_INTERRUPTED`) and the line "Stopped verifying <branch>: interrupted by the user. Next: run verify again."; the replay tree and the temporary records folder are removed and nothing is committed or journaled.
 - `Refused`: carries the exit code and next action; a tracker refusal (`TrackerError`, `IssueRefused`) passes its own through, so an issue refused by the issue gate (C21, ADR 0032) gives exit 2 before any checkout or review. The branch cannot be verified (unknown branch, uncommitted changes in the working tree that holds it, failed setup or reviewer).
 - Metrics (C19): the records also hold `metrics.json` (mode `verify`, the reviewer sessions, outcome `delivered` when green, else `stopped`).
+- Git guard (C11, ADR 0017, ADR 0028): a snapshot of git (as `ariane start` takes) is taken before the first check and compared after every check and the reviewer, before any other git command; a change is refused with the wording of `start`. The base branch's instructions are read once, before the first check. The remote-tracking ref of the base branch is part of the snapshot.
+- Records: written with `ticket.ensure_folder` and `ticket.write_file` (a symlink is replaced, never followed) and committed as regular files: each record path leaves the index first.
 - `replay_path`, `relative_folder`: where the replay tree and the records are.
 
 ## Workflow

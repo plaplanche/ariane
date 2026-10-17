@@ -21,3 +21,14 @@ Re-running `verify` after a fix adds a new commit that overwrites the records. N
 ## Alternatives considered
 - Skip the review when a blocking check fails: rejected, one review is the contract and its findings help the fix.
 - Commit with plumbing commands, without a working tree: rejected, more code for the same result.
+
+## Amendment (2026-10-17): guards, base instructions and records
+
+- The git snapshot of ADR 0017 is now taken by `verify` too: the branch is the owner's, but the
+  checks and the reviewer run untrusted code in the same repository.
+- The reviewer's base instructions are read once, before the first check (`start`: right after
+  the fetch, before any agent) and kept in memory for every review round.
+- The records are written without following links: a symlink in the way is removed
+  (`ticket.write_file`). Each record path is removed from the index before the add, so the
+  committed record is a regular file (`100644`) even where git checks a committed link out as a
+  plain file (`core.symlinks=false`, the default on Windows).

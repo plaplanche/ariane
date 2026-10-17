@@ -141,7 +141,7 @@ def review_round(
             run.agent_envs["reviewer"],
             run.all_checks(),
             run.config.definition_of_done,
-            git.base_instructions(run.worktree, run.remote, run.config.base_branch),
+            run.base_instructions,
             metrics=run.metrics,
             round=round_,
         )

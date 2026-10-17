@@ -1,0 +1,40 @@
+{
+  "attempts": {
+    "guard_violations": 0,
+    "pull_request": 0,
+    "push": 0
+  },
+  "blocking_red_at_delivery": 0,
+  "first_pass_verdict": "go",
+  "mode": "verify",
+  "outcome": "delivered",
+  "rounds": 0,
+  "sessions": [
+    {
+      "cache_read_tokens": 314613,
+      "cache_write_tokens": 48971,
+      "cost_usd": 0.6253745999999999,
+      "duration_s": 88.704,
+      "input_tokens": 16,
+      "model": "claude-opus-5-5",
+      "output_tokens": 8531,
+      "role": "reviewer",
+      "round": 0,
+      "runtime": "claude-code",
+      "stop_reason": "finished"
+    }
+  ],
+  "started": "2026-10-17T11:28:56Z",
+  "steps": [
+    {
+      "at": "2026-10-17T11:32:55Z",
+      "name": "reviewer session 1 stopped"
+    },
+    {
+      "at": "2026-10-17T11:32:56Z",
+      "name": "outcome: delivered"
+    }
+  ],
+  "ticket": 172,
+  "unchanged_fix_rounds": 0
+}

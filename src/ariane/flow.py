@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,8 +61,9 @@ def start(
     branch = branch_name(number)
     worktree = worktree_path(repo_root, number)
     try:
-        url, refs_before = _prepare(repo_root, config, branch, worktree)
+        url, refs_before, instructions = _prepare(repo_root, config, branch, worktree)
         run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url)
+        run.base_instructions = instructions
     except KeyboardInterrupt:
         return _interrupted_before_start(number)
     except (Stop, *_FAILURES) as exc:
@@ -82,14 +83,18 @@ def _interrupted_before_start(number: int) -> Outcome:
 
 def _prepare(
     repo_root: Path, config: Config, branch: str, worktree: Path
-) -> tuple[str, dict[str, str]]:
-    """Refuse a ticket already started, then create its branch and working tree."""
+) -> tuple[str, dict[str, str], str]:
+    """Refuse a ticket already started, then create its branch and working tree.
+
+    Also returns the base branch's instructions, read once from the fetched ref: the reviewers
+    use these, whatever an agent does to the ref later (C11, ADR 0028)."""
     if worktree.exists():
         raise Stop(f"its working tree already exists at {worktree}", "remove it to start over")
     if git.local_branch_exists(repo_root, branch):
         raise Stop(f"branch {branch} already exists locally", "delete it to start over")
     url = git.push_url(repo_root, REMOTE)
     git.fetch(repo_root, REMOTE, config.base_branch)
+    instructions = git.base_instructions(repo_root, REMOTE, config.base_branch)
     refs = git.remote_refs(repo_root, url)
     if f"refs/heads/{branch}" in refs:
         raise Stop(
@@ -97,7 +102,7 @@ def _prepare(
             "close its pull request and delete the branch, then start again",
         )
     git.add_worktree(repo_root, worktree, branch, f"{REMOTE}/{config.base_branch}")
-    return url, refs
+    return url, refs, instructions
 
 
 def _token(environ: Mapping[str, str], token_env: str) -> str:
@@ -137,6 +142,7 @@ class _TicketRun:
         self.branch = branch
         self.url = url
         self.number = issue.number
+        self.base_instructions = ""
         self.not_updated: list[str] = []
         self.changed: list[str] = []
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
@@ -177,7 +183,7 @@ class _TicketRun:
             self.folder.set_status("implementing", "implementer session running", "wait")
             self._commit_record(f"#{self.number}: open the ticket folder")
             start_commit = git.head(self.worktree)
-            guard = git.config_snapshot(self.worktree, ignore_ref=self.branch)
+            guard = self.snapshot()
             ignored_before = git.ignored(self.worktree)
             result = self._implement()
             self.verify("the agent session", start_commit, guard, refs_before)
@@ -186,6 +192,14 @@ class _TicketRun:
             return self._check_and_deliver(start_commit, guard, refs_before)
         except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
             return self._stopped(exc)
+
+    def snapshot(self) -> dict[str, str]:
+        """The guard's view of git: configuration, hooks, refs, and the base's tracking ref."""
+        return git.config_snapshot(
+            self.worktree,
+            ignore_ref=self.branch,
+            watch_refs=[f"refs/remotes/{self.remote}/{self.config.base_branch}"],
+        )
 
     def setup(self, cwd: Path, command: tuple[str, ...] | None = None) -> Stop | None:
         """Run the setup command (C8) in `cwd` without credentials (it may run agent-written code).
@@ -292,9 +306,7 @@ class _TicketRun:
             raise Stop(f"{after} rewrote the ticket branch's history", keep)
         if expected_head is not None and git.head(self.worktree) != expected_head:
             raise Stop(f"{after} moved the ticket branch", keep)
-        changes = git.snapshot_changes(
-            guard, git.config_snapshot(self.worktree, ignore_ref=self.branch)
-        )
+        changes = git.snapshot_changes(guard, self.snapshot())
         if changes:
             raise Stop(
                 f"{after} changed git configuration, hooks or local branches",
@@ -458,7 +470,14 @@ class _TicketRun:
                 )
             if settled is not None and settled.go and not failed:
                 break
-        return self._deliver(checked, settled, reviewed, results, unchanged)
+        return self._deliver(
+            checked,
+            settled,
+            reviewed,
+            results,
+            unchanged,
+            lambda: self.verify("the delivery", start_commit, guard, refs_before),
+        )
 
     def _deliver(
         self,
@@ -467,6 +486,7 @@ class _TicketRun:
         reviewed: int,
         results: list[checks.CheckResult],
         unchanged: int = 0,
+        last_guard: Callable[[], None] = lambda: None,
     ) -> Outcome:
         """Push, open the pull request and publish the statuses (C11)."""
         delivery = Delivery(
@@ -484,6 +504,7 @@ class _TicketRun:
             checked,
             settled,
             reviewed,
+            last_guard,
         )
         self.metrics.delivered_red(len(checks.blocking_failures(results)))
         self.metrics.finish("needs a human" if delivery.draft else "delivered")
