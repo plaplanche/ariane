@@ -356,3 +356,38 @@ def test_c21_issue_gate_retry_accepts_a_re_added_label_listed_on_the_second_read
     sleeps: list[float] = []
     assert gate(url, sleeps=sleeps).read_issue(5).number == 5
     assert sleeps == [1]
+
+
+def test_c21_issue_gate_retry_refuses_a_change_after_the_label_after_five_reads(
+    fake: tuple[Fake, str],
+) -> None:
+    state, url = fake
+    state.events = [state.labeled("wendy", BEFORE)]
+    state.updated_at = AFTER
+    sleeps: list[float] = []
+    with pytest.raises(IssueRefused, match="changed after the label"):
+        gate(url, sleeps=sleeps).read_issue(5)
+    assert sleeps == [1, 2, 4, 8]
+    assert state.paths.count("/repos/o/n/issues/5/events") == 5
+
+
+def test_c21_issue_gate_retry_logs_each_retried_read_with_its_reason(
+    fake: tuple[Fake, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ariane import logs
+
+    records: list[tuple[str, str]] = []
+    monkeypatch.setattr(logs, "emit", lambda type_id, message: records.append((type_id, message)))
+    retried = "github.label_event_retry"
+    state, url = fake
+    state.lag = 99
+    with pytest.raises(IssueRefused):
+        gate(url, sleeps=[]).read_issue(5)
+    retries = [m for t, m in records if t == retried]
+    assert len(retries) == 4
+    assert "read 1 of the events retried in 1 s: no event lists the label" in retries[0]
+    records.clear()
+    state.labels = ["bug"]
+    with pytest.raises(IssueRefused):
+        gate(url, sleeps=[]).read_issue(5)
+    assert [t for t, _ in records if t == retried] == []

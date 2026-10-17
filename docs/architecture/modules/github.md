@@ -7,7 +7,7 @@ The GitHub tracker over the REST API, with the standard library only (C1, C10, C
 | Name | Kind | What it does |
 | --- | --- | --- |
 | `web_url(api_url)` | function | The web address matching an API address (GitHub or GitHub Enterprise Server). |
-| `GitHubTracker` | class | Implements `Tracker`: `read_issue`, `open_pull_request`, `file_url`, `set_commit_status`, `pull_request_state`. |
+| `GitHubTracker(*, repository, token, api_url, ready_label, sleep=time.sleep)` | class | Implements `Tracker`: `read_issue`, `open_pull_request`, `file_url`, `set_commit_status`, `pull_request_state`. |
 
 ## Behaviour and errors
 
@@ -25,9 +25,13 @@ flowchart TD
   B -- HTTP failure --> X[raise TrackerError]
   B --> C{ready label present?}
   C -- no --> Y[raise IssueRefused]
-  C -- yes --> D{label added by a writer, issue unchanged since?}
-  D -- no --> Y
+  C -- yes --> R[GET events]
+  R --> D{label added by a writer, issue unchanged since?}
   D -- yes --> E[return Issue]
+  D -- no, reader or other refusal --> Y
+  D -- no event, or changed after the label --> W{retries left?}
+  W -- yes, wait 1, 2, 4 or 8 s, log label_event_retry --> R
+  W -- no, 5 reads done --> Y
   F[open_pull_request] --> G[POST pulls, draft if asked]
   G -- refused --> X
   G --> H[return PullRequest]
@@ -43,6 +47,7 @@ flowchart TD
 ```mermaid
 classDiagram
 class GitHubTracker {
+  __init__(repository, token, api_url, ready_label, sleep) None
   read_issue(number) Issue
   open_pull_request(head, base, title, body, draft) PullRequest
   file_url(branch, path) str
