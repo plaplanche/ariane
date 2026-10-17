@@ -7,13 +7,13 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ariane import checks, context, git, logs, process, replay, review, ticket
+from ariane import checks, context, git, logs, process, replay, review, review_session, ticket
 from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
 from ariane.runtime import AgentRuntime, SessionResult, StopReason, for_role, session_for
-from ariane.stop import Stop
+from ariane.stop import Stop, describe
 from ariane.tracker import Issue, Tracker, TrackerError
 
 REMOTE = "origin"
@@ -37,6 +37,11 @@ QUIET = "nobody runs git commands in the repository or pushes to it while a tick
 
 def worktree_path(repo_root: Path, number: int) -> Path:
     return repo_root.parent / f"{repo_root.name}.ariane" / "worktrees" / str(number)
+
+
+def stopped_metrics_path(worktree: Path, number: int) -> Path:
+    """`<repo>.ariane/stopped/<n>/metrics.json`: a stop before the ticket folder exists."""
+    return worktree.parent.parent / "stopped" / str(number) / METRICS
 
 
 def branch_name(number: int) -> str:
@@ -67,7 +72,7 @@ def start(
     except KeyboardInterrupt:
         return _interrupted_before_start(number)
     except (Stop, *_FAILURES) as exc:
-        reason, next_action = _describe(exc)
+        reason, next_action = describe(exc)
         return Outcome(
             EXIT_STOPPED, f"Did not start ticket #{number}: {reason}. Next: {next_action}."
         )
@@ -76,7 +81,7 @@ def start(
 
 def _interrupted_before_start(number: int) -> Outcome:
     """Ctrl-C before the ticket folder exists: nothing to record, one line, exit 130."""
-    reason, next_action = _describe(KeyboardInterrupt())
+    reason, next_action = describe(KeyboardInterrupt())
     line = f"Did not start ticket #{number}: {reason}. Next: {next_action}."
     return Outcome(EXIT_INTERRUPTED, line)
 
@@ -110,15 +115,6 @@ def _token(environ: Mapping[str, str], token_env: str) -> str:
     return next((v for k, v in environ.items() if k.upper() == name and v), "")
 
 
-def _describe(exc: BaseException) -> tuple[str, str]:
-    if isinstance(exc, KeyboardInterrupt):
-        return "interrupted by the user", "check the working tree, then start the ticket again"
-    if isinstance(exc, Stop):
-        return exc.reason, exc.next_action
-    first = str(exc).splitlines()[0].rstrip(":") if str(exc) else type(exc).__name__
-    return first, "read the error above and retry"
-
-
 class _TicketRun:
     remote = REMOTE
 
@@ -145,6 +141,8 @@ class _TicketRun:
         self.base_instructions = ""
         self.not_updated: list[str] = []
         self.changed: list[str] = []
+        self.truncated: list[str] = []  # the files whose hunks the last reviewed diff lacked
+        self.processes_before: set[int] = set()
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
         self.folder = ticket.TicketFolder(worktree, issue.number, secrets=self.secrets)
         self.metrics = Metrics(issue.number, "delivered", lambda t: self.folder.write(METRICS, t))
@@ -166,7 +164,10 @@ class _TicketRun:
 
     def execute(self, refs_before: dict[str, str]) -> Outcome:
         try:
-            setup_error = self.setup(self.worktree)
+            self.processes_before = set(process.descendants(exited=True))
+            # Taken before the setup: instruction files it writes are not part of the baseline.
+            guard = self.snapshot()
+            setup_error = self.setup(self.worktree, self.config.setup, guard)
             self.folder.create(self.issue)
             self.metrics.step("folder opened")
             self.folder.log(
@@ -183,7 +184,6 @@ class _TicketRun:
             self.folder.set_status("implementing", "implementer session running", "wait")
             self._commit_record(f"#{self.number}: open the ticket folder")
             start_commit = git.head(self.worktree)
-            guard = self.snapshot()
             ignored_before = git.ignored(self.worktree)
             result = self._implement()
             self.verify("the agent session", start_commit, guard, refs_before)
@@ -194,25 +194,50 @@ class _TicketRun:
             return self._stopped(exc)
 
     def snapshot(self) -> dict[str, str]:
-        """The guard's view of git: configuration, hooks, refs, and the base's tracking ref."""
+        """The guard's view of git (configuration, hooks, refs, and the base's tracking ref) and
+        of the instruction files the reviewer can load from outside its tree (ADR 0031)."""
+        reviewer_tree = self.worktree.with_name(f"{self.number}-review")
         return git.config_snapshot(
             self.worktree,
             ignore_ref=self.branch,
             watch_refs=[f"refs/remotes/{self.remote}/{self.config.base_branch}"],
+        ) | git.instruction_snapshot(
+            review_session.instruction_dirs(reviewer_tree),
+            self.config.reviewer.runtime,
+            self.agent_envs["reviewer"],
         )
 
-    def setup(self, cwd: Path, command: tuple[str, ...] | None = None) -> Stop | None:
-        """Run the setup command (C8) in `cwd` without credentials (it may run agent-written code).
+    def survivors(self, after: str) -> Stop | None:
+        """Kill the processes `after` left running (C10, ADR 0031); they are counted in
+        `metrics.json` and stop the ticket as a guard violation."""
+        process.kill_survivors(self.processes_before)
+        killed = process.take_killed()  # with those each command's own teardown killed
+        if not killed:
+            return None
+        self.metrics.surviving_processes(len(killed))
+        listing = "\n".join(f"- {name} (pid {pid})" for pid, name in sorted(killed.items()))
+        return Stop(
+            f"{after} left {len(killed)} process(es) running after it ended; Ariane killed them",
+            "find what started them in the background; Ariane pushed nothing",
+            listing,
+        )
 
-        An error is journaled once the folder exists.
-        """
-        command = command or self.config.setup
+    def setup(
+        self, cwd: Path, command: tuple[str, ...] | None, guard: dict[str, str]
+    ) -> Stop | None:
+        """Run the setup command (C8) in `cwd` without credentials (it may run agent-written
+        code), then, before anything else runs, compare git and the instruction files to `guard`
+        (ADR 0031); an error is journaled once the folder exists."""
         if not command:
             return None
         try:
             done = process.run(command, cwd=cwd, timeout_s=SETUP_TIMEOUT_S, env=self.untrusted_env)
         except process.CommandNotFoundError as exc:
             return Stop(f"setup failed: {exc}", "install it or fix project.setup")
+        survived = self.survivors(f"setup `{' '.join(command)}`") or self._unchanged("setup", guard)
+        if survived is not None:
+            self.metrics.guard_violation()
+            return survived
         if not done.ok:
             status = "timed out" if done.timed_out else f"exit {done.returncode}"
             return Stop(
@@ -293,6 +318,9 @@ class _TicketRun:
         expected_head: str | None,
     ) -> None:
         keep = "inspect the working tree; Ariane pushed nothing"
+        survived = self.survivors(after)
+        if survived is not None:
+            raise survived
         branch = git.current_branch(self.worktree)
         if branch != self.branch:
             raise Stop(f"{after} left branch {self.branch} (now {branch or 'detached'})", keep)
@@ -300,13 +328,9 @@ class _TicketRun:
             raise Stop(f"{after} rewrote the ticket branch's history", keep)
         if expected_head is not None and git.head(self.worktree) != expected_head:
             raise Stop(f"{after} moved the ticket branch", keep)
-        changes = git.snapshot_changes(guard, self.snapshot())
-        if changes:
-            raise Stop(
-                f"{after} changed git configuration, hooks or local branches",
-                f"inspect .git/config, .git/hooks and the branches; Ariane pushed nothing; {QUIET}",
-                "\n".join(f"- {line}" for line in changes),
-            )
+        unchanged = self._unchanged(after, guard)
+        if unchanged is not None:
+            raise unchanged
         changed = self._remote_changes(refs_before)
         if changed:
             raise Stop(
@@ -319,6 +343,25 @@ class _TicketRun:
             f"Verified after {after}",
             "Same branch and history, git unchanged, remote unchanged.",
         )
+
+    def _unchanged(self, after: str, guard: dict[str, str]) -> Stop | None:
+        """The stop when git or the reviewer's instruction files differ from `guard`."""
+        changes = git.snapshot_changes(guard, self.snapshot())
+        written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
+        if written:
+            return Stop(
+                f"{after} changed instruction files the reviewer can load",
+                "inspect and remove them (they are outside the repository); Ariane pushed"
+                f" nothing; {QUIET}",
+                "\n".join(f"- {line}" for line in written),
+            )
+        if changes:
+            return Stop(
+                f"{after} changed git configuration, hooks or local branches",
+                f"inspect .git/config, .git/hooks and the branches; Ariane pushed nothing; {QUIET}",
+                "\n".join(f"- {line}" for line in changes),
+            )
+        return None
 
     def _remote_changes(self, refs_before: dict[str, str]) -> list[str]:
         return git.remote_changes(
@@ -499,6 +542,7 @@ class _TicketRun:
             settled,
             reviewed,
             last_guard,
+            self.truncated,
         )
         self.metrics.delivered_red(len(checks.blocking_failures(results)))
         self.metrics.finish("needs a human" if delivery.draft else "delivered")
@@ -532,9 +576,12 @@ class _TicketRun:
         git.commit(self.worktree, [folder], redact(message, self.secrets), env=self.untrusted_env)
 
     def _stopped(self, exc: BaseException) -> Outcome:
-        reason, next_action = _describe(exc)
+        reason, next_action = describe(exc)
         detail = exc.detail if isinstance(exc, Stop) else str(exc)
         logs.emit("run.stopped", f"ticket #{self.number}: {reason}")
+        # Ctrl-C or an error can end a command before its survivors were counted.
+        process.kill_survivors(self.processes_before)
+        self.metrics.surviving_processes(len(process.take_killed()))
         if self.folder.exists():
             # Recording the stop must not hide the reason: report it even if this fails.
             with contextlib.suppress(*_FAILURES):
@@ -543,6 +590,8 @@ class _TicketRun:
                 self.metrics.finish(status)
                 self.folder.set_status(status, reason, next_action)
                 self._commit_record(f"#{self.number}: record the stop")
+        else:  # stopped in the first setup: the metrics go outside the repository (ADR 0031)
+            self.metrics.keep_stopped(stopped_metrics_path(self.worktree, self.number))
         code = EXIT_INTERRUPTED if isinstance(exc, KeyboardInterrupt) else EXIT_STOPPED
         return Outcome(
             code, f"Stopped ticket #{self.number}: {reason}. Next: {next_action}.", detail

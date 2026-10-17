@@ -15,6 +15,7 @@
 | `Outcome` | dataclass | What `ariane start` reports: `exit_code`, `line`, `detail`. |
 | `QUIET` | constant | The sentence naming the rule that nobody touches the repository while a ticket runs. |
 | `worktree_path(repo_root, number)` | function | Where the ticket's working tree lives. |
+| `stopped_metrics_path(worktree, number)` | function | `<repo>.ariane/stopped/<n>/metrics.json`: where a ticket stopped before its folder exists (Ctrl-C or an error in the first setup) keeps its metrics, survivors included (ADR 0031). |
 | `branch_name(number)` | function | The ticket's branch, `ariane/<n>`. |
 | `start(number, ...)` | function | The whole flow for one ticket number; returns an `Outcome`. |
 
@@ -37,6 +38,9 @@
 - `worktree_path`, `branch_name`: where a ticket lives.
 - Shadow mode (C19, ADR 0036): delivery is the overridable `_TicketRun._deliver`; [shadow](shadow.md) subclasses the run, with its own preparation, no remote check and a local record instead of the push.
 - Guard violations (C19): `verify` counts each `Stop` of the post-session check in the metrics before raising it.
+- Reviewer instruction files (C10, ADR 0031): the guard's snapshot also holds `git.instruction_snapshot` of the folders the reviewer can load instructions from (`review_session.instruction_dirs` of `<n>-review`) for the configured reviewer runtime and its environment; it is taken before the first setup command and compared right after every setup command, the ticket's and each replay tree's, before its check runs (`setup` calls `_unchanged`; counted as a guard violation), so an instruction file written outside the repository by a setup, a session or a check stops the ticket before the review ("<step> changed instruction files the reviewer can load", the changed paths in the journal).
+- Surviving processes (C10, ADR 0031): each command's own teardown in `process` already killed what it left running. The descendants (exited ones included) are noted when the ticket starts; after each setup command (`setup`, before its exit code is looked at) and at the start of every post-session check (`verify`: after each agent session, check and reviewer session), `survivors` kills any new one with `process.kill_survivors`, takes what was killed with `process.take_killed`, counts them in `metrics.json` (`surviving_processes`) and stops the ticket as a guard violation ("<step> left N process(es) running after it ended"). A ticket stopped or interrupted for another reason (`_stopped`) kills and counts them too. It finds them on Linux only.
+- Truncated diff (C10, ADR 0031): `run.truncated` keeps the files whose hunks the last reviewed diff lacked; the delivery says so in the pull request body.
 
 ## Workflow
 
@@ -80,7 +84,7 @@ class Outcome {
 }
 class _TicketRun {
   execute(refs_before) Outcome
-  setup(cwd, command) Stop
+  setup(cwd, command, guard) Stop
   verify(after, start_commit, guard, refs_before, expected_head)
 }
 class flow {
@@ -112,6 +116,7 @@ flowchart LR
   flow --> redact
   flow --> replay
   flow --> review
+  flow --> review_session
   flow --> runtime
   flow --> stop
   flow --> ticket

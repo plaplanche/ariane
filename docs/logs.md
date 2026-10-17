@@ -19,6 +19,8 @@ Entries of a ticket's journal.
 | `ticket.checks.replayed` | info | The checks were replayed by Ariane, with the result. |
 | `ticket.review.started` | info | A reviewer session started, with its model and limits. |
 | `ticket.review.stopped` | info | A reviewer session stopped, with its cost and tokens. |
+| `ticket.review.instructions` | info | The instruction files the reviewer's runtime can load, with their digests. |
+| `ticket.review.diff_truncated` | warning | The reviewer's diff was cut; the files whose hunks are missing. |
 | `ticket.review.invalid` | warning | The reviewer's answer was invalid; asking again. |
 | `ticket.review.verdict` | info | The review ended: verdict, findings, definition of done. |
 | `ticket.fix.unchanged` | warning | A fix round changed nothing, so the fix rounds stop. |
@@ -40,6 +42,9 @@ Records of the `ariane` logger.
 | --- | --- | --- |
 | `git.command` | debug | A git command is run, with its arguments. |
 | `process.undumpable_failed` | warning | Ariane could not make its process undumpable. |
+| `process.subreaper_failed` | error | Ariane could not become the subreaper. |
+| `process.survivors_killed` | warning | Processes that outlived a session or command were killed. |
+| `process.survivors_remaining` | error | Processes that outlived a command were still running after Ariane tried to kill them. |
 | `process.started` | debug | A subprocess started. |
 | `process.exited` | debug | A subprocess ended, with its exit code and duration. |
 | `github.request` | info | A GitHub API call and its status. |

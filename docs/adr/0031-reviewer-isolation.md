@@ -57,3 +57,80 @@ outside. A tree that cannot be built is removed at once, so the next run is not 
 - Keep `cwd` = tree and filter the settings sources: the probe shows the hook runs.
 - `--restricted` with the original tree: the `CLAUDE.md` is still loaded on read.
 - Keep the deny list of tools: it accepts `WebFetch`, `Task` and others by omission.
+
+## Amendment (#167, 2026-10-17)
+
+An internal security review found three ways left to weaken the reviewer. Decided for C10 and C26:
+
+1. **Instruction files outside the tree are guarded.** Ariane takes a snapshot of the digests of
+   the instruction files the configured reviewer runtime can load from outside the reviewer
+   tree: `CLAUDE.md` and `CLAUDE.local.md` in the system temporary folder (where the empty working
+   directory is made), in the reviewer tree's parent folder and in all their ancestors (as given
+   and resolved); the user-level Claude file (`$CLAUDE_CONFIG_DIR/CLAUDE.md`, else
+   `~/.claude/CLAUDE.md`, with `HOME` from the reviewer's environment); for opencode `AGENTS.md`,
+   `opencode.json`, `opencode.jsonc` and `config.json` of its global folder
+   (`$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`) and `$OPENCODE_CONFIG`. An absent file
+   is recorded as absent, so creating one is a change. The snapshot is part of the guard's
+   snapshot, taken before the ticket's first setup command (so a setup cannot make its own
+   instruction file part of the baseline) and compared right after every setup command (the
+   ticket's own and each replay tree's, before its check runs), then after every session and
+   check (in `ariane verify` it is taken before the first check and compared after each setup,
+   check and reviewer session): a difference stops the ticket as a guard violation, before the
+   review. Before each reviewer session the journal records the
+   files present with their digests (`ticket.review.instructions`). This detects the residual
+   vector above: a `CLAUDE.md` written into the temporary directory stops the ticket.
+2. **No silent truncation.** The review prompt always holds the untruncated
+   `git diff --name-status` of the whole range (without `work/`, like the diff), in an
+   untrusted-data block. When the diff is over 200,000 characters it is cut there, the prompt names
+   the files whose hunks are missing or incomplete and tells the reviewer to read them in the tree,
+   the journal records them (`ticket.review.diff_truncated`) and the pull request body says the
+   diff given to the reviewer was truncated. `verify` keeps no journal, so its committed
+   `review.md` names them in a `Diff given to the reviewer` section.
+3. **No surviving agent processes (Linux).** `ariane` sets `PR_SET_CHILD_SUBREAPER` at start, so
+   a process that leaves its process group (`setsid`, `setpgid`) is reparented to Ariane, not to
+   init. It fails closed: if Linux refuses it, `start` and `verify` stop before running any agent,
+   setup or check ("Did nothing: Ariane could not become the subreaper"), since without it a
+   detached process would escape every scan; `status`, `report` and `judge` run nothing and go on.
+   A ticket stopped before its folder exists (Ctrl-C or an error in the first setup) writes its
+   metrics, survivors included, to `<repo>.ariane/stopped/<n>/metrics.json`, as a `verify` that
+   commits nothing does to `<repo>.ariane/verify/<branch>/metrics.json`. Every command Ariane runs (an agent session, a setup, a check, git) kills, in the same
+   teardown that kills its process group, the descendants that appeared since it started, also
+   when it fails, times out or is interrupted (Ctrl-C): nothing it started runs when the next
+   command starts or a tree is removed. A `/proc` scan is not atomic and a survivor can fork
+   while it runs, so each survivor is stopped (`SIGSTOP`, a stopped process cannot fork) and the
+   scans repeat until every survivor is stopped and none is new; then they are killed, and the
+   scans go on until one finds no survivor and no newly exited child (a process that forks and
+   exits to change pids leaves one, since Ariane is the subreaper). The running descendants are
+   noted when the ticket starts. When a command exits by itself, every descendant it started
+   that still runs is named before its process group is killed, so an ordinary background
+   child counts as a survivor, not only one that left the group. After each agent session, check
+   and setup command (before a failing setup is reported), what was killed is counted in
+   `metrics.json` (`surviving_processes`) and the ticket stops as a guard violation; a ticket
+   stopped or interrupted for another reason still counts them.
+
+Choices the spec left open, taken as the simplest design that meets it:
+
+- The ancestor files and the user-level Claude file are guarded for every reviewer runtime
+  (opencode and Codex also read `CLAUDE.md` files); for a Codex reviewer the snapshot also holds
+  `AGENTS.md`, `AGENTS.override.md` and `config.toml` of `$CODEX_HOME` (else `~/.codex`), its
+  global instructions and configuration.
+- The survivors are killed in each command's teardown, compared with the descendants (exited
+  ones included, so Ariane never reaps a child someone else waits for) taken just before that
+  command started, so a process Ariane did not start through the command is never killed. The
+  scans give up after 5 seconds (`process.survivors_remaining`), after sending `SIGKILL` to every
+  survivor still there, stopped or not (one in uninterruptible I/O gets it queued); the ticket
+  stops anyway.
+- `ariane verify` commits nothing when it refuses or is interrupted (a guard violation may have
+  changed the hooks a commit runs), so it writes that run's `metrics.json` (outcome `stopped`,
+  with its survivors and guard violations) to `<repo>.ariane/verify/<branch slug>/metrics.json`,
+  outside the repository, before removing its temporary records.
+- A command stopped at its time limit or by its caller has its group killed without counting
+  it: those children did not outlive the command.
+- A process an agent's own git starts in the background (for example an automatic `git gc`) and
+  that is still running when the session ends counts as a survivor too.
+
+Residuals: on macOS and Windows no survivor is found (no subreaper; Job objects on Windows and a
+process scan on macOS are later work), so a process started in a new session there still outlives
+its session. Instruction files are guarded, not removed: one that was there before the ticket
+started (for example the owner's own `~/.claude/CLAUDE.md`) is still loaded by the reviewer;
+running the reviewer in bare mode needs an owner decision about logins and stays out of scope.

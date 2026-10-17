@@ -27,6 +27,8 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `add_detached_worktree(cwd, path, commit)` | function | Adds a detached working tree at a commit. |
 | `add_reviewer_worktree(cwd, path, commit)` | function | Adds a detached tree without instruction files or symlinks leaving it. |
 | `base_instructions(cwd, remote, branch)` | function | The base branch's `CLAUDE.md`, or empty. |
+| `ANCESTOR_INSTRUCTIONS` | constant | The instruction files looked for in the ancestors of the reviewer's folders (`CLAUDE.md`, `CLAUDE.local.md`). |
+| `instruction_snapshot(dirs, runtime, env)` | function | The digests of the instruction files a reviewer runtime can load from outside the reviewer tree, by part (`instructions <path>`); an absent file is a part too (ADR 0031). |
 | `remove_worktree(cwd, path)` | function | Removes a working tree. |
 | `config_snapshot(worktree, ignore_ref, watch_refs=())` | function | A snapshot of the git configuration files, hooks, local refs and the watched refs (the base's remote-tracking ref), to detect tampering. |
 | `push_rewrites(cwd, url)` | function | The `url.*.insteadof` and `url.*.pushinsteadof` settings (any scope; read with `--null`, from the push's environment) whose prefix is a prefix of `url`. |
@@ -40,6 +42,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `changed_paths(cwd, since)` | function | Paths changed since a revision. |
 | `diff(cwd, since, until, exclude)` | function | The diff between two revisions, without the excluded pathspec and without external diff or textconv drivers. |
 | `changed_between(cwd, since, until)` | function | Paths that differ between two commits. |
+| `name_status(cwd, since, until, exclude)` | function | `git diff --name-status` between two revisions, without the excluded pathspec. |
 | `status(cwd)` | function | The short status of the tree. |
 | `committed_paths(cwd, since, pathspec)` | function | Paths committed since a revision under a pathspec. |
 | `commit(cwd, pathspec, message, env, tolerate_ignored, unstage)` | function | Commits only the given paths; False when they hold no change; the `unstage` paths leave the index first. |
@@ -57,6 +60,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 - `add_worktree`, `add_detached_worktree`, `remove_worktree`: ticket and replay trees.
 - `add_reviewer_worktree`: a detached tree without `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `.claude/`, `.codex/` and `.agents/` at any depth, and without symlinks that leave the tree; a tree that cannot be built is removed (ADR 0031). `base_instructions`: the base branch's `CLAUDE.md` read with git, or empty.
 - `worktree_of`, `merge_base`, `commit_messages`: where a branch is checked out, and what `ariane verify` reads of a branch (ADR 0028).
+- `instruction_snapshot`: what a reviewer runtime can load from outside its tree (ADR 0031): `CLAUDE.md` and `CLAUDE.local.md` in each given folder and every ancestor (as given and resolved), the user-level Claude file (`$CLAUDE_CONFIG_DIR/CLAUDE.md`, else `~/.claude/CLAUDE.md`, with `HOME` from `env`), and for opencode `AGENTS.md`, `opencode.json`, `opencode.jsonc` and `config.json` of its global folder (`$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`) and `$OPENCODE_CONFIG`; for Codex `AGENTS.md`, `AGENTS.override.md` and `config.toml` of `$CODEX_HOME` (else `~/.codex`). Each part is a digest of the content, the link target of a symlink, `absent`, `not a file` or `unreadable`; the flow merges it into the guard snapshot.
 - `config_snapshot`, `snapshot_changes`: detect configuration tampering; the snapshot also holds the refs in `watch_refs` (`refs/remotes/<remote>/<base>`). `push_rewrites`: the URL-rewriting keys that apply to the push URL and would reroute it (ADR 0017).
 - Every git command runs with `protocol.ext.allow=never`; every diff with `--no-ext-diff --no-textconv`, so that no configured driver runs (ADR 0017). `fast_forwarded` fetches from the URL, so the base's tracking ref (part of the snapshot) stays where `fetch` left it.
 - `blocked_push_env`, `push_env`, `push`: push only from Ariane.
@@ -147,6 +151,7 @@ flowchart LR
   git --> process
   git --> redact
   replay --> git
+  review_session --> git
   shadow --> git
   verify --> git
 ```

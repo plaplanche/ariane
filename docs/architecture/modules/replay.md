@@ -11,12 +11,14 @@ One round of replay and review of a ticket, moved out of `flow` unchanged (ADR 0
 | `replay(run, checked, start_commit, guard, refs_before)` | function | Replays every check in its own clean tree at the delivered commit; returns the results. |
 | `review_round(run, checked, start_commit, guard, refs_before, results, round_)` | function | Runs review `round_` on the reviewer tree and returns the settled review. |
 | `remove(run, replay)` | function | Removes a replay or reviewer tree, journaling a warning if it cannot. |
+| `truncation_note(diff)` | function | Where the reviewer's diff was cut and the files whose hunks it lacks, or `""` when it is whole (ADR 0031). |
+| `record_truncation(folder, diff)` | function | Journals `ticket.review.diff_truncated` with the files whose hunks the reviewer's diff lacks; returns them (empty when the diff is not cut). |
 
 ## Behaviour and errors
 
 - `replay_each`: for each check in order creates a fresh detached tree (`<n>-replay-<k>`, `verify-<slug>-<k>`), runs the setup (`checks[].setup`, else `project.setup`), runs that check only, verifies, removes the tree. A leftover tree of that name refuses. The setup duration is not part of the check's duration.
-- `replay`: `replay_each` for a ticket; a setup stop names the check whose tree it was; journals `ticket.checks.worktree`, one line per check; returns the results (no tree is kept, the reviewer has its own).
-- `review_round`: review `round_` on the reviewer tree; writes `review-<round>.md`, journals the verdict and tells the metrics the first-pass verdict.
+- `replay`: `replay_each` for a ticket; each setup is followed, before its check runs, by the comparison of git and the reviewer's instruction files with the guard's snapshot (`run.setup(tree, command, guard)`); a setup stop names the check whose tree it was; journals `ticket.checks.worktree`, one line per check; returns the results (no tree is kept, the reviewer has its own).
+- `review_round`: review `round_` on the reviewer tree, with the diff and its untruncated `git diff --name-status`; when the diff is cut, `record_truncation` journals the missing files and `run.truncated` keeps them for the pull request body (ADR 0031); writes `review-<round>.md`, journals the verdict and tells the metrics the first-pass verdict.
 - `remove`: removes a replay or reviewer tree, journaling a warning if it cannot.
 
 ## Workflow

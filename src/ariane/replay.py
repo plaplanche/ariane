@@ -75,7 +75,8 @@ def replay(
         return tree
 
     def set_up(check: CheckConfig, tree: Path) -> None:
-        error = run.setup(tree, check.setup if check.setup is not None else run.config.setup)
+        command = check.setup if check.setup is not None else run.config.setup
+        error = run.setup(tree, command, guard)
         if error is not None:
             raise Stop(
                 f"{error.reason} (in the working tree of check {check.name!r})",
@@ -127,6 +128,8 @@ def review_round(
     git.add_reviewer_worktree(run.worktree, tree, checked)
     try:
         diff = git.diff(run.worktree, start_commit, checked, ticket.WORK_DIR)
+        name_status = git.name_status(run.worktree, start_commit, checked, ticket.WORK_DIR)
+        run.truncated = record_truncation(run.folder, diff)
         tree_before = git.status(tree)
 
         def after_session() -> None:
@@ -147,7 +150,14 @@ def review_round(
         )
         try:
             answer = sessions.run(
-                tree, checked, diff, results, run.not_updated, run.changed, after_session
+                tree,
+                checked,
+                diff,
+                results,
+                run.not_updated,
+                run.changed,
+                after_session,
+                name_status,
             )
         except ReviewFailed as exc:
             raise Stop(exc.reason, exc.next_action, exc.detail, status="needs a human") from None
@@ -160,6 +170,26 @@ def review_round(
         return settled
     finally:
         remove(run, tree)
+
+
+def truncation_note(diff: str) -> str:
+    """Where the reviewer's diff was cut and the files to read in the tree, or "" (ADR 0031)."""
+    missing = review.truncated_paths(diff)
+    if not missing:
+        return ""
+    return (
+        f"The diff ({len(diff):,} characters) was cut at {review.MAX_DIFF_CHARS:,}; the"
+        " reviewer was given every changed path and told to read these in the tree:\n"
+        + "\n".join(f"- `{p}`" for p in missing)
+    )
+
+
+def record_truncation(folder: ticket.TicketFolder, diff: str) -> list[str]:
+    """Journal the files whose hunks the reviewer's diff lacks when it is cut (ADR 0031)."""
+    note = truncation_note(diff)
+    if note:
+        folder.log("ticket.review.diff_truncated", "Reviewer diff truncated", note)
+    return review.truncated_paths(diff)
 
 
 def _verify_replay(replay: Path, checked: str, tree_before: str) -> None:

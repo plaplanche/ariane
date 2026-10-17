@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from test_fix_rounds import NO_GO
 
-from ariane import git, verify
+from ariane import git, review, verify
 from ariane.flow import Outcome
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
@@ -236,3 +236,23 @@ def test_c5_interrupt_during_verify_exits_130_removes_the_replay_and_commits_not
     assert not verify.replay_path(project.root, BRANCH).exists()
     assert sh(["git", "rev-parse", BRANCH], project.root) == head
     assert pushes == []
+
+
+def test_c23_verify_records_a_truncated_reviewer_diff_in_the_committed_review(
+    project: Project, branch: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0031: verify's journal is temporary, so review.md keeps the truncation note."""
+    monkeypatch.setattr(review, "truncated_paths", lambda diff, limit=0: ["app.txt"])
+    outcome = run(project, FakeRuntime())
+    assert outcome.exit_code == 0, outcome.line
+    shown = sh(["git", "show", f"{BRANCH}:work/verify/{BRANCH}/review.md"], project.root)
+    assert "## Diff given to the reviewer" in shown
+    assert "- `app.txt`" in shown
+
+
+def test_c23_verify_review_has_no_truncation_section_for_a_whole_diff(
+    project: Project, branch: str
+) -> None:
+    assert run(project, FakeRuntime()).exit_code == 0
+    shown = sh(["git", "show", f"{BRANCH}:work/verify/{BRANCH}/review.md"], project.root)
+    assert "Diff given to the reviewer" not in shown

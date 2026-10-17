@@ -5,9 +5,11 @@ Ariane rewrites the file after each step, so a crash leaves `outcome` at `runnin
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from ariane import ticket
@@ -32,6 +34,7 @@ class Metrics:
         self.unchanged_fix_rounds = 0
         self.attempts = Attempts()
         self.guard_violations = 0
+        self.surviving = 0
         self.blocking_red = 0
         self.first_pass_verdict = NOT_REVIEWED
         self.outcome = "running"
@@ -83,9 +86,21 @@ class Metrics:
         """The post-session check found a change it forbids (C11)."""
         self.guard_violations += 1
 
+    def surviving_processes(self, count: int) -> None:
+        """Processes that outlived a session or command and were killed (C10)."""
+        self.surviving += count
+
     def delivered_red(self, count: int) -> None:
         """The number of blocking checks that were red when the ticket was delivered (C19)."""
         self.blocking_red = count
+
+    def keep_stopped(self, path: Path) -> None:
+        """Write the metrics, outcome `stopped`, to `path` outside the repository, without the
+        usual writer (best effort: a failure to record must not hide the stop; ADR 0031)."""
+        self.outcome = "stopped"
+        with contextlib.suppress(OSError):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            ticket.write_file(path, self.render())
 
     def finish(self, outcome: str) -> None:
         self.outcome = outcome
@@ -103,6 +118,7 @@ class Metrics:
             "mode": self.mode,
             "started": self.started,
             "steps": self.steps,
+            "surviving_processes": self.surviving,
             "sessions": self.sessions,
             "rounds": self.rounds,
             "unchanged_fix_rounds": self.unchanged_fix_rounds,

@@ -6,6 +6,7 @@ The reason a ticket stops (C23), split from `flow` so the replay and review roun
 
 | Name | Kind | What it does |
 | --- | --- | --- |
+| `describe(exc)` | function | The reason and the next action for whatever ended a run: a `Stop`, Ctrl-C (`interrupted by the user`) or an error (its first line); used by `start` and `shadow`. |
 | `Stop` | exception | Ends the flow early; carries `reason`, `next_action`, `detail` and `status` (`stopped`, or `needs a human`). |
 
 ## Behaviour and errors

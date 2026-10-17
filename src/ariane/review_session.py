@@ -9,7 +9,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from ariane import checks, review, ticket
+from ariane import checks, git, review, ticket
 from ariane.config import AgentConfig, CheckConfig, DoneItem
 from ariane.metrics import Metrics
 from ariane.runtime import (
@@ -32,6 +32,13 @@ class ReviewFailed(Exception):
         self.reason = reason
         self.next_action = next_action
         self.detail = detail
+
+
+def instruction_dirs(tree: Path) -> list[Path]:
+    """The folders whose instruction files, with their ancestors', a reviewer on `tree` can load:
+    the system temporary folder (where its empty working directory is made) and the tree's
+    parent (ADR 0031)."""
+    return [Path(tempfile.gettempdir()), tree.parent]
 
 
 def read_answer(result: SessionResult) -> tuple[review.Review | None, str]:
@@ -72,24 +79,48 @@ class ReviewSession:
         not_updated: Sequence[str],
         changed: Sequence[str],
         after_session: Callable[[], None],
+        name_status: str = "",
     ) -> review.Review:
         """A fresh read-only reviewer session on `replay` (the reviewer tree, without instruction
         files); one retry if its answer is invalid. `after_session` verifies that the session
         changed nothing. Claude Code starts in an empty folder and reads `replay` (ADR 0031)."""
         empty = Path(tempfile.mkdtemp(prefix="ariane-reviewer-"))
         try:
+            self._record_instructions(replay)
             return self._run(
-                replay, empty, checked, diff, results, not_updated, changed, after_session
+                replay,
+                empty,
+                checked,
+                (diff, name_status),
+                results,
+                not_updated,
+                changed,
+                after_session,
             )
         finally:
             shutil.rmtree(empty, ignore_errors=True)
+
+    def _record_instructions(self, replay: Path) -> None:
+        """Journal the digests of the instruction files the reviewer's runtime can load from
+        outside the reviewer tree; the guard compares them with the ticket's start (ADR 0031)."""
+        files = git.instruction_snapshot(instruction_dirs(replay), self.agent.runtime, self.env)
+        lines = [
+            f"- `{key.removeprefix('instructions ')}`: {digest}"
+            for key, digest in files.items()
+            if digest != "absent"
+        ]
+        self.folder.log(
+            "ticket.review.instructions",
+            "Reviewer instruction files",
+            f"{len(files)} places checked; present:\n" + ("\n".join(lines) or "- none"),
+        )
 
     def _run(
         self,
         replay: Path,
         empty: Path,
         checked: str,
-        diff: str,
+        diff: tuple[str, str],
         results: list[checks.CheckResult],
         not_updated: Sequence[str],
         changed: Sequence[str],
@@ -106,7 +137,7 @@ class ReviewSession:
                 cwd=empty if claude else replay,
                 prompt=review.prompt(
                     self.issue,
-                    diff,
+                    diff[0],
                     results,
                     self.all_checks,
                     self.definition_of_done,
@@ -115,6 +146,7 @@ class ReviewSession:
                     changed=changed,
                     instructions=self.instructions,
                     tree=replay,
+                    name_status=diff[1],
                 ),
                 env=self.env,
                 json_schema=review.SCHEMA,

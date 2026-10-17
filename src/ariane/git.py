@@ -198,6 +198,45 @@ def _leaves_tree(link: Path, root: Path) -> bool:
     return link.is_symlink() and not link.resolve().is_relative_to(root)
 
 
+ANCESTOR_INSTRUCTIONS = ("CLAUDE.md", "CLAUDE.local.md")
+
+
+def instruction_snapshot(
+    dirs: Sequence[Path], runtime: str, env: Mapping[str, str]
+) -> dict[str, str]:
+    """The instruction files a reviewer runtime can load from outside the review tree, by part
+    (ADR 0031): `CLAUDE.md` and `CLAUDE.local.md` in each of `dirs` and their ancestors, the
+    user-level Claude file, and the global instructions and configuration of opencode or Codex.
+    `env` is the reviewer's environment. An absent file is a part too: creating one is a change."""
+    paths: list[Path] = []
+    for folder in dirs:
+        for where in (folder, folder.resolve()):
+            for ancestor in (where, *where.parents):
+                paths += [ancestor / name for name in ANCESTOR_INSTRUCTIONS]
+    home = Path(env.get("HOME") or env.get("USERPROFILE") or Path.home())
+    paths.append(Path(env.get("CLAUDE_CONFIG_DIR") or home / ".claude") / "CLAUDE.md")
+    if runtime == "opencode":
+        config = Path(env.get("XDG_CONFIG_HOME") or home / ".config") / "opencode"
+        names = ("AGENTS.md", "opencode.json", "opencode.jsonc", "config.json")
+        paths += [config / name for name in names]
+        if env.get("OPENCODE_CONFIG"):
+            paths.append(Path(env["OPENCODE_CONFIG"]))
+    elif runtime == "codex":
+        codex = Path(env.get("CODEX_HOME") or home / ".codex")
+        paths += [codex / name for name in ("AGENTS.md", "AGENTS.override.md", "config.toml")]
+    return {f"instructions {path.as_posix()}": _digest(path) for path in dict.fromkeys(paths)}
+
+
+def _digest(path: Path) -> str:
+    try:
+        link = f"symlink:{os.readlink(path)} " if path.is_symlink() else ""
+        if path.is_file():
+            return link + hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+        return link + ("not a file" if path.exists() else "absent")
+    except OSError as exc:
+        return f"unreadable ({exc.strerror})"
+
+
 def base_instructions(cwd: Path, remote: str, branch: str) -> str:
     """The `CLAUDE.md` of the last fetched `remote/branch`, or "" when it has none."""
     if not path_exists_on_branch(cwd, remote, branch, "CLAUDE.md"):
@@ -347,6 +386,13 @@ def changed_paths(cwd: Path, since: str) -> list[str]:
 def diff(cwd: Path, since: str, until: str, exclude: str) -> str:
     """The diff from `since` to `until`, without the paths under `exclude`."""
     return out([*_PLAIN_DIFF, since, until, "--", ".", f":(exclude){exclude}"], cwd)
+
+
+def name_status(cwd: Path, since: str, until: str, exclude: str) -> str:
+    """`git diff --name-status` from `since` to `until`, without the paths under `exclude`."""
+    return out(
+        [*_PLAIN_DIFF, "--name-status", since, until, "--", ".", f":(exclude){exclude}"], cwd
+    )
 
 
 def status(cwd: Path) -> str:

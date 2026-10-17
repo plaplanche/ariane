@@ -14,7 +14,7 @@ Delivers a ticket: one push, the pull request (a draft that can carry failing bl
 ## Behaviour and errors
 
 - `Delivery`: performs the delivery.
-- `Delivered`: the pull request (and whether it is a draft) and the statuses published. When the last review is still `no-go` after the fix rounds the pull request is a draft whose body says "Needs a human", and the ticket status is `needs a human` with next action "finish by hand, then run `ariane verify`". The pull request body carries the review's verdict and definition-of-done results.
+- `Delivered`: the pull request (and whether it is a draft) and the statuses published. When the last review is still `no-go` after the fix rounds the pull request is a draft whose body says "Needs a human", and the ticket status is `needs a human` with next action "finish by hand, then run `ariane verify`". The pull request body carries the review's verdict and definition-of-done results. When the reviewed diff was cut (`truncated`, the files whose hunks it lacked), the review section says the diff given to the reviewer was truncated and how many files were missing (ADR 0031).
 - Last guard (C11, ADR 0017): right before the push, the `guard` callable given by the run is called (the same check as after an agent session), and any `url.*.insteadof` or `url.*.pushinsteadof` key whose prefix matches the push URL stops the delivery with `PullRequestRefused`; nothing is pushed.
 - `PullRequestRefused`: raised when the tracker refuses the pull request.
 

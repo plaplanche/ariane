@@ -10,11 +10,14 @@ The reviewer sessions of one review round (C10): a fresh read-only session on th
 | `read_answer(result)` | function | The validated answer of a session result, or the reason it is not one. |
 | `ReviewSession` | dataclass | What the reviewer sessions of a ticket share; `run` returns the validated `Review`. |
 | `cap_text(agent)` | function | Words the caps that apply, for the journal. |
+| `instruction_dirs(tree)` | function | The folders whose instruction files, with their ancestors', a reviewer on `tree` can load: the system temporary folder and the tree's parent (ADR 0031). |
 
 ## Behaviour and errors
 
 - `ReviewSession`: what the reviewer sessions of a ticket share; `run` returns the validated answer and calls back to verify that the session changed nothing.
 - A Claude Code reviewer runs from a temporary empty folder and reads the tree through `Session.add_dirs`; opencode runs in the tree. `instructions` is the base branch's `CLAUDE.md`, passed to the prompt as data.
+- Before its sessions, `run` journals `ticket.review.instructions`: how many places `git.instruction_snapshot` checked for `instruction_dirs(tree)` and the reviewer's runtime, and the digest of each file present. The flow's guard holds the same snapshot from before the implementer's session, so a file written there by an agent, a check or a setup stops the ticket before the review (ADR 0031).
+- `run` takes `name_status` (the untruncated changed-file list) and passes it to `review.prompt`.
 - Its `env` is built by the caller from the reviewer runtime's own login variables only.
 - The journal line of a reviewer session starts with the reviewer's runtime as `runtime.describe` words it (for opencode: its version and that the title call's usage is not reported).
 - `cap_text` words the caps that apply for the journal: for opencode "runtime cost cap none; Ariane stops at … USD of reported cost or … tokens".
@@ -73,9 +76,11 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 <!-- generated: collaborations -->
 ```mermaid
 flowchart LR
+  flow --> review_session
   replay --> review_session
   review_session --> checks
   review_session --> config
+  review_session --> git
   review_session --> metrics
   review_session --> review
   review_session --> runtime

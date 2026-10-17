@@ -18,14 +18,13 @@ from ariane.flow import (
     EXIT_OK,
     REMOTE,
     Outcome,
-    _describe,
     _interrupted_before_start,
     _TicketRun,
     branch_name,
 )
 from ariane.metrics import METRICS
 from ariane.runtime import AgentRuntime
-from ariane.stop import Stop
+from ariane.stop import Stop, describe
 from ariane.tracker import Issue, Tracker, TrackerError
 
 MAX_MINUTES = 1440
@@ -59,7 +58,7 @@ def start(
     except KeyboardInterrupt:
         return _interrupted_before_start(number)
     except (Stop, *_FAILURES) as exc:
-        reason, next_action = _describe(exc)
+        reason, next_action = describe(exc)
         return Outcome(1, f"Did not start shadow ticket #{number}: {reason}. Next: {next_action}.")
     return run.execute({})
 
