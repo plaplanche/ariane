@@ -12,7 +12,7 @@ flowchart TB
   verifyrec[(Verify records work/verify/branch/: review.md, checks.md, metrics.json)]
   shadowstore[(Shadow clones repo.ariane/shadow/n/, origin removed)]
   logs[(Log files in repo.ariane/logs/)]
-  session[Agent session process: claude, opencode or codex (Codex CLI, an external system, reviewer only)]
+  session["Agent session process: claude, opencode or codex (Codex CLI, an external system, reviewer only)"]
   ci[CI workflows: ci.yml, check-statuses.yml]
   github[GitHub]
   user --> cmd

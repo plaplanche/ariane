@@ -120,10 +120,19 @@ class CodexRuntime:
 
 def _environment(base: Mapping[str, str], api_key_env: str | None) -> dict[str, str]:
     key = base.get(api_key_env) if api_key_env else None
+    kept = api_key_env.upper() if api_key_env else None
+
+    def own(name: str) -> bool:
+        # Case-insensitive, as on Windows; a name ending in `_` is a prefix (ADR 0024).
+        upper = name.upper()
+        return kept is not None and (
+            upper.startswith(kept) if kept.endswith("_") else upper == kept
+        )
+
     env = {
         name: value
         for name, value in base.items()
-        if not name.upper().startswith(_KEY_PREFIXES) and name != api_key_env
+        if not name.upper().startswith(_KEY_PREFIXES) and not own(name)
     }
     if key:
         env["CODEX_API_KEY"] = key
@@ -196,6 +205,7 @@ class Events:
         cached = as_int(usage.get("cached_input_tokens")) or 0
         self.turns += 1
         self.completed = True
+        self.error = None  # a notice before a completed turn was not fatal
         # Codex counts cached tokens inside `input_tokens`; Ariane records them apart.
         self.input += max((as_int(usage.get("input_tokens")) or 0) - cached, 0)
         self.cache_read += cached

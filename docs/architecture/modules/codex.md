@@ -16,7 +16,7 @@ Codex as an agent runtime, for the reviewer role (ADR 0043): it starts the offic
 ## Behaviour and errors
 
 - The prompt goes on standard input; the schema of the answer is appended to it and the answer is the last fenced `json` block of the last `agent_message`.
-- The process environment holds no `OPENAI_*` variable and no `CODEX_API_KEY` of Ariane's own. With `api_key_env`, that variable's value is passed as `CODEX_API_KEY` to this process only and the variable itself is not passed on.
+- The process environment holds no `OPENAI_*` variable and no `CODEX_API_KEY` of Ariane's own. With `api_key_env`, that variable's value is passed as `CODEX_API_KEY` to this process only and the variable itself is not passed on (matched case-insensitively; a name ending in `_` is a prefix, ADR 0024). A `turn.completed` clears an earlier `error` notice.
 - Without `api_key_env`, `codex login status` runs first; "Not logged in" ends the session as `error` with the next step `LOGIN_NEXT`, and `codex exec` is never started.
 - `turn.completed` usage is summed (cached tokens, which Codex counts inside `input_tokens`, are recorded as cache read); the session stops (`budget`) when `max_tokens` is reached. A `turn.failed` or `error` event naming a usage limit stops the session as `quota`, with the next step "restart the ticket after <time>" when Codex gives the time. Any other failure or a non-zero exit is `error`.
 - Billing: a plan login records `cost_usd` 0 and `billing` `plan`; an API key records `api` and no cost.

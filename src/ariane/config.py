@@ -283,6 +283,11 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
     api_key_env = _str(table, "api_key_env", prefix) if "api_key_env" in table else None
     if api_key_env is not None and runtime != CODEX:
         raise ConfigError(f'{CONFIG_FILE}: {where}.api_key_env: only with runtime = "codex"')
+    if api_key_env is not None and "max_tokens" not in table:
+        raise ConfigError(
+            f"{CONFIG_FILE}: {where}.max_tokens: required with api_key_env"
+            " (a per-token Codex session needs a token cap)"
+        )
     if runtime == OPENCODE:
         _opencode_agent(table, tools, where)
     if role == "reviewer" and runtime != OPENCODE:
