@@ -13,6 +13,8 @@ reviewer can run on Claude Code or opencode). `ariane verify <branch>` gives a b
 hand the same checks and review. Approvals
 (slice 5) come next (see the roadmap in [`docs/spec.md`](docs/spec.md)).
 
+The [benchmark](docs/benchmark.md) compares Ariane with Claude Code used alone on a reference project, with the results so far.
+
 ## Try it
 
 Requirements: Python 3.11 or later, [uv](https://docs.astral.sh/uv/), git, and Claude Code
