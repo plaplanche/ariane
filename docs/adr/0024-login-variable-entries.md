@@ -43,7 +43,10 @@ The tracker token, `ARIANE_*` and Ariane's virtual environment never pass, even 
 Ariane's own additions stay: `GIT_SSH_COMMAND`, `IS_SANDBOX` and the push-blocking git config.
 
 Proxies and certificates are in the base set because checks behind a proxy cannot download
-anything without them; a proxy URL that carries credentials is the project's to declare instead.
+anything without them; a proxy URL that carries credentials is the project's to declare instead:
+`HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` whose value has a user or password before `@`
+(`http://user:pass@host`) does not pass unless `[project] env` names it, and is then journaled
+by name as a declared secret.
 
 A declared name that looks like a secret passes (the project asked for it); `flow` journals
 `ticket.env.declared_secret` once per run, names only (`context.declared_secrets`). `verify` has no

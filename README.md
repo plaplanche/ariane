@@ -232,7 +232,8 @@ The project's setup, checks and agents receive an allow list of environment vari
 system variables (`PATH`, `HOME`, `USER`, `LANG`, `LC_*`, `TZ`, `TERM`, the temporary folders, and
 the Windows system variables), proxy and certificate settings (`HTTP_PROXY`, `HTTPS_PROXY`,
 `NO_PROXY`, `ALL_PROXY`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, ...), and, for agents, the login
-variables of their runtime. Any other variable reaches them only when the project declares it in
+variables of their runtime. A proxy URL with credentials (`http://user:pass@host`) is left out
+unless declared. Any other variable reaches them only when the project declares it in
 `ariane.toml`:
 
 ```toml

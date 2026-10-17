@@ -33,6 +33,7 @@ BASE_VARIABLES = (
     *("SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS"),
     "CURL_CA_BUNDLE",
 )
+_PROXY_VARIABLES = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY")
 WINDOWS_VARIABLES = (
     *("SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "USERPROFILE", "USERNAME"),
     *("HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES"),
@@ -142,7 +143,11 @@ def declared_secrets(environ: Mapping[str, str], declared: Sequence[str], token_
         for name in environ
         if not _never_passes(name.upper(), token_env.upper())
         and _matches(name.upper(), kept)
-        and (name.upper() in _CREDENTIAL_CHANNELS or _SECRET_NAME.search(name.upper()))
+        and (
+            name.upper() in _CREDENTIAL_CHANNELS
+            or _SECRET_NAME.search(name.upper())
+            or _proxy_with_credentials(name.upper(), environ[name])
+        )
     )
     if not names:
         return ""
@@ -183,6 +188,8 @@ def untrusted_environment(
             continue
         if upper == "PATH":
             env[name] = _without_entries(value, own_scripts)
+        elif _proxy_with_credentials(upper, value) and not _matches(upper, _entries(declared)):
+            continue  # a proxy URL with credentials is the project's to declare (ADR 0024)
         elif _matches(upper, allowed) or _matches(upper, login):
             env[name] = value
     env["GIT_SSH_COMMAND"] = "ariane-ssh-is-disabled-for-agents"
@@ -191,6 +198,14 @@ def untrusted_environment(
     if is_root and keep_agent_login:  # Claude Code refuses bypassPermissions as root otherwise
         env["IS_SANDBOX"] = "1"
     return git.blocked_push_env(env, remotes)
+
+
+def _proxy_with_credentials(upper: str, value: str) -> bool:
+    """A proxy variable whose URL holds a user or password (`http://user:pass@host`)."""
+    if upper not in _PROXY_VARIABLES:
+        return False
+    authority = value.partition("://")[2] if "://" in value else value
+    return "@" in authority.partition("/")[0]
 
 
 def _never_passes(upper: str, token_name: str) -> bool:

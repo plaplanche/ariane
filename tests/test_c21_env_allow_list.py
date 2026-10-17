@@ -174,3 +174,23 @@ def test_c21_env_allow_list_ariane_declares_an_empty_list() -> None:
     root = Path(__file__).resolve().parent.parent
     assert config.load(root).env == ()
     assert "env = []" in (root / "docs" / "ariane.example.toml").read_text(encoding="utf-8")
+
+
+def test_c21_env_allow_list_a_proxy_url_with_credentials_passes_only_if_declared() -> None:
+    """ADR 0024: proxies pass by default, but a proxy URL with credentials is the project's to
+    declare; once declared it passes and is named in the journal."""
+    base = {
+        "HTTPS_PROXY": "http://user:s3cret@proxy:3128",
+        "http_proxy": "user:s3cret@proxy:3128",
+        "ALL_PROXY": "socks5://proxy:1080",
+        "NO_PROXY": "user@example.invalid",
+    }
+    for env in envs(base):
+        assert "HTTPS_PROXY" not in env and "http_proxy" not in env
+        assert env["ALL_PROXY"] == base["ALL_PROXY"] and env["NO_PROXY"] == base["NO_PROXY"]
+        assert "s3cret" not in "".join(env.values())
+    declared = ("HTTPS_PROXY", "http_proxy")
+    for env in envs(base, declared):
+        assert env["HTTPS_PROXY"] == base["HTTPS_PROXY"] and env["http_proxy"] == base["http_proxy"]
+    note = context.declared_secrets(base, declared, "GH_TOKEN")
+    assert "`HTTPS_PROXY`, `http_proxy`" in note and "s3cret" not in note
