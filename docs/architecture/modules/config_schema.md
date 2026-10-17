@@ -11,7 +11,7 @@ The description of `ariane.toml` as a JSON Schema, and the runtimes each role ma
 | `RUNTIMES` | constant | The runtimes allowed per role: `claude-code` for both, `opencode` for the reviewer only (ADR 0029). |
 | `OPENCODE_TOOLS` | constant | The tools of an opencode agent: `read`, `glob`, `grep`. |
 | `REVIEWER_TOOLS` | constant | The tools a Claude Code reviewer may be given: `Read`, `Glob`, `Grep` (ADR 0031). |
-| `SCHEMA` | constant | The JSON Schema of the file, written to `docs/reference/ariane.toml.schema.json` by `scripts/generate_docs.py`. |
+| `SCHEMA` | constant | The JSON Schema of the file, with `checks[].not_run_locally` (ADR 0042), written to `docs/reference/ariane.toml.schema.json` by `scripts/generate_docs.py`. |
 
 ## Behaviour and errors
 

@@ -50,7 +50,7 @@ Title: {_escape(issue.title)}
 
 {_escape(issue.body.strip()) or "(empty body)"}
 </{UNTRUSTED_TAG}>"""
-    check_lines = "\n".join(f"- {c.name}: `{' '.join(c.command)}`" for c in checks)
+    check_lines = "\n".join(_check_line(c) for c in checks)
     done_lines = "\n".join(f"- {item.label}" for item in definition_of_done)
     docs_section = _documentation_section(documentation)
     fix = ""
@@ -86,6 +86,14 @@ Definition of done:
 {docs_section}{fix}
 {block}
 """
+
+
+def _check_line(check: CheckConfig) -> str:
+    line = f"- {check.name}: `{' '.join(check.command)}`"
+    if check.not_run_locally:
+        globs = ", ".join(f"`{g}`" for g in check.not_run_locally)
+        line += f" (does not run {globs} locally: only CI does; write those tests with extra care)"
+    return line
 
 
 def _documentation_section(documentation: Documentation) -> str:

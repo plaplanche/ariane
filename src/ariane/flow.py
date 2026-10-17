@@ -138,6 +138,7 @@ class _TicketRun:
         self.url = url
         self.number = issue.number
         self.not_updated: list[str] = []
+        self.changed: list[str] = []
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
         self.folder = ticket.TicketFolder(worktree, issue.number, secrets=self.secrets)
         self.metrics = Metrics(issue.number, "delivered", lambda t: self.folder.write(METRICS, t))
@@ -397,6 +398,7 @@ class _TicketRun:
                 "Agent work committed",
                 "\n".join(f"- `{p}`" for p in changed),
             )
+        self.changed = changed
         self._flag_untouched_docs(changed)
         if result.stop_reason is not StopReason.FINISHED:
             raise Stop(
@@ -435,7 +437,7 @@ class _TicketRun:
                 break
             checked = git.head(self.worktree)
             results = replay.replay(self, checked, start_commit, guard, refs_before)
-            self.folder.write(ticket.CHECKS, checks.report(results, checked))
+            self.folder.write(ticket.CHECKS, checks.report(results, checked, self.changed))
             self.folder.log(
                 "ticket.checks.replayed",
                 "Checks replayed by Ariane",

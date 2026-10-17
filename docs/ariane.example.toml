@@ -55,6 +55,9 @@ command = ["uv", "run", "pytest", "-q"]
 # Optional: each check is replayed in its own fresh working tree, after project.setup. A "setup"
 # on a check replaces project.setup in that check's tree only (what its CI job installs).
 # setup = ["uv", "sync", "--only-group", "test"]
+# Optional: path globs of the files whose tests this check skips when Ariane replays it (only CI runs
+# them). Ariane records it, tells the implementer, and asks the reviewer to read those tests as untested.
+# not_run_locally = ["tests/e2e/**"]
 
 # Optional: what a change must satisfy to be done. Each item is a declared check ({ check = "name" })
 # or a sentence ({ text = "..." }). The implementer receives every item. Without this table,

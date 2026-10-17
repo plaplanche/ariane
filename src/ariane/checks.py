@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ariane import process
-from ariane.config import CheckConfig
+from ariane.config import CheckConfig, matching_paths
 from ariane.ticket import fenced
 
 PASSING_OUTPUT_LINES = 20
@@ -22,6 +22,7 @@ class CheckResult:
     detail: str  # "exit 0", "exit 1", "timed out after 900 s", "command not found on PATH: x"
     output: str
     duration_s: float
+    not_run_locally: tuple[str, ...] = ()  # globs of the tests this replay did not run
 
 
 def run_checks(
@@ -36,10 +37,26 @@ def run_check(check: CheckConfig, cwd: Path, env: Mapping[str, str] | None = Non
     try:
         done = process.run(check.command, cwd=cwd, timeout_s=timeout_s, env=env, merge_stderr=True)
     except process.CommandNotFoundError as exc:
-        return CheckResult(check.name, check.command, check.blocking, False, str(exc), "", 0.0)
+        return CheckResult(
+            check.name,
+            check.command,
+            check.blocking,
+            False,
+            str(exc),
+            "",
+            0.0,
+            check.not_run_locally,
+        )
     detail = f"timed out after {timeout_s:g} s" if done.timed_out else f"exit {done.returncode}"
     return CheckResult(
-        check.name, check.command, check.blocking, done.ok, detail, done.stdout, done.duration_s
+        check.name,
+        check.command,
+        check.blocking,
+        done.ok,
+        detail,
+        done.stdout,
+        done.duration_s,
+        check.not_run_locally,
     )
 
 
@@ -75,7 +92,24 @@ def _shown_output(r: CheckResult) -> str:
     return "\n".join([f"({omitted} earlier lines omitted)", *kept])
 
 
-def report(results: Sequence[CheckResult], commit: str) -> str:
+def unrun_files(results: Sequence[CheckResult], changed: Sequence[str]) -> list[str]:
+    """The changed files that hold tests no replayed check ran (declared `not_run_locally`)."""
+    found: list[str] = []
+    for r in results:
+        found += [p for p in matching_paths(r.not_run_locally, changed) if p not in found]
+    return found
+
+
+def _not_run_lines(r: CheckResult, changed: Sequence[str]) -> list[str]:
+    if not r.not_run_locally:
+        return []
+    globs = ", ".join(f"`{g}`" for g in r.not_run_locally)
+    matches = matching_paths(r.not_run_locally, changed)
+    files = ", ".join(f"`{p}`" for p in matches) if matches else "no changed file matches"
+    return [f"- Not run by this replay (CI only): {globs}", f"- Changed files it skips: {files}"]
+
+
+def report(results: Sequence[CheckResult], commit: str, changed: Sequence[str] = ()) -> str:
     """The full report: one section per check with its complete output, then a summary line."""
     parts = [
         f"# Checks\n\nReplayed by Ariane on commit `{commit}`.\n\n"
@@ -89,7 +123,9 @@ def report(results: Sequence[CheckResult], commit: str) -> str:
             f"## {r.name}\n",
             f"- Command: `{' '.join(r.command)}`",
             f"- Blocking: {'yes' if r.blocking else 'no'}",
-            f"- Result: {verdict} ({r.detail}, {r.duration_s:.1f} s)\n",
+            f"- Result: {verdict} ({r.detail}, {r.duration_s:.1f} s)",
+            *_not_run_lines(r, changed),
+            "",
             fenced(_shown_output(r)) + "\n",
         ]
     parts.append(summary_line(results))

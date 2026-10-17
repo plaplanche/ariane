@@ -7,7 +7,7 @@ Builds what an agent receives from Ariane (C5, C21, C25, C26): its prompt and a 
 | Name | Kind | What it does |
 | --- | --- | --- |
 | `UNTRUSTED_TAG` | constant | The tag, `untrusted-ticket`, that wraps the ticket text in a prompt. |
-| `implementer_prompt(issue, branch, checks, definition_of_done=DEFAULT_DEFINITION_OF_DONE, documentation=NO_DOCUMENTATION, *, recorded=False, read_at='', fix_round=0, findings='')` | function | The prompt of the implementer session. |
+| `implementer_prompt(issue, branch, checks, definition_of_done=DEFAULT_DEFINITION_OF_DONE, documentation=NO_DOCUMENTATION, *, recorded=False, read_at='', fix_round=0, findings='')` | function | The prompt of the implementer session; a check with `not_run_locally` is marked as not run locally (ADR 0042). |
 | `known_secrets(environ, token_env)` | function | The values to redact: the tracker token and every variable `untrusted_environment` withholds. |
 | `untrusted_environment(base, *, token_env, remotes, login_variables=(), is_root=None)` | function | The environment of an agent session or of checks running code an agent wrote. |
 

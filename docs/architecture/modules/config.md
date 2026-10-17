@@ -11,10 +11,11 @@ Loads and validates `ariane.toml` (C22). Every error names the faulty key.
 | `ConfigError` | exception | The configuration is missing or invalid; the message names the faulty key. |
 | `TrackerConfig` | dataclass | `[tracker]`: `kind`, `repository`, `token_env`, `api_url`, `ready_label` (default `ariane`, C21, ADR 0032). |
 | `AgentConfig` | dataclass | `[agents.<role>]`: `runtime`, `model`, `tools`, `max_budget_usd`, `timeout_minutes`, optional `max_tokens`. |
-| `CheckConfig` | dataclass | One `[[checks]]` entry: `name`, `command`, `blocking`, `timeout_minutes`, optional `setup` (replaces `project.setup` in that check's replay tree, ADR 0041). |
+| `CheckConfig` | dataclass | One `[[checks]]` entry: `name`, `command`, `blocking`, `timeout_minutes`, optional `setup` (replaces `project.setup` in that check's replay tree, ADR 0041), optional `not_run_locally` (path globs of the files whose tests only CI runs, ADR 0042). |
 | `DoneItem` | dataclass | One item of the definition of done (C26): a declared check or a sentence; `label()` is its text. |
 | `DocMapEntry` | dataclass | Source files (a glob) and the documents that cover them; `documents_for(path)` expands them. |
 | `GeneratedDoc` | dataclass | A `[[documentation.generated]]` entry: `name` and the `check` command. |
+| `matching_paths(globs, paths)` | function | The paths matching at least one glob (same glob rules as `documentation.map`). |
 | `Documentation` | dataclass | The optional `[documentation]` table (C25, ADR 0026): `paths`, `map`, `generated`; `documents_for(path)`, `not_updated(changed)`, `checks()`. |
 | `NO_DOCUMENTATION` | constant | The empty `Documentation`, used without the table. |
 | `DEFAULT_DEFINITION_OF_DONE` | constant | The definition of done when the table is absent (C26). |

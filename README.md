@@ -41,6 +41,8 @@ ariane status 12
 ariane verify my-branch --issue 12
 ```
 
+A check can declare `not_run_locally`, path globs of tests that only CI runs: `checks.md` lists them with the changed files they cover, the implementer is told to write them with extra care, and the reviewer reads those files as untested code (ADR 0042).
+
 The reviewer is given the ticket's Out of scope section, and a finding about out-of-scope work is never blocking.
 The reviewer also checks the order of side effects: a write before the check that should guard it, or a retry that can write twice, is a blocking finding.
 

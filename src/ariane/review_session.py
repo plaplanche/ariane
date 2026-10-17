@@ -62,6 +62,7 @@ class ReviewSession:
         diff: str,
         results: list[checks.CheckResult],
         not_updated: Sequence[str],
+        changed: Sequence[str],
         after_session: Callable[[], None],
     ) -> review.Review:
         """A fresh read-only reviewer session on `replay` (the reviewer tree, without instruction
@@ -69,7 +70,9 @@ class ReviewSession:
         changed nothing. Claude Code starts in an empty folder and reads `replay` (ADR 0031)."""
         empty = Path(tempfile.mkdtemp(prefix="ariane-reviewer-"))
         try:
-            return self._run(replay, empty, checked, diff, results, not_updated, after_session)
+            return self._run(
+                replay, empty, checked, diff, results, not_updated, changed, after_session
+            )
         finally:
             shutil.rmtree(empty, ignore_errors=True)
 
@@ -81,6 +84,7 @@ class ReviewSession:
         diff: str,
         results: list[checks.CheckResult],
         not_updated: Sequence[str],
+        changed: Sequence[str],
         after_session: Callable[[], None],
     ) -> review.Review:
         agent = self.agent
@@ -104,6 +108,7 @@ class ReviewSession:
                     self.definition_of_done,
                     error=error,
                     not_updated=not_updated,
+                    changed=changed,
                     instructions=self.instructions,
                     tree=replay,
                 ),

@@ -146,7 +146,9 @@ def review_round(
             round=round_,
         )
         try:
-            answer = sessions.run(tree, checked, diff, results, run.not_updated, after_session)
+            answer = sessions.run(
+                tree, checked, diff, results, run.not_updated, run.changed, after_session
+            )
         except ReviewFailed as exc:
             raise Stop(exc.reason, exc.next_action, exc.detail, status="needs a human") from None
         settled = review.settle(answer, run.config.definition_of_done, results)

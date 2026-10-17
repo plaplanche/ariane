@@ -248,6 +248,7 @@ class _Verification:
                 diff,
                 results,
                 self.config.documentation.not_updated(changed),
+                changed,
                 lambda: self._unchanged(tree, "the reviewer", tree_before),
             )
         except ReviewFailed as exc:
@@ -257,7 +258,7 @@ class _Verification:
         model = self.config.reviewer.model
         texts = {
             REVIEW: review.record(settled, self.head, model),
-            ticket.CHECKS: checks.report(results, self.head),
+            ticket.CHECKS: checks.report(results, self.head, changed),
         }
         green = settled.go and not checks.blocking_failures(results)
         self.metrics.finish("delivered" if green else "stopped")

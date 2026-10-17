@@ -378,6 +378,15 @@
               "minLength": 1
             },
             "description": "Replaces project.setup in this check's replay tree."
+          },
+          "not_run_locally": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Path globs of the files whose tests this check skips when Ariane replays it (only CI runs them)."
           }
         }
       }
