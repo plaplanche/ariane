@@ -37,7 +37,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     logs.configure(level)
     process.make_undumpable()
-    process.set_child_subreaper()
+    reaping = process.set_child_subreaper()
     try:
         root = git.repo_root(Path.cwd())
     except git.GitError as exc:
@@ -48,6 +48,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "judge":
         logs.configure(level, logs.log_path(root, f"judge-{args.issue}"))
         return _say_outcome(shadow.judge(root, args.issue, args.verdict, args.minutes, args.note))
+    if reaping is not None and args.command in ("start", "verify"):
+        return _say(
+            EXIT_USAGE,
+            f"Did nothing: Ariane could not become the subreaper ({reaping}), so it could not"
+            " stop what an agent leaves running. Next: run Ariane where"
+            " prctl(PR_SET_CHILD_SUBREAPER) is allowed.",
+        )
     if args.command == "verify":
         logs.configure(level, logs.log_path(root, "verify-" + args.branch.replace("/", "-")))
         return _verify(root, args.branch, args.issue)

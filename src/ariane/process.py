@@ -71,13 +71,13 @@ def make_undumpable() -> None:
         logs.emit("process.undumpable_failed", f"Could not make the process undumpable: {exc}")
 
 
-def set_child_subreaper(on: bool = True) -> None:
+def set_child_subreaper(on: bool = True) -> str | None:
     """On Linux, make this process the reaper of its orphaned descendants
     (`prctl(PR_SET_CHILD_SUBREAPER)`): a process an agent starts in a new session stays a
-    descendant of Ariane, which `kill_survivors` finds. A no-op elsewhere; a failure is only
-    journaled as a warning (C10, ADR 0031)."""
+    descendant of Ariane, which `kill_survivors` finds. A no-op elsewhere. Returns why it
+    failed, or None: on a failure Ariane runs no agent, setup or check (C10, ADR 0031)."""
     if not sys.platform.startswith("linux"):
-        return
+        return None
     try:
         import ctypes
 
@@ -86,6 +86,8 @@ def set_child_subreaper(on: bool = True) -> None:
             raise OSError(ctypes.get_errno(), "prctl(PR_SET_CHILD_SUBREAPER) failed")
     except (OSError, AttributeError) as exc:
         logs.emit("process.subreaper_failed", f"Could not become the subreaper: {exc}")
+        return str(exc)
+    return None
 
 
 def _process_table() -> dict[int, tuple[int, str, str]]:
@@ -205,6 +207,8 @@ def _signal(pids: Collection[int], signum: int) -> None:
 
 def _wait(pid: int) -> bool:
     """Reap an exited child; False if it was not this process's to reap."""
+    if sys.platform == "win32":
+        return False
     try:
         return os.waitpid(pid, os.WNOHANG)[0] == pid
     except ChildProcessError:

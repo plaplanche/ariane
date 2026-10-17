@@ -87,7 +87,9 @@ An internal security review found three ways left to weaken the reviewer. Decide
    diff given to the reviewer was truncated.
 3. **No surviving agent processes (Linux).** `ariane` sets `PR_SET_CHILD_SUBREAPER` at start, so
    a process that leaves its process group (`setsid`, `setpgid`) is reparented to Ariane, not to
-   init. Every command Ariane runs (an agent session, a setup, a check, git) kills, in the same
+   init. It fails closed: if Linux refuses it, `start` and `verify` stop before running any agent,
+   setup or check ("Did nothing: Ariane could not become the subreaper"), since without it a
+   detached process would escape every scan; `status`, `report` and `judge` run nothing and go on. Every command Ariane runs (an agent session, a setup, a check, git) kills, in the same
    teardown that kills its process group, the descendants that appeared since it started, also
    when it fails, times out or is interrupted (Ctrl-C): nothing it started runs when the next
    command starts or a tree is removed. A `/proc` scan is not atomic and a survivor can fork
