@@ -62,7 +62,10 @@ session then bills your ChatGPT plan and `ariane report` shows it as "covered by
 process only, as `CODEX_API_KEY`, and the session is billed per token. Without `api_key_env`, every
 OpenAI key variable is removed from the process's environment. When the plan's usage limit is
 reached the ticket stops with "reviewer quota reached", never a no-go: restart it after the reset
-time. Not logged in and no `api_key_env`: the ticket stops with "Codex is not logged in" (ADR 0043).
+time. Not logged in and no `api_key_env`: the ticket stops with "Codex is not logged in". Without
+`api_key_env` the CLI must be logged in with ChatGPT: a CLI logged in with an API key stops the
+ticket ("Codex is logged in with an API key, not ChatGPT"; run `codex login --device-auth` with the
+ChatGPT account, or set `api_key_env`), since `max_tokens` cannot bound a per-token turn (ADR 0043).
 
 ### Reviewer on opencode
 
