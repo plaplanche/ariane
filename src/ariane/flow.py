@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -146,21 +147,19 @@ class _TicketRun:
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
         self.folder = ticket.TicketFolder(worktree, issue.number, secrets=self.secrets)
         self.metrics = Metrics(issue.number, "delivered", lambda t: self.folder.write(METRICS, t))
-        remotes = git.remotes(worktree)
-        token_env = config.tracker.token_env
-        # Agent sessions and anything running code an agent wrote get no credential.
+        # Agent sessions and anything running code an agent wrote get an allow list (ADR 0024).
+        untrusted = functools.partial(
+            context.untrusted_environment,
+            environ,
+            token_env=config.tracker.token_env,
+            remotes=git.remotes(worktree),
+            declared=config.env,
+        )
         self.agent_envs = {
-            role: context.untrusted_environment(
-                environ,
-                token_env=token_env,
-                remotes=remotes,
-                login_variables=for_role(runtime, role).login_variables,
-            )
+            role: untrusted(login_variables=for_role(runtime, role).login_variables)
             for role in ("implementer", "reviewer")
         }
-        self.untrusted_env = context.untrusted_environment(
-            environ, token_env=token_env, remotes=remotes
-        )
+        self.untrusted_env = untrusted()
 
     def execute(self, refs_before: dict[str, str]) -> Outcome:
         try:
@@ -176,6 +175,9 @@ class _TicketRun:
                 f"Issue #{self.number} ({self.issue.url}), branch `{self.branch}` from"
                 f" `{self.remote}/{self.config.base_branch}`, working tree `{self.worktree}`.",
             )
+            env, token_env = self.config.env, self.config.tracker.token_env
+            if note := context.declared_secrets(self.environ, env, token_env):
+                self.folder.log("ticket.env.declared_secret", "Declared secrets passed", note)
             if setup_error is not None:
                 raise setup_error
             self.folder.log(

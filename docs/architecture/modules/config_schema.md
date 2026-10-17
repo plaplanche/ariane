@@ -20,6 +20,7 @@ The description of `ariane.toml` as a JSON Schema, and the runtimes each role ma
 - The reviewer, the only role that may run on opencode, carries an `if`/`then` that requires `max_tokens` when `runtime` is `opencode`, as `config.parse` does; the implementer has none.
 - The reviewer also carries an `if`/`then` limiting a Claude Code reviewer's `tools` to `REVIEWER_TOOLS` (ADR 0031).
 - `checks[].setup` is an optional argument list.
+- `project.env` is an optional list of non-empty strings, default `[]` (ADR 0024).
 - Raises nothing.
 
 ## Workflow

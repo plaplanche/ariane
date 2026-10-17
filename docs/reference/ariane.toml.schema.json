@@ -31,6 +31,15 @@
             "minLength": 1
           },
           "description": "Command run once in the working tree (list of arguments)."
+        },
+        "env": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": [],
+          "description": "Variables agents, checks and setup commands receive beyond the base set (ADR 0024); an entry ending in _ is a prefix."
         }
       }
     },

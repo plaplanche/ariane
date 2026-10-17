@@ -24,6 +24,21 @@ _SECRET_NAME = git.SECRET_NAME  # one credential filter, defined where git needs
 _CREDENTIAL_CHANNELS = git.CREDENTIAL_CHANNELS
 _OWN_PREFIX = "ARIANE_"
 _VENV_VARIABLES = ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT")
+# What untrusted code receives without being declared (ADR 0024): system variables, and the proxy
+# and certificate settings checks behind a proxy need. An entry ending in `_` is a prefix.
+BASE_VARIABLES = (
+    *("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "LC_", "TZ", "TERM"),
+    *("TMPDIR", "TMP", "TEMP"),
+    *("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY"),
+    *("SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS"),
+    "CURL_CA_BUNDLE",
+)
+WINDOWS_VARIABLES = (
+    *("SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "USERPROFILE", "USERNAME"),
+    *("HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES"),
+    *("PROGRAMFILES(X86)", "COMMONPROGRAMFILES", "NUMBER_OF_PROCESSORS"),
+    *("PROCESSOR_ARCHITECTURE", "OS", "COMPUTERNAME"),
+)
 
 
 def implementer_prompt(
@@ -106,7 +121,7 @@ def _documentation_section(documentation: Documentation) -> str:
 
 
 def known_secrets(environ: Mapping[str, str], token_env: str) -> list[str]:
-    """The tracker token and the value of every variable `untrusted_environment` withholds."""
+    """The tracker token, the credential channels and every variable named like a secret."""
     token_name = token_env.upper()
     values = [
         value
@@ -118,40 +133,57 @@ def known_secrets(environ: Mapping[str, str], token_env: str) -> list[str]:
     return [v for v in values if v]
 
 
+def declared_secrets(environ: Mapping[str, str], declared: Sequence[str], token_env: str) -> str:
+    """The names (never the values) of the variables passed because the project declared them
+    in `[project] env` although they look like secrets, as one journal line; empty if none."""
+    kept = _entries(declared)
+    names = sorted(
+        name
+        for name in environ
+        if not _never_passes(name.upper(), token_env.upper())
+        and _matches(name.upper(), kept)
+        and (name.upper() in _CREDENTIAL_CHANNELS or _SECRET_NAME.search(name.upper()))
+    )
+    if not names:
+        return ""
+    return "Declared in `[project] env`, passed to agents and checks: " + ", ".join(
+        f"`{n}`" for n in names
+    )
+
+
 def untrusted_environment(
     base: Mapping[str, str],
     *,
     token_env: str,
     remotes: list[str],
     login_variables: Sequence[str] = (),
+    declared: Sequence[str] = (),
     is_root: bool | None = None,
 ) -> dict[str, str]:
     """The environment of an agent session or of checks running code an agent wrote.
 
-    No credential variable, no `ARIANE_*` variable, no virtual environment of Ariane's (nor its
-    scripts directory on `PATH`, ADR 0040), no SSH agent, and a git that cannot push. With
-    `keep_agent_login`, the runtime's own login variables are kept (an agent session needs them;
-    checks get none). An entry ending in `_` is a prefix, any other is an exact name (ADR 0024).
+    An allow list (ADR 0024): the base set of system, proxy and certificate variables, the names
+    the project `declared` in `[project] env`, and with `login_variables`, the runtime's own login
+    variables (an agent session needs them; checks get none). An entry ending in `_` is a prefix,
+    any other is an exact name. The tracker token, `ARIANE_*` and Ariane's virtual environment
+    (nor its scripts directory on `PATH`, ADR 0040) never pass, and git cannot push.
     """
     keep_agent_login = bool(login_variables)
-    kept = tuple(v.upper() for v in login_variables)
+    allowed = _entries(BASE_VARIABLES)
+    if sys.platform == "win32":
+        allowed += _entries(WINDOWS_VARIABLES)
+    allowed += _entries(declared)
+    login = _entries(login_variables)
     env = {}
     token_name = token_env.upper()
     own_scripts = _own_scripts_directories(base)
     for name, value in base.items():
         upper = name.upper()  # Windows environment names are case-insensitive
-        if upper == token_name:
-            continue  # the tracker token never passes, whatever its name
-        if upper.startswith(_OWN_PREFIX) or upper in _VENV_VARIABLES:
-            continue  # Ariane's own settings and environment, not the project's
+        if _never_passes(upper, token_name):
+            continue
         if upper == "PATH":
             env[name] = _without_entries(value, own_scripts)
-            continue
-        if _is_login_variable(upper, kept):
-            env[name] = value
-        elif upper in _CREDENTIAL_CHANNELS or _SECRET_NAME.search(upper):
-            continue
-        else:
+        elif _matches(upper, allowed) or _matches(upper, login):
             env[name] = value
     env["GIT_SSH_COMMAND"] = "ariane-ssh-is-disabled-for-agents"
     if is_root is None:
@@ -159,6 +191,11 @@ def untrusted_environment(
     if is_root and keep_agent_login:  # Claude Code refuses bypassPermissions as root otherwise
         env["IS_SANDBOX"] = "1"
     return git.blocked_push_env(env, remotes)
+
+
+def _never_passes(upper: str, token_name: str) -> bool:
+    """The tracker token, whatever its name, and Ariane's own settings and environment."""
+    return upper == token_name or upper.startswith(_OWN_PREFIX) or upper in _VENV_VARIABLES
 
 
 def _normal(path: str) -> str:
@@ -184,8 +221,12 @@ def _without_entries(path: str, withheld: set[str]) -> str:
     return os.pathsep.join(entries)
 
 
-def _is_login_variable(upper: str, kept: tuple[str, ...]) -> bool:
-    return any(upper.startswith(k) if k.endswith("_") else upper == k for k in kept)
+def _entries(names: Sequence[str]) -> tuple[str, ...]:
+    return tuple(n.upper() for n in names)
+
+
+def _matches(upper: str, entries: tuple[str, ...]) -> bool:
+    return any(upper.startswith(e) if e.endswith("_") else upper == e for e in entries)
 
 
 def _running_as_root() -> bool:

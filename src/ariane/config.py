@@ -163,6 +163,7 @@ class Config:
     checks: tuple[CheckConfig, ...]
     definition_of_done: tuple[DoneItem, ...] = DEFAULT_DEFINITION_OF_DONE
     documentation: Documentation = NO_DOCUMENTATION
+    env: tuple[str, ...] = ()  # variables the project's checks need (ADR 0024)
 
 
 def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:
@@ -193,7 +194,7 @@ def parse(data: dict[str, Any]) -> Config:
         data, "", {"project", "tracker", "agents", "checks", "definition_of_done", "documentation"}
     )
     project = _table(data, "project")
-    _only(project, "project", {"base_branch", "setup"})
+    _only(project, "project", {"base_branch", "setup", "env"})
     tracker = _table(data, "tracker")
     _only(tracker, "tracker", {"kind", "repository", "token_env", "api_url", "ready_label"})
     agents = _table(data, "agents")
@@ -249,7 +250,18 @@ def parse(data: dict[str, Any]) -> Config:
         checks=checks,
         definition_of_done=_definition_of_done(data, names),
         documentation=documentation,
+        env=_env(project),
     )
+
+
+def _env(project: dict[str, Any]) -> tuple[str, ...]:
+    value = project.get("env", [])
+    if not isinstance(value, list) or not all(isinstance(v, str) and v.strip() for v in value):
+        raise ConfigError(
+            f"{CONFIG_FILE}: project.env: expected a list of variable names"
+            " (an entry ending in _ is a prefix)"
+        )
+    return tuple(value)
 
 
 def _agent(agents: dict[str, Any], role: str) -> AgentConfig:

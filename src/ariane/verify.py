@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import functools
 import shutil
 import tempfile
 from collections.abc import Mapping, Sequence
@@ -130,16 +131,15 @@ class _Verification:
         self.where = where
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
         remotes = git.remotes(repo_root)
-        token_env = config.tracker.token_env
-        self.reviewer_env = context.untrusted_environment(
+        untrusted = functools.partial(
+            context.untrusted_environment,
             environ,
-            token_env=token_env,
+            token_env=config.tracker.token_env,
             remotes=remotes,
-            login_variables=for_role(runtime, "reviewer").login_variables,
+            declared=config.env,
         )
-        self.untrusted_env = context.untrusted_environment(
-            environ, token_env=token_env, remotes=remotes
-        )
+        self.reviewer_env = untrusted(login_variables=for_role(runtime, "reviewer").login_variables)
+        self.untrusted_env = untrusted()
         self.url = git.push_url(repo_root, REMOTE) if REMOTE in remotes else None
         self.refs_before = git.remote_refs(repo_root, self.url) if self.url else {}
         self.head = git.out(["rev-parse", f"refs/heads/{branch}"], repo_root)
