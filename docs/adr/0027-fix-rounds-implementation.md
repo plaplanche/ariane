@@ -22,3 +22,8 @@ A ticket costs up to three implementer and three reviewer sessions. The human al
 ## Alternatives considered
 - Review the commit whose checks failed: rejected, its verdict would be about a state that cannot be delivered.
 - Push after each round: rejected, the push guard and C11 want one push.
+
+## Amendment: a fix round that changes nothing (ticket #135)
+- `_fix` takes the head before the fix session and after Ariane's commit. When they are equal the round made no change (an agent that commits by itself moves the head, so it is not "unchanged"). The journal gets `ticket.fix.unchanged` with the session's summary, no replay and no review run, and the ticket is delivered as when the rounds are exhausted: a draft pull request with the last review and the last replayed results, status `needs a human`; the stop line says "fix round N changed nothing".
+- `metrics.json` keeps `rounds` and gains `unchanged_fix_rounds`. A session that stopped for budget, turns, timeout or error keeps the earlier behaviour.
+- Rejected: rerunning the fix session once, told that it changed nothing. The simplest design stops; the human reads the summary.

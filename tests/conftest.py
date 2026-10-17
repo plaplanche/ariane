@@ -125,7 +125,10 @@ Action = Callable[[Session], None]
 
 
 def edit_app(session: Session) -> None:
-    (session.cwd / "app.txt").write_text("version 2\n", encoding="utf-8")
+    """Set app.txt; a fix session adds a line for its round, so that it changes the commit."""
+    marker = session.prompt.partition("fix round ")[2][:1]
+    note = f"fix {marker}\n" if marker else ""
+    (session.cwd / "app.txt").write_text(f"version 2\n{note}", encoding="utf-8")
 
 
 def go_answer(items: tuple[str, ...] | None = None) -> dict[str, Any]:

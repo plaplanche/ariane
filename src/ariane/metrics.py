@@ -29,6 +29,7 @@ class Metrics:
         self.steps: list[dict[str, str]] = []
         self.sessions: list[dict[str, Any]] = []
         self.rounds = 0
+        self.unchanged_fix_rounds = 0
         self.attempts = Attempts()
         self.guard_violations = 0
         self.blocking_red = 0
@@ -73,6 +74,10 @@ class Metrics:
         self.rounds = round_
         self.step(f"fix round {round_} began")
 
+    def unchanged_fix_round(self) -> None:
+        """A fix round that left the head where it was (C10)."""
+        self.unchanged_fix_rounds += 1
+
     def guard_violation(self) -> None:
         """The post-session check found a change it forbids (C11)."""
         self.guard_violations += 1
@@ -99,6 +104,7 @@ class Metrics:
             "steps": self.steps,
             "sessions": self.sessions,
             "rounds": self.rounds,
+            "unchanged_fix_rounds": self.unchanged_fix_rounds,
             "first_pass_verdict": self.first_pass_verdict,
             "outcome": self.outcome,
         }

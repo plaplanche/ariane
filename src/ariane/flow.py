@@ -336,8 +336,10 @@ class _TicketRun:
         guard: dict[str, str],
         refs_before: dict[str, str],
         findings: str,
-    ) -> None:
-        """C10: a fresh implementer session fixes the findings in the ticket's working tree."""
+    ) -> bool:
+        """C10: a fresh implementer session fixes the findings in the ticket's working tree.
+
+        Returns False when the round left the head where it was: nothing to replay or review."""
         self.metrics.fix_round(round_)
         self.folder.set_status("implementing", f"fix round {round_} running", "wait")
         self.folder.log(
@@ -347,10 +349,20 @@ class _TicketRun:
             f"{ticket.fenced(findings)}",
         )
         ignored_before = git.ignored(self.worktree)
+        head_before = git.head(self.worktree)
         result = self._implement(round_, findings)
         self.verify(f"fix session {round_}", start_commit, guard, refs_before)
         self._warn_ignored(ignored_before)
         self._commit_agent_work(start_commit, result, f"#{self.number}: fix round {round_}")
+        if git.head(self.worktree) != head_before:
+            return True
+        self.metrics.unchanged_fix_round()
+        self.folder.log(
+            "ticket.fix.unchanged",
+            f"Fix round {round_} changed nothing",
+            f"The fix session's summary (data from the agent):\n\n{ticket.fenced(result.summary)}",
+        )
+        return False
 
     def _commit_agent_work(
         self, start_commit: str, result: SessionResult, message: str = ""
@@ -414,11 +426,13 @@ class _TicketRun:
         settled: review.Settled | None = None
         reviewed = 0
         failed: list[checks.CheckResult] = []
+        unchanged = 0
         for round_ in range(MAX_FIX_ROUNDS + 1):
-            if round_:
-                self._fix(
-                    round_, start_commit, guard, refs_before, review.fix_feedback(settled, failed)
-                )
+            if round_ and not self._fix(
+                round_, start_commit, guard, refs_before, review.fix_feedback(settled, failed)
+            ):
+                unchanged = round_
+                break
             checked = git.head(self.worktree)
             results = replay.replay(self, checked, start_commit, guard, refs_before)
             self.folder.write(ticket.CHECKS, checks.report(results, checked))
@@ -442,7 +456,7 @@ class _TicketRun:
                 )
             if settled is not None and settled.go and not failed:
                 break
-        return self._deliver(checked, settled, reviewed, results)
+        return self._deliver(checked, settled, reviewed, results, unchanged)
 
     def _deliver(
         self,
@@ -450,6 +464,7 @@ class _TicketRun:
         settled: review.Settled | None,
         reviewed: int,
         results: list[checks.CheckResult],
+        unchanged: int = 0,
     ) -> Outcome:
         """Push, open the pull request and publish the statuses (C11)."""
         delivery = Delivery(
@@ -475,11 +490,15 @@ class _TicketRun:
         except PullRequestRefused as exc:
             raise Stop(exc.reason, exc.next_action) from None
         if done.draft:
+            why = (
+                f"fix round {unchanged} changed nothing"
+                if unchanged
+                else f"the review is still no-go after {MAX_FIX_ROUNDS} fix rounds"
+            )
             return Outcome(
                 EXIT_STOPPED,
-                f"Opened draft pull request {done.pull_url} for issue #{self.number}: the review"
-                f" is still no-go after {MAX_FIX_ROUNDS} fix rounds. Next: finish by hand, then"
-                " run `ariane verify`.",
+                f"Opened draft pull request {done.pull_url} for issue #{self.number}: {why}."
+                " Next: finish by hand, then run `ariane verify`.",
             )
         return Outcome(
             EXIT_OK,

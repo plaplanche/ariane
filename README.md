@@ -89,7 +89,7 @@ example before `ariane verify --issue N`) ([ADR 0032](docs/adr/0032-issue-gate.m
 (`<repo>.ariane/worktrees/12`), runs the setup command, one implementer session and every check. If a blocking check fails
 before any review, it stops there and pushes nothing. Otherwise a read-only reviewer on a
 different model reviews the delivered commit; on a no-go, up to two fix rounds follow, each with a fresh
-implementer session, a replay and a review. Then it pushes the branch, opens the pull request (a
+implementer session, a replay and a review (a fix round that changes nothing ends the rounds, with a draft pull request). Then it pushes the branch, opens the pull request (a
 draft that needs a human if the review is still no-go) and publishes each check's result as a
 commit status (`ariane/<check name>`) on its head commit. The ticket's records are in `work/12/`, including `work/12/metrics.json`: cost, tokens, durations,
 fix rounds, first-pass verdict and outcome of the ticket, rewritten after each step.
