@@ -41,6 +41,9 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `status(cwd)` | function | The short status of the tree. |
 | `committed_paths(cwd, since, pathspec)` | function | Paths committed since a revision under a pathspec. |
 | `commit(cwd, pathspec, message, env, tolerate_ignored)` | function | Commits only the given paths; False when they hold no change. |
+| `token_free_environment(base=None)` | function | The environment without any variable the credential filter withholds; the default of `git` and `out` (C21). |
+| `SECRET_NAME` | constant | The pattern of credential variable names, shared with `context`. |
+| `CREDENTIAL_CHANNELS` | constant | The credential channels (SSH agent, askpass) the filter withholds. |
 | `push_env(base, token)` | function | An environment carrying the push credential. |
 | `push(cwd, url, sha, branch, token, environ)` | function | The single authenticated push; returns the pushed commit. |
 | `fast_forwarded(cwd, remote, branch, old, new)` | function | Whether a branch moved by fast-forward. |

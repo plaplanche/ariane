@@ -41,6 +41,8 @@ ariane status 12
 ariane verify my-branch --issue 12
 ```
 
+Use a fine-grained token limited to the one repository: contents, pull requests and commit statuses: write; issues: read; no workflows, no administration. Ariane removes the token from its own environment once read and keeps it only for the tracker and the push; no other git command gets it, and on Linux its process is not dumpable. The residual: on macOS, on Windows and when running as root, a process of the same user may still read Ariane's memory; only the sandbox of the security slice closes it (ADR 0017).
+
 A check can declare `not_run_locally`, path globs of tests that only CI runs: `checks.md` lists them with the changed files they cover, the implementer is told to write them with extra care, and the reviewer reads those files as untested code (ADR 0042).
 
 The reviewer is given the ticket's Out of scope section, and a finding about out-of-scope work is never blocking.

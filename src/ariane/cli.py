@@ -18,6 +18,7 @@ from ariane.runtime import AgentRuntime, RoutedRuntime
 EXIT_OK = flow.EXIT_OK
 EXIT_STOPPED = flow.EXIT_STOPPED
 EXIT_USAGE = 2
+_TOKENS: dict[str, str] = {}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -34,6 +35,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             EXIT_USAGE, (f"Did nothing: {exc}. Next: set --log-level or {logs.LEVEL_VARIABLE}.")
         )
     logs.configure(level)
+    process.make_undumpable()
     try:
         root = git.repo_root(Path.cwd())
     except git.GitError as exc:
@@ -163,13 +165,37 @@ def _report(root: Path, since: str | None) -> int:
     return result.exit_code
 
 
+def _take_token(token_env: str) -> str:
+    """Read the tracker token and remove it from Ariane's environment (C21, ADR 0017).
+
+    The value is kept in `_TOKENS`, for the tracker and the push only.
+    """
+    if token_env in _TOKENS:
+        return _TOKENS[token_env]
+    names = [n for n in os.environ if n.upper() == token_env.upper()]
+    value = next((os.environ[n] for n in names if os.environ[n]), "")
+    for name in names:
+        del os.environ[name]
+    if value:
+        _TOKENS[token_env] = value
+    return value
+
+
+def _environment_with(token_env: str, token: str) -> dict[str, str]:
+    """A copy of the environment for the run; the token is in the copy, not in the process."""
+    env = dict(os.environ)
+    if token:
+        env[token_env] = token
+    return env
+
+
 def _report_tracker(root: Path) -> GitHubTracker | None:
     """The tracker for the waiting times, or None without configuration or token."""
     try:
         cfg = config.load(root)
     except config.ConfigError:
         return None
-    token = os.environ.get(cfg.tracker.token_env, "")
+    token = _take_token(cfg.tracker.token_env)
     if not token:
         return None
     logs.add_secrets([token])
@@ -186,7 +212,7 @@ def _start(root: Path, number: int, shadowed: bool = False) -> int:
         cfg = config.load(root)
     except config.ConfigError as exc:
         return _say(EXIT_USAGE, f"Refused configuration: {exc}. Next: fix ariane.toml.")
-    token = os.environ.get(cfg.tracker.token_env, "")
+    token = _take_token(cfg.tracker.token_env)
     if not token:
         return _say(
             EXIT_USAGE,
@@ -206,7 +232,7 @@ def _start(root: Path, number: int, shadowed: bool = False) -> int:
         config=cfg,
         tracker=tracker,
         runtime=_runtime(cfg),
-        environ=os.environ,
+        environ=_environment_with(cfg.tracker.token_env, token),
     )
     if outcome.detail:
         print(outcome.detail, file=sys.stderr)
@@ -219,8 +245,9 @@ def _verify(root: Path, branch: str, number: int | None) -> int:
     except config.ConfigError as exc:
         return _say(EXIT_USAGE, f"Refused configuration: {exc}. Next: fix ariane.toml.")
     tracker = None
+    token = ""
     if number is not None:
-        token = os.environ.get(cfg.tracker.token_env, "")
+        token = _take_token(cfg.tracker.token_env)
         if not token:
             return _say(
                 EXIT_USAGE,
@@ -240,7 +267,7 @@ def _verify(root: Path, branch: str, number: int | None) -> int:
         repo_root=root,
         config=cfg,
         runtime=_runtime(cfg),
-        environ=os.environ,
+        environ=_environment_with(cfg.tracker.token_env, token),
         tracker=tracker,
         issue_number=number,
     )

@@ -12,6 +12,7 @@ Runs external commands from argument lists: PATH resolution, UTF-8 output, timeo
 | `decode(data)` | function | Decode process output as UTF-8 whatever the system locale; invalid bytes are replaced. |
 | `run(argv, *, cwd, timeout_s=None, env=None, input_text=None, merge_stderr=False)` | function | Run a command without a shell and return a `Completed`. |
 | `stream(argv, *, cwd, on_line, timeout_s=None, env=None, input_text=None)` | function | Like `run`, but passes each standard output line to `on_line` while the command runs; it returns True to stop the whole tree (`Completed.stopped`). |
+| `make_undumpable()` | function | On Linux, `prctl(PR_SET_DUMPABLE, 0)` through `ctypes` so a same-user process cannot read Ariane's memory or environment block; a no-op elsewhere; a failure is journaled as `process.undumpable_failed`, never fatal (C21). |
 | `kill_tree(pid)` | function | Stop a process and all its descendants (its process group on POSIX). |
 
 ## Behaviour and errors

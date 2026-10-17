@@ -18,6 +18,7 @@ from ariane import logs
 
 # After the process exits or is killed, how long to wait for its pipes to close.
 _DRAIN_SECONDS = 10.0
+_PR_SET_DUMPABLE = 4
 
 
 class CommandNotFoundError(Exception):
@@ -49,6 +50,22 @@ class Completed:
         if self.stdout and self.stderr:
             return self.stdout.rstrip("\n") + "\n" + self.stderr
         return self.stdout or self.stderr
+
+
+def make_undumpable() -> None:
+    """On Linux, mark this process not dumpable so a same-user process cannot read its memory
+    or environment block (`prctl(PR_SET_DUMPABLE, 0)`). A no-op elsewhere; a failure is only
+    journaled as a warning (C21, ADR 0017)."""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(_PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+            raise OSError(ctypes.get_errno(), "prctl(PR_SET_DUMPABLE) failed")
+    except (OSError, AttributeError) as exc:
+        logs.emit("process.undumpable_failed", f"Could not make the process undumpable: {exc}")
 
 
 def resolve(name: str, env: Mapping[str, str] | None = None) -> str:
