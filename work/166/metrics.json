@@ -1,0 +1,22 @@
+{
+  "attempts": {
+    "guard_violations": 0,
+    "pull_request": 0,
+    "push": 0
+  },
+  "blocking_red_at_delivery": 0,
+  "first_pass_verdict": "not reviewed",
+  "mode": "delivered",
+  "outcome": "running",
+  "rounds": 0,
+  "sessions": [],
+  "started": "2026-10-17T09:38:07Z",
+  "steps": [
+    {
+      "at": "2026-10-17T09:38:09Z",
+      "name": "folder opened"
+    }
+  ],
+  "ticket": 166,
+  "unchanged_fix_rounds": 0
+}
