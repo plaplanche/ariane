@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from pathlib import Path
 from typing import Any
 
@@ -180,8 +181,11 @@ def test_c10_review_the_reviewer_table_is_required_and_validated() -> None:
 
 
 def write_config(path: Path, model: str) -> None:
+    """Ariane's own config with the reviewer's model replaced, whatever it is."""
     text = (Path(__file__).resolve().parent.parent / "ariane.toml").read_text(encoding="utf-8")
-    path.write_text(text.replace("claude-opus-5-5", model), encoding="utf-8")
+    head, _, reviewer = text.partition("[agents.reviewer]")
+    reviewer = re.sub(r'(?m)^model = ".*"$', f'model = "{model}"', reviewer, count=1)
+    path.write_text(f"{head}[agents.reviewer]{reviewer}", encoding="utf-8")
 
 
 def test_c22_config_path_arianes_config_names_the_file_to_read(tmp_path: Path) -> None:
@@ -212,3 +216,11 @@ def test_c22_config_path_a_folder_is_not_reported_as_missing(tmp_path: Path) -> 
     (tmp_path / "dir.toml").mkdir()
     with pytest.raises(config.ConfigError, match="cannot be read"):
         config.load(tmp_path, {"ARIANE_CONFIG": "dir.toml"})
+
+
+def test_c10_own_config_opus_implements_codex_reviews_on_the_plan() -> None:
+    """ADR 0044: Ariane's own tickets; the reviewer never holds an API key (plan login only)."""
+    cfg = config.load(Path(__file__).resolve().parent.parent, {})
+    assert (cfg.implementer.runtime, cfg.implementer.model) == ("claude-code", "claude-opus-5-5")
+    assert (cfg.reviewer.runtime, cfg.reviewer.model) == (config.CODEX, "gpt-6-astra")
+    assert cfg.reviewer.api_key_env is None
