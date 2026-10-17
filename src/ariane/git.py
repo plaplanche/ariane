@@ -205,15 +205,21 @@ def base_instructions(cwd: Path, remote: str, branch: str) -> str:
     return show_on_branch(cwd, remote, branch, "CLAUDE.md")
 
 
-def push_rewrites(cwd: Path) -> list[str]:
-    """Local `url.*.insteadof` and `url.*.pushinsteadof` keys: they would reroute a push."""
+def push_rewrites(cwd: Path, url: str) -> list[str]:
+    """`url.*.insteadof` and `url.*.pushinsteadof` settings that apply to `url`.
+
+    A rewrite applies when its prefix (the value) is a prefix of `url`, git's own rule. Only the
+    local, worktree and command scopes are listed; other prefixes are ignored.
+    """
     listing = git(["config", "--list", "--show-scope"], cwd).stdout
     rewrites = []
     for line in listing.splitlines():
         scope, _, setting = line.partition("\t")
-        key = setting.partition("=")[0].lower()
-        rewriting = key.startswith("url.") and key.endswith((".insteadof", ".pushinsteadof"))
-        if scope in ("local", "worktree", "command") and rewriting:
+        key, _, prefix = setting.partition("=")
+        rewriting = key.lower().startswith("url.") and key.lower().endswith(
+            (".insteadof", ".pushinsteadof")
+        )
+        if scope in ("local", "worktree", "command") and rewriting and url.startswith(prefix):
             rewrites.append(setting)
     return rewrites
 
