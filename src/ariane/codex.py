@@ -24,6 +24,10 @@ NOT_LOGGED_IN = "Codex is not logged in"
 LOGIN_NEXT = "run codex login, or set agents.reviewer.api_key_env"
 PLAN = "plan"
 API = "api"
+API_LOGIN = "Codex is logged in with an API key, not ChatGPT"
+API_LOGIN_NEXT = (
+    "run codex login --device-auth with the ChatGPT account, or set agents.reviewer.api_key_env"
+)
 ERROR_PREFIX = "error: "
 
 _FENCE = re.compile(r"```(?:json)?[ \t]*\n(.*?)\n[ \t]*```", re.DOTALL)
@@ -105,8 +109,11 @@ class CodexRuntime:
                 return SessionResult.failed(StopReason.ERROR, NOT_LOGGED_IN).with_next(LOGIN_NEXT)
             if login.startswith(ERROR_PREFIX):
                 return SessionResult.failed(StopReason.ERROR, login[len(ERROR_PREFIX) :])
-            # Only a ChatGPT login is covered by a plan; an API-key login bills per token.
-            billing = PLAN if login == "chatgpt" else API
+            # Usage arrives only when a turn completes, so `max_tokens` cannot bound a per-token
+            # turn: without `api_key_env`, only a ChatGPT login (a plan) runs (ADR 0043).
+            if login != "chatgpt":
+                return SessionResult.failed(StopReason.ERROR, API_LOGIN).with_next(API_LOGIN_NEXT)
+            billing = PLAN
         events = Events(session.max_tokens, billing)
         try:
             completed = process.stream(

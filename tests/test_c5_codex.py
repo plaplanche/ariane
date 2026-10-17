@@ -131,9 +131,56 @@ def test_c5_codex_not_logged_in_without_a_key_does_not_start(tmp_path: Path) -> 
     assert result.next_step == "run codex login, or set agents.reviewer.api_key_env"
 
 
-def test_c5_codex_an_api_key_login_is_billed_per_token_not_by_plan(tmp_path: Path) -> None:
+def test_c5_codex_plan_only_an_api_key_login_without_api_key_env_does_not_start(
+    tmp_path: Path,
+) -> None:
     result, seen = run(tmp_path, login="apikey")
-    assert seen  # the session ran
+    assert seen == {}  # `codex exec` never ran
+    assert result.stop_reason is StopReason.ERROR
+    assert result.summary == "Codex is logged in with an API key, not ChatGPT"
+    assert result.next_step == (
+        "run codex login --device-auth with the ChatGPT account, or set agents.reviewer.api_key_env"
+    )
+    assert result.structured_output is None
+
+
+def test_c5_codex_plan_only_an_api_key_login_ends_the_ticket_without_a_verdict(
+    project: Project, tracker: InMemoryTracker, tmp_path: Path
+) -> None:
+    routed = RoutedRuntime(
+        {"implementer": FakeRuntime(), "reviewer": fake_reviewer(tmp_path, REVIEW, "apikey")}
+    )
+    outcome = flow.start(
+        7,
+        repo_root=project.root,
+        config=make_config(),
+        tracker=tracker,
+        runtime=routed,
+        environ={**os.environ, "GH_TOKEN": "t"},
+    )
+    assert outcome.exit_code != 0
+    assert "Codex is logged in with an API key, not ChatGPT" in outcome.line
+    assert "run codex login --device-auth with the ChatGPT account" in outcome.line
+    assert "no-go" not in outcome.line
+    data = json.loads((ticket_shadow(project) / "work/7/metrics.json").read_text("utf-8"))
+    assert data["first_pass_verdict"] == metrics.NOT_REVIEWED
+
+
+def test_c5_codex_plan_only_a_chatgpt_login_runs_on_the_plan(tmp_path: Path) -> None:
+    result, seen = run(tmp_path, login="in")
+    assert seen and result.stop_reason is StopReason.FINISHED
+    assert (result.billing, result.cost_usd) == ("plan", 0.0)
+
+
+def test_c5_codex_plan_only_api_key_env_still_runs_per_token(tmp_path: Path) -> None:
+    result, seen = run(
+        tmp_path,
+        login="apikey",
+        api_key_env="MY_KEY",
+        max_tokens=100000,
+        env={**os.environ, "MY_KEY": "sk-x"},
+    )
+    assert seen and result.stop_reason is StopReason.FINISHED
     assert (result.billing, result.cost_usd) == ("api", None)
 
 
