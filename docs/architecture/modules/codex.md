@@ -8,6 +8,8 @@ Codex as an agent runtime, for the reviewer role (ADR 0043): it starts the offic
 | --- | --- | --- |
 | `NOT_LOGGED_IN` | constant | "Codex is not logged in", the summary of the session that does not start. |
 | `LOGIN_NEXT` | constant | "run codex login, or set agents.reviewer.api_key_env", its next step. |
+| `API_LOGIN` | constant | "Codex is logged in with an API key, not ChatGPT", the stop text without `api_key_env`. |
+| `API_LOGIN_NEXT` | constant | Its next step: `codex login --device-auth` with the ChatGPT account, or set `api_key_env`. |
 | `ERROR_PREFIX` | constant | Marks an error text returned by `login`, to tell it from `chatgpt`, `api` and `none`. |
 | `PLAN` | constant | The `billing` value `plan`: covered by a subscription. |
 | `API` | constant | The `billing` value `api`: billed per token. |
@@ -21,7 +23,8 @@ Codex as an agent runtime, for the reviewer role (ADR 0043): it starts the offic
 - An `api_key_env` naming an unset variable ends the session as `error`. Another failure of `codex login status` is an `error` with its output, not a missing login.
 - Without `api_key_env`, `codex login status` runs first; "Not logged in" ends the session as `error` with the next step `LOGIN_NEXT`, and `codex exec` is never started.
 - `turn.completed` usage is summed (cached tokens, which Codex counts inside `input_tokens`, are recorded as cache read); the session stops (`budget`) when `max_tokens` is reached. A `turn.failed` or `error` event naming a usage limit stops the session as `quota`, with the next step "restart the ticket after <time>" when Codex gives the time. Any other failure or a non-zero exit is `error`.
-- Billing: a ChatGPT login records `cost_usd` 0 and `billing` `plan`; an API key or an API-key login records `api` and no cost.
+- Without `api_key_env`, a login that is not ChatGPT (an API-key login) ends the session as `error` with `API_LOGIN` and the next step `API_LOGIN_NEXT`; `codex exec` is never started, since `max_tokens` cannot bound a per-token turn.
+- Billing: a ChatGPT login records `cost_usd` 0 and `billing` `plan`; `api_key_env` records `api` and no cost.
 
 ## Workflow
 
@@ -30,6 +33,7 @@ flowchart TD
   A[Session] --> B{api_key_env?}
   B -->|no| C[codex login status]
   C -->|not logged in| D[error with next step: login]
+  C -->|API-key login| X[error: ChatGPT login needed]
   C -->|logged in| E
   B -->|yes| E[codex exec: prompt on stdin]
   E --> F[Events.add_line: usage, answer, failure]

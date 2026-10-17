@@ -16,6 +16,9 @@ The reviewer must run on another model than the implementer (C10). OpenAI's Code
 - Quota: `StopReason.QUOTA`. A failure that names a usage limit stops the session as `quota`; the journal entry holds the message, the ticket stops with "reviewer quota reached; Next: restart the ticket after <time>" (the time Codex gives, else "later"), never a no-go. `SessionResult.next_step` carries the next action.
 - Billing: on a ChatGPT login `cost_usd` is 0 and `billing` is `plan`; with a key `billing` is `api` and the cost stays null. `metrics.json` records `billing`; `ariane report` shows plan sessions as "covered by plan".
 
+## Amendment (#178): plan login only without `api_key_env`
+Without `api_key_env`, only a ChatGPT login runs. When `codex login status` reports a login that is not ChatGPT, the session does not start and the ticket stops with "Codex is logged in with an API key, not ChatGPT; Next: run codex login --device-auth with the ChatGPT account, or set agents.reviewer.api_key_env", never a review verdict. Why: Codex reports usage only when a turn completes, so `max_tokens` cannot bound a per-token turn; a setup meaning to use a plan must never bill per token. `api_key_env` stays the only way to a per-token review. This replaces the earlier rule that an API-key login ran as `api`.
+
 ## Consequences
 A reviewer on a strong second vendor with no per-token cost. A usage limit is a clear stop, restarted by hand (#140). The exact wording of Codex's usage-limit event is matched on "usage limit"; a different wording would be an `error`.
 
