@@ -9,7 +9,18 @@ from typing import Any
 
 from ariane import process
 from ariane.attempts import AttemptTally
-from ariane.runtime import Session, SessionResult, StopReason
+from ariane.runtime import (
+    OUTPUT_TAIL_CHARS,
+    Session,
+    SessionResult,
+    StopReason,
+    as_int,
+    as_number,
+    cost_cap,
+    json_object,
+    timeout_summary,
+    token_cap,
+)
 
 # First layer of the push guard; the worktree push URL and the post-session check are the others.
 DENIED_TOOLS = (
@@ -95,23 +106,14 @@ class ClaudeCodeRuntime:
                 input_text=session.prompt,
             )
         except process.CommandNotFoundError as exc:
-            return SessionResult(StopReason.ERROR, None, None, None, None, None, str(exc))
+            return SessionResult.failed(StopReason.ERROR, str(exc))
         if completed.stopped:
             return tally.stopped_result()
         if completed.timed_out:
-            return SessionResult(
-                StopReason.TIMEOUT,
-                None,
-                None,
-                None,
-                None,
-                None,
-                f"killed after {session.timeout_s:g} s (time limit)",
-            )
+            return SessionResult.failed(StopReason.TIMEOUT, timeout_summary(session.timeout_s))
         result = parse_result(completed.stdout, completed.stderr, completed.returncode)
         if result.stop_reason is StopReason.BUDGET:
-            cap = f"runtime cost cap ({session.max_budget_usd:g} USD)"
-            return dataclasses.replace(result, cap=cap)
+            return dataclasses.replace(result, cap=cost_cap(session.max_budget_usd))
         return result
 
 
@@ -122,7 +124,6 @@ class TokenTally:
         self.max_tokens = max_tokens
         self._usage: dict[str, tuple[int, int, int, int]] = {}
         self.attempts = AttemptTally()
-        self._seen: set[str] = set()
 
     @property
     def parts(self) -> tuple[int, int, int, int]:
@@ -140,13 +141,10 @@ class TokenTally:
 
     def add_line(self, line: str) -> bool:
         """Count one stream line; True when the cap is reached and the session must stop."""
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
+        event = json_object(line)
+        if event is None or event.get("type") != "assistant":
             return False
-        message = event.get("message") if isinstance(event, dict) else None
-        if not isinstance(event, dict) or event.get("type") != "assistant":
-            return False
+        message = event.get("message")
         if not isinstance(message, dict) or not isinstance(message.get("id"), str):
             return False
         self._count_attempts(message)
@@ -154,10 +152,10 @@ class TokenTally:
         if not isinstance(usage, dict):
             return False
         self._usage[message["id"]] = (
-            _int(usage.get("input_tokens")) or 0,
-            _int(usage.get("cache_read_input_tokens")) or 0,
-            _int(usage.get("cache_creation_input_tokens")) or 0,
-            _int(usage.get("output_tokens")) or 0,
+            as_int(usage.get("input_tokens")) or 0,
+            as_int(usage.get("cache_read_input_tokens")) or 0,
+            as_int(usage.get("cache_creation_input_tokens")) or 0,
+            as_int(usage.get("output_tokens")) or 0,
         )
         return self.max_tokens is not None and self.total >= self.max_tokens
 
@@ -169,9 +167,8 @@ class TokenTally:
                 continue
             tool_input = block.get("input")
             command = tool_input.get("command") if isinstance(tool_input, dict) else None
-            if isinstance(command, str) and str(block.get("id")) not in self._seen:
-                self._seen.add(str(block.get("id")))
-                self.attempts.add_command(command)
+            if isinstance(command, str):
+                self.attempts.add_command(command, str(block.get("id")))
 
     def stopped_result(self) -> SessionResult:
         read, cache_read, cache_write, out = self.parts
@@ -183,7 +180,7 @@ class TokenTally:
             cache_read,
             cache_write,
             f"stopped by Ariane at {self.total} tokens",
-            cap=f"Ariane token cap ({self.max_tokens} tokens)",
+            cap=token_cap(self.max_tokens),
         )
 
 
@@ -191,15 +188,9 @@ def parse_result(stdout: str, stderr: str, returncode: int | None) -> SessionRes
     """Classify a Claude Code result: one JSON object, or a stream whose last event is one."""
     data = _final_event(stdout)
     if data is None:
-        tail = (stderr or stdout).strip()[-2000:]
-        return SessionResult(
-            StopReason.ERROR,
-            None,
-            None,
-            None,
-            None,
-            None,
-            f"no structured result (exit {returncode}): {tail}",
+        tail = (stderr or stdout).strip()[-OUTPUT_TAIL_CHARS:]
+        return SessionResult.failed(
+            StopReason.ERROR, f"no structured result (exit {returncode}): {tail}"
         )
     reason = _SUBTYPES.get(str(data.get("subtype")), StopReason.ERROR)
     if reason is StopReason.FINISHED and data.get("is_error"):
@@ -214,11 +205,11 @@ def parse_result(stdout: str, stderr: str, returncode: int | None) -> SessionRes
     denials = data.get("permission_denials")
     return SessionResult(
         stop_reason=reason,
-        cost_usd=_number(data.get("total_cost_usd")),
-        input_tokens=_int(usage.get("input_tokens")),
-        output_tokens=_int(usage.get("output_tokens")),
-        cache_read_tokens=_int(usage.get("cache_read_input_tokens")),
-        cache_write_tokens=_int(usage.get("cache_creation_input_tokens")),
+        cost_usd=as_number(data.get("total_cost_usd")),
+        input_tokens=as_int(usage.get("input_tokens")),
+        output_tokens=as_int(usage.get("output_tokens")),
+        cache_read_tokens=as_int(usage.get("cache_read_input_tokens")),
+        cache_write_tokens=as_int(usage.get("cache_creation_input_tokens")),
         summary=summary,
         structured_output=data.get("structured_output"),
         permission_denials=tuple(_denial(d) for d in denials if isinstance(d, dict))
@@ -243,11 +234,3 @@ def _denial(entry: dict[str, Any]) -> str:
     tool_input = entry.get("tool_input")
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
     return f"{entry.get('tool_name')}: {command}" if command else str(entry.get("tool_name"))
-
-
-def _number(value: Any) -> float | None:
-    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
-
-
-def _int(value: Any) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
