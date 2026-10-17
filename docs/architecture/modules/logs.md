@@ -29,6 +29,7 @@ Declares every log type once (functional journal entries and technical records) 
 - `functional` raises `ValueError` for an undeclared type, `emit` a `KeyError`; `parse_level` and `resolve_level` raise `ValueError` for an unknown level name.
 - The generated [log catalogue](../../logs.md) lists every declared type.
 - Reviewer integrity (C10, ADR 0031) declares, among others: `ticket.review.diff_truncated` (the reviewer's diff was cut; the files to read in the tree), `process.survivors_killed` (processes that outlived a command were killed) and `process.subreaper_failed` (an error: Ariane could not become the subreaper, so `start` and `verify` run nothing).
+- Environment (C21): `ticket.env.declared_secret` warns, names only, when variables named like secrets pass to agents and checks because `[project] env` declares them.
 
 ## Workflow
 

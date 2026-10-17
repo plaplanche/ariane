@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import time
@@ -43,10 +44,15 @@ def run_stream(
 
 
 def alive(pid: int) -> bool:
+    """Running, not a zombie: under `ariane` (the subreaper, ADR 0031) a killed orphan stays a
+    zombie until Ariane reaps it, after the check."""
     try:
         os.kill(pid, 0)
     except OSError:
         return False
+    stat = Path(f"/proc/{pid}/stat")
+    with contextlib.suppress(OSError):
+        return stat.read_text(encoding="utf-8").rpartition(")")[2].split()[0] not in ("Z", "X")
     return True
 
 
