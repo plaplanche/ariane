@@ -257,6 +257,11 @@ def test_c10_out_of_scope_section_returns_text_ignores_case_and_stops() -> None:
     body = "## Context\nc\n##  out OF scope \n- a\n- b\n\n## Related\nr\n"
     assert ticket.section(body, "Out of scope") == "- a\n- b"
     assert ticket.section("## Context\nc", "Out of scope") == ""
+    assert ticket.section("## A\na\n## Out of scope\nlast\n### sub\nx\n", "out of scope") == (
+        "last\n### sub\nx"
+    )
+    fenced = "## Out of scope\n```\n## sample\n```\n"
+    assert ticket.section(fenced, "Out of scope") == "```"
 
 
 def test_c10_out_of_scope_prompt_holds_the_block_and_the_rule() -> None:
@@ -268,6 +273,8 @@ def test_c10_out_of_scope_prompt_holds_the_block_and_the_rule() -> None:
 def test_c10_out_of_scope_prompt_without_section_has_neither_block() -> None:
     text = _scope_prompt("## Context\nc\n")
     assert 'kind="out-of-scope"' not in text
+    assert "never blocking" not in text
+    assert "Work listed under Out of scope" not in text
 
 
 def test_c10_out_of_scope_text_is_escaped() -> None:
