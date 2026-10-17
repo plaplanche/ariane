@@ -71,8 +71,9 @@ An internal security review found three ways left to weaken the reviewer. Decide
    `opencode.json`, `opencode.jsonc` and `config.json` of its global folder
    (`$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`) and `$OPENCODE_CONFIG`. An absent file
    is recorded as absent, so creating one is a change. The snapshot is part of the guard's
-   snapshot, taken before the implementer's session and compared after every session, setup and
-   check (and in `ariane verify` before the first check): a difference stops the ticket as a
+   snapshot, taken before the ticket's first setup command (so a setup cannot make its own
+   instruction file part of the baseline) and compared right after that setup, then after every
+   session, setup and check (in `ariane verify` it is taken before the first check): a difference stops the ticket as a
    guard violation, before the review. Before each reviewer session the journal records the
    files present with their digests (`ticket.review.instructions`). This detects the residual
    vector above: a `CLAUDE.md` written into the temporary directory stops the ticket.
@@ -84,9 +85,18 @@ An internal security review found three ways left to weaken the reviewer. Decide
    diff given to the reviewer was truncated.
 3. **No surviving agent processes (Linux).** `ariane` sets `PR_SET_CHILD_SUBREAPER` at start, so
    a process that leaves its process group (`setsid`, `setpgid`) is reparented to Ariane, not to
-   init. The running descendants are noted when the ticket starts; after each agent session,
-   check and setup command, any new one is killed and reaped, counted in `metrics.json`
-   (`surviving_processes`) and the ticket stops as a guard violation.
+   init. Every command Ariane runs (an agent session, a setup, a check, git) kills, in the same
+   teardown that kills its process group, the descendants that appeared since it started, also
+   when it fails, times out or is interrupted (Ctrl-C): nothing it started runs when the next
+   command starts or a tree is removed. A `/proc` scan is not atomic and a survivor can fork
+   while it runs, so each survivor is stopped (`SIGSTOP`, a stopped process cannot fork) and the
+   scans repeat until every survivor is stopped and none is new; then they are killed, and the
+   scans go on until one finds no survivor and no newly exited child (a process that forks and
+   exits to change pids leaves one, since Ariane is the subreaper). The running descendants are
+   noted when the ticket starts; after each agent session, check and setup command (before a
+   failing setup is reported), what was killed is counted in `metrics.json`
+   (`surviving_processes`) and the ticket stops as a guard violation; a ticket stopped or
+   interrupted for another reason still counts them.
 
 Choices the spec left open, taken as the simplest design that meets it:
 
@@ -94,9 +104,10 @@ Choices the spec left open, taken as the simplest design that meets it:
   (opencode and Codex also read `CLAUDE.md` files); for a Codex reviewer the snapshot also holds
   `AGENTS.md`, `AGENTS.override.md` and `config.toml` of `$CODEX_HOME` (else `~/.codex`), its
   global instructions and configuration.
-- The survivors check runs where the guard already runs (after each session, check and
-  reviewer session) and after each setup command; it compares with the descendants Ariane had
-  when the ticket started, so a process Ariane did not start through the ticket is never killed.
+- The survivors are killed in each command's teardown, compared with the descendants (exited
+  ones included, so Ariane never reaps a child someone else waits for) taken just before that
+  command started, so a process Ariane did not start through the command is never killed. The
+  scans give up after 5 seconds (`process.survivors_remaining`); the ticket stops anyway.
 - A process an agent's own git starts in the background (for example an automatic `git gc`) and
   that is still running when the session ends counts as a survivor too.
 

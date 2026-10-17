@@ -20,8 +20,8 @@ from ariane import logs
 _DRAIN_SECONDS = 10.0
 _PR_SET_DUMPABLE = 4
 _PR_SET_CHILD_SUBREAPER = 36
-# After killing the processes that outlived a session, how long to wait for them to be gone.
-_REAP_SECONDS = 2.0
+# How long to keep stopping, killing and reaping the processes that outlived a command.
+_REAP_SECONDS = 5.0
 
 
 class CommandNotFoundError(Exception):
@@ -106,12 +106,21 @@ def _process_table() -> dict[int, tuple[int, str, str]]:
     return table
 
 
-def descendants() -> dict[int, str]:
+def descendants(*, exited: bool = False) -> dict[int, str]:
     """The running descendants of this process (pid -> command name) on Linux; empty
-    elsewhere. Exited processes not yet reaped are left out."""
+    elsewhere. Exited processes not yet reaped are left out unless `exited`: the `before` of
+    `kill_survivors` includes them, so it never reaps a child someone else waits for."""
     if not sys.platform.startswith("linux"):
         return {}
-    table = _process_table()
+    tree = _tree(_process_table())
+    return {pid: name for pid, (state, name) in tree.items() if exited or state not in _GONE}
+
+
+_GONE = ("Z", "X")
+
+
+def _tree(table: dict[int, tuple[int, str, str]]) -> dict[int, tuple[str, str]]:
+    """The descendants of this process in `table`: pid -> (state, command name)."""
     children: dict[int, list[int]] = {}
     for pid, (parent, _, _) in table.items():
         children.setdefault(parent, []).append(pid)
@@ -120,43 +129,82 @@ def descendants() -> dict[int, str]:
     while pending:
         pid = pending.pop()
         _, state, name = table[pid]
-        if state not in ("Z", "X"):
-            found[pid] = name
+        found[pid] = (state, name)
         pending += children.get(pid, [])
     return found
 
 
+# The processes `kill_survivors` killed that no caller has taken yet (`take_killed`).
+_killed: dict[int, str] = {}
+
+
+def take_killed() -> dict[int, str]:
+    """The processes killed for outliving their command since the last call, then forgets them."""
+    taken = dict(_killed)
+    _killed.clear()
+    return taken
+
+
 def kill_survivors(before: Collection[int]) -> dict[int, str]:
-    """Kill the running descendants that are not in `before` and reap them; returns them.
+    """Kill the descendants that are not in `before` and reap them; returns them, and keeps
+    them for `take_killed`.
 
     Called once a session or command ended: anything it started is still running only if it
-    left its process group (C10, ADR 0031). Linux only; elsewhere it finds nothing."""
-    found = {pid: name for pid, name in descendants().items() if pid not in before}
-    for pid in found:
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.kill(pid, signal.SIGKILL)
-    if sys.platform.startswith("linux"):
-        _reap(set(found), before)
-    if found:
-        listing = ", ".join(f"{name} ({pid})" for pid, name in sorted(found.items()))
-        logs.emit("process.survivors_killed", f"Killed processes that outlived it: {listing}")
-    return found
-
-
-def _reap(killed: set[int], before: Collection[int]) -> None:
-    """Collect the exit status of the processes reparented to this one once exited (the killed
-    ones included), best effort."""
+    left its process group (C10, ADR 0031). A scan of `/proc` is not atomic, so each survivor
+    is stopped first (a stopped process cannot fork) and the scans go on until every survivor
+    is stopped and none is new; then all are killed. The scans end only when one finds no
+    survivor and no newly exited child to reap: a process that forks and exits to change pids
+    leaves such a child (Ariane is the subreaper). Linux only; elsewhere it finds nothing.
+    """
+    if not sys.platform.startswith("linux"):
+        return {}
+    found: dict[int, str] = {}
     me = os.getpid()
     deadline = time.monotonic() + _REAP_SECONDS
     while True:
         table = _process_table()
-        for pid, (parent, state, _) in table.items():
-            if parent == me and state == "Z" and pid not in before:
-                with contextlib.suppress(ChildProcessError):
-                    os.waitpid(pid, os.WNOHANG)
-        if not killed & table.keys() or time.monotonic() > deadline:
-            return
-        time.sleep(0.02)
+        exited = [p for p, (parent, state, _) in table.items() if parent == me and state == "Z"]
+        reaped = [pid for pid in exited if pid not in before and _wait(pid)]
+        alive = {
+            pid: seen
+            for pid, seen in _tree(table).items()
+            if pid not in before and seen[0] not in _GONE
+        }
+        if not alive and not reaped:
+            break
+        if time.monotonic() > deadline:
+            listing = ", ".join(f"{name} ({pid})" for pid, (_, name) in sorted(alive.items()))
+            logs.emit("process.survivors_remaining", f"Could not kill: {listing or 'none'}")
+            found.update({pid: name for pid, (_, name) in alive.items()})
+            break
+        new = {pid: name for pid, (_, name) in alive.items() if pid not in found}
+        if new:
+            _signal(new, signal.SIGSTOP)
+            found.update(new)
+        elif alive and all(state in ("T", "t") for state, _ in alive.values()):
+            _signal(alive, signal.SIGKILL)
+            time.sleep(0.01)
+        elif alive:
+            time.sleep(0.01)  # a stop signal is not delivered yet
+    if found:
+        listing = ", ".join(f"{name} ({pid})" for pid, name in sorted(found.items()))
+        logs.emit("process.survivors_killed", f"Killed processes that outlived it: {listing}")
+        _killed.update(found)
+    return found
+
+
+def _signal(pids: Collection[int], signum: int) -> None:
+    for pid in pids:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.kill(pid, signum)
+
+
+def _wait(pid: int) -> bool:
+    """Reap an exited child; False if it was not this process's to reap."""
+    try:
+        return os.waitpid(pid, os.WNOHANG)[0] == pid
+    except ChildProcessError:
+        return False
 
 
 def resolve(name: str, env: Mapping[str, str] | None = None) -> str:
@@ -202,7 +250,8 @@ def run(
     """Run `argv` without a shell.
 
     The process gets its own process group. When it exits or reaches its time limit, the whole
-    group is killed, so background children cannot outlive it or hold its output open.
+    group is killed, so background children cannot outlive it or hold its output open; on Linux,
+    so is any descendant that left the group (`kill_survivors`, `take_killed`).
     """
     return _execute(argv, cwd, timeout_s, env, input_text, merge_stderr, None)
 
@@ -246,6 +295,7 @@ def _execute(
     else:
         kwargs["start_new_session"] = True
     logs.emit("process.started", " ".join(_shown(arg) for arg in args))
+    before = set(descendants(exited=True))
     start = time.monotonic()
     proc = subprocess.Popen(
         args,
@@ -279,6 +329,8 @@ def _execute(
         # Reap the child and let the readers reach the end of the pipes, best effort.
         with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=_DRAIN_SECONDS)
+        # What left the group dies too, before the caller goes on (C10, ADR 0031).
+        kill_survivors(before)
     completed = Completed(
         argv=tuple(argv),
         returncode=None if timed_out else proc.returncode,

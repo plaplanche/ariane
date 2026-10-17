@@ -44,6 +44,7 @@ Records of the `ariane` logger.
 | `process.undumpable_failed` | warning | Ariane could not make its process undumpable. |
 | `process.subreaper_failed` | warning | Ariane could not become the subreaper. |
 | `process.survivors_killed` | warning | Processes that outlived a session or command were killed. |
+| `process.survivors_remaining` | error | Processes that outlived a command were still running after Ariane tried to kill them. |
 | `process.started` | debug | A subprocess started. |
 | `process.exited` | debug | A subprocess ended, with its exit code and duration. |
 | `github.request` | info | A GitHub API call and its status. |

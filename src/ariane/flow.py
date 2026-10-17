@@ -168,8 +168,12 @@ class _TicketRun:
 
     def execute(self, refs_before: dict[str, str]) -> Outcome:
         try:
-            self.processes_before = set(process.descendants())
+            self.processes_before = set(process.descendants(exited=True))
+            # Taken before the setup: instruction files it writes are not part of the baseline.
+            guard = self.snapshot()
             setup_error = self.setup(self.worktree)
+            if setup_error is None and (setup_error := self._unchanged("setup", guard)):
+                self.metrics.guard_violation()
             self.folder.create(self.issue)
             self.metrics.step("folder opened")
             self.folder.log(
@@ -186,7 +190,6 @@ class _TicketRun:
             self.folder.set_status("implementing", "implementer session running", "wait")
             self._commit_record(f"#{self.number}: open the ticket folder")
             start_commit = git.head(self.worktree)
-            guard = self.snapshot()
             ignored_before = git.ignored(self.worktree)
             result = self._implement()
             self.verify("the agent session", start_commit, guard, refs_before)
@@ -213,7 +216,8 @@ class _TicketRun:
     def survivors(self, after: str) -> Stop | None:
         """Kill the processes `after` left running (C10, ADR 0031); they are counted in
         `metrics.json` and stop the ticket as a guard violation."""
-        killed = process.kill_survivors(self.processes_before)
+        process.kill_survivors(self.processes_before)
+        killed = process.take_killed()  # with those each command's own teardown killed
         if not killed:
             return None
         self.metrics.surviving_processes(len(killed))
@@ -225,10 +229,8 @@ class _TicketRun:
         )
 
     def setup(self, cwd: Path, command: tuple[str, ...] | None = None) -> Stop | None:
-        """Run the setup command (C8) in `cwd` without credentials (it may run agent-written code).
-
-        An error is journaled once the folder exists.
-        """
+        """Run the setup command (C8) in `cwd` without credentials (it may run agent-written
+        code); an error is journaled once the folder exists."""
         command = command or self.config.setup
         if not command:
             return None
@@ -330,21 +332,9 @@ class _TicketRun:
             raise Stop(f"{after} rewrote the ticket branch's history", keep)
         if expected_head is not None and git.head(self.worktree) != expected_head:
             raise Stop(f"{after} moved the ticket branch", keep)
-        changes = git.snapshot_changes(guard, self.snapshot())
-        written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
-        if written:
-            raise Stop(
-                f"{after} changed instruction files the reviewer can load",
-                "inspect and remove them (they are outside the repository); Ariane pushed"
-                f" nothing; {QUIET}",
-                "\n".join(f"- {line}" for line in written),
-            )
-        if changes:
-            raise Stop(
-                f"{after} changed git configuration, hooks or local branches",
-                f"inspect .git/config, .git/hooks and the branches; Ariane pushed nothing; {QUIET}",
-                "\n".join(f"- {line}" for line in changes),
-            )
+        unchanged = self._unchanged(after, guard)
+        if unchanged is not None:
+            raise unchanged
         changed = self._remote_changes(refs_before)
         if changed:
             raise Stop(
@@ -357,6 +347,25 @@ class _TicketRun:
             f"Verified after {after}",
             "Same branch and history, git unchanged, remote unchanged.",
         )
+
+    def _unchanged(self, after: str, guard: dict[str, str]) -> Stop | None:
+        """The stop when git or the reviewer's instruction files differ from `guard`."""
+        changes = git.snapshot_changes(guard, self.snapshot())
+        written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
+        if written:
+            return Stop(
+                f"{after} changed instruction files the reviewer can load",
+                "inspect and remove them (they are outside the repository); Ariane pushed"
+                f" nothing; {QUIET}",
+                "\n".join(f"- {line}" for line in written),
+            )
+        if changes:
+            return Stop(
+                f"{after} changed git configuration, hooks or local branches",
+                f"inspect .git/config, .git/hooks and the branches; Ariane pushed nothing; {QUIET}",
+                "\n".join(f"- {line}" for line in changes),
+            )
+        return None
 
     def _remote_changes(self, refs_before: dict[str, str]) -> list[str]:
         return git.remote_changes(
@@ -574,6 +583,9 @@ class _TicketRun:
         reason, next_action = _describe(exc)
         detail = exc.detail if isinstance(exc, Stop) else str(exc)
         logs.emit("run.stopped", f"ticket #{self.number}: {reason}")
+        # Ctrl-C or an error can end a command before its survivors were counted.
+        process.kill_survivors(self.processes_before)
+        self.metrics.surviving_processes(len(process.take_killed()))
         if self.folder.exists():
             # Recording the stop must not hide the reason: report it even if this fails.
             with contextlib.suppress(*_FAILURES):

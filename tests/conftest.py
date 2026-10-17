@@ -58,6 +58,7 @@ def no_subreaper(monkeypatch: pytest.MonkeyPatch) -> None:
     """`cli.main` would make the test process the subreaper of every orphan for the rest of the
     run; the tests that need it call the real `process.set_child_subreaper` themselves."""
     monkeypatch.setattr(process, "set_child_subreaper", lambda on=True: None)
+    process.take_killed()  # nothing an earlier test left behind is counted in this one
 
 
 @dataclass

@@ -140,7 +140,7 @@ class _Verification:
         self.base = self._base()
         # Read once, before any check runs: a check cannot change what the reviewer is told.
         self.base_instructions = git.base_instructions(repo_root, REMOTE, self.config.base_branch)
-        self.processes_before = set(process.descendants())
+        self.processes_before = set(process.descendants(exited=True))
         self.guard = self._snapshot()
         self.metrics = Metrics(issue.number if issue else 0, "verify", lambda text: None)
         self.issue = issue or Issue(
@@ -176,6 +176,9 @@ class _Verification:
         try:
             return self._replay_and_review(replay, records)
         finally:
+            # A stop or Ctrl-C may come before the survivors were counted: none outlives verify.
+            process.kill_survivors(self.processes_before)
+            process.take_killed()
             shutil.rmtree(records, ignore_errors=True)
 
     def _tree_for(self, replay: Path, k: int) -> Path:
@@ -195,6 +198,7 @@ class _Verification:
             )
         except process.CommandNotFoundError as exc:
             raise Refused(f"setup failed: {exc}{where}", "install it or fix the setup") from None
+        self._survivors(f"setup `{' '.join(command)}`{where}")
         if not done.ok:
             raise Refused(
                 f"setup `{' '.join(command)}` failed (exit {done.returncode}){where}",
@@ -292,14 +296,7 @@ class _Verification:
     def _unchanged(self, replay: Path, after: str, tree_before: str) -> None:
         """Untrusted code ran: nothing it started still runs, and git, the instruction files
         the reviewer can load, the branch and the replay tree are as they were."""
-        killed = process.kill_survivors(self.processes_before)
-        if killed:
-            self.metrics.surviving_processes(len(killed))
-            raise Refused(
-                f"{after} left {len(killed)} process(es) running after it ended; Ariane killed"
-                " them",
-                "find what started them in the background",
-            )
+        self._survivors(after)
         changes = git.snapshot_changes(self.guard, self._snapshot())
         written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
         if written:
@@ -332,6 +329,18 @@ class _Verification:
                     f"the remote changed during {after} ({', '.join(changed)})",
                     "check it was not the agent, then run verify again",
                 )
+
+    def _survivors(self, after: str) -> None:
+        """Refuse when `after` left processes running; each command's teardown killed them."""
+        process.kill_survivors(self.processes_before)
+        killed = process.take_killed()
+        if killed:
+            self.metrics.surviving_processes(len(killed))
+            raise Refused(
+                f"{after} left {len(killed)} process(es) running after it ended; Ariane killed"
+                " them",
+                "find what started them in the background",
+            )
 
     def _before_commit(self) -> None:
         """The branch and where it is checked out are as they were at the start (minutes ago)."""

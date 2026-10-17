@@ -49,9 +49,9 @@ The reviewer is given the ticket's Out of scope section, and a finding about out
 The reviewer also checks the order of side effects: a write before the check that should guard it, or a retry that can write twice, is a blocking finding.
 
 The reviewer loads nothing from the tree under review (no hooks, settings or instruction files; ADR 0031): a Claude Code reviewer's `tools` are a subset of `Read`, `Glob`, `Grep`, and it gets the base branch's `CLAUDE.md` in its prompt as data.
-The instruction files it could load from outside that tree (`CLAUDE.md` and `CLAUDE.local.md` in the ancestors of its folders, the user-level `CLAUDE.md`, opencode's or Codex's global instructions and configuration) are guarded from before the implementer's session: one written by an agent or a check stops the ticket before the review.
+The instruction files it could load from outside that tree (`CLAUDE.md` and `CLAUDE.local.md` in the ancestors of its folders, the user-level `CLAUDE.md`, opencode's or Codex's global instructions and configuration) are guarded from before the first setup command: one written by a setup, an agent or a check stops the ticket before the review.
 The review always gets the full list of changed files (`git diff --name-status`); when the diff is over 200,000 characters it is cut, the prompt names the files whose hunks are missing, and the journal and the pull request body say so.
-On Linux, Ariane is the subreaper of the processes it starts: one an agent, a setup or a check leaves running (for example in a new session) is killed, counted in `metrics.json` and stops the ticket.
+On Linux, Ariane is the subreaper of the processes it starts: one an agent, a setup or a check leaves running (for example in a new session) is killed as soon as that command ends, even when it fails or is interrupted, counted in `metrics.json` and stops the ticket.
 
 ### Reviewer on Codex
 
