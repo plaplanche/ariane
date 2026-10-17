@@ -14,3 +14,13 @@ class Stop(Exception):
         self.reason = reason
         self.next_action = next_action
         self.detail = detail
+
+
+def describe(exc: BaseException) -> tuple[str, str]:
+    """The reason and the next action for whatever ended a run: a stop, Ctrl-C or an error."""
+    if isinstance(exc, KeyboardInterrupt):
+        return "interrupted by the user", "check the working tree, then start the ticket again"
+    if isinstance(exc, Stop):
+        return exc.reason, exc.next_action
+    first = str(exc).splitlines()[0].rstrip(":") if str(exc) else type(exc).__name__
+    return first, "read the error above and retry"

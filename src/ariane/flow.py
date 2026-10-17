@@ -13,7 +13,7 @@ from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
 from ariane.runtime import AgentRuntime, SessionResult, StopReason, for_role, session_for
-from ariane.stop import Stop
+from ariane.stop import Stop, describe
 from ariane.tracker import Issue, Tracker, TrackerError
 
 REMOTE = "origin"
@@ -37,6 +37,11 @@ QUIET = "nobody runs git commands in the repository or pushes to it while a tick
 
 def worktree_path(repo_root: Path, number: int) -> Path:
     return repo_root.parent / f"{repo_root.name}.ariane" / "worktrees" / str(number)
+
+
+def stopped_metrics_path(worktree: Path, number: int) -> Path:
+    """`<repo>.ariane/stopped/<n>/metrics.json`: a stop before the ticket folder exists."""
+    return worktree.parent.parent / "stopped" / str(number) / METRICS
 
 
 def branch_name(number: int) -> str:
@@ -67,7 +72,7 @@ def start(
     except KeyboardInterrupt:
         return _interrupted_before_start(number)
     except (Stop, *_FAILURES) as exc:
-        reason, next_action = _describe(exc)
+        reason, next_action = describe(exc)
         return Outcome(
             EXIT_STOPPED, f"Did not start ticket #{number}: {reason}. Next: {next_action}."
         )
@@ -76,7 +81,7 @@ def start(
 
 def _interrupted_before_start(number: int) -> Outcome:
     """Ctrl-C before the ticket folder exists: nothing to record, one line, exit 130."""
-    reason, next_action = _describe(KeyboardInterrupt())
+    reason, next_action = describe(KeyboardInterrupt())
     line = f"Did not start ticket #{number}: {reason}. Next: {next_action}."
     return Outcome(EXIT_INTERRUPTED, line)
 
@@ -108,15 +113,6 @@ def _prepare(
 def _token(environ: Mapping[str, str], token_env: str) -> str:
     name = token_env.upper()
     return next((v for k, v in environ.items() if k.upper() == name and v), "")
-
-
-def _describe(exc: BaseException) -> tuple[str, str]:
-    if isinstance(exc, KeyboardInterrupt):
-        return "interrupted by the user", "check the working tree, then start the ticket again"
-    if isinstance(exc, Stop):
-        return exc.reason, exc.next_action
-    first = str(exc).splitlines()[0].rstrip(":") if str(exc) else type(exc).__name__
-    return first, "read the error above and retry"
 
 
 class _TicketRun:
@@ -580,7 +576,7 @@ class _TicketRun:
         git.commit(self.worktree, [folder], redact(message, self.secrets), env=self.untrusted_env)
 
     def _stopped(self, exc: BaseException) -> Outcome:
-        reason, next_action = _describe(exc)
+        reason, next_action = describe(exc)
         detail = exc.detail if isinstance(exc, Stop) else str(exc)
         logs.emit("run.stopped", f"ticket #{self.number}: {reason}")
         # Ctrl-C or an error can end a command before its survivors were counted.
@@ -594,6 +590,8 @@ class _TicketRun:
                 self.metrics.finish(status)
                 self.folder.set_status(status, reason, next_action)
                 self._commit_record(f"#{self.number}: record the stop")
+        else:  # stopped in the first setup: the metrics go outside the repository (ADR 0031)
+            self.metrics.keep_stopped(stopped_metrics_path(self.worktree, self.number))
         code = EXIT_INTERRUPTED if isinstance(exc, KeyboardInterrupt) else EXIT_STOPPED
         return Outcome(
             code, f"Stopped ticket #{self.number}: {reason}. Next: {next_action}.", detail

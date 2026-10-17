@@ -5,9 +5,11 @@ Ariane rewrites the file after each step, so a crash leaves `outcome` at `runnin
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from ariane import ticket
@@ -91,6 +93,14 @@ class Metrics:
     def delivered_red(self, count: int) -> None:
         """The number of blocking checks that were red when the ticket was delivered (C19)."""
         self.blocking_red = count
+
+    def keep_stopped(self, path: Path) -> None:
+        """Write the metrics, outcome `stopped`, to `path` outside the repository, without the
+        usual writer (best effort: a failure to record must not hide the stop; ADR 0031)."""
+        self.outcome = "stopped"
+        with contextlib.suppress(OSError):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            ticket.write_file(path, self.render())
 
     def finish(self, outcome: str) -> None:
         self.outcome = outcome

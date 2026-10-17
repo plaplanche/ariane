@@ -28,6 +28,7 @@ Declares every log type once (functional journal entries and technical records) 
 - Writes the log file given to `configure`, beside the working trees and outside the repository; standard error gets the same records. Every record goes through `redact` with the secrets from `add_secrets`.
 - `functional` raises `ValueError` for an undeclared type, `emit` a `KeyError`; `parse_level` and `resolve_level` raise `ValueError` for an unknown level name.
 - The generated [log catalogue](../../logs.md) lists every declared type.
+- Reviewer integrity (C10, ADR 0031) declares, among others: `ticket.review.diff_truncated` (the reviewer's diff was cut; the files to read in the tree), `process.survivors_killed` (processes that outlived a command were killed) and `process.subreaper_failed` (an error: Ariane could not become the subreaper, so `start` and `verify` run nothing).
 
 ## Workflow
 

@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import shutil
 import tempfile
 from collections.abc import Mapping, Sequence
@@ -21,7 +20,7 @@ from ariane.flow import (
 )
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
-from ariane.replay import record_truncation, replay_each
+from ariane.replay import record_truncation, replay_each, truncation_note
 from ariane.review_session import ReviewFailed, ReviewSession, instruction_dirs
 from ariane.runtime import AgentRuntime, for_role
 from ariane.tracker import Issue, Tracker, TrackerError
@@ -148,6 +147,7 @@ class _Verification:
         # Read once, before any check runs: a check cannot change what the reviewer is told.
         self.base_instructions = git.base_instructions(repo_root, REMOTE, self.config.base_branch)
         self.processes_before = set(process.descendants(exited=True))
+        self.truncation = ""  # where the reviewer's diff was cut, if it was
         self.guard = self._snapshot()
         self.metrics = Metrics(issue.number if issue else 0, "verify", lambda text: None)
         self.issue = issue or Issue(
@@ -196,12 +196,7 @@ class _Verification:
     def _keep_stopped_metrics(self) -> None:
         """Nothing is committed on a refusal or Ctrl-C (a guard violation may have changed the
         hooks a commit runs): the metrics go outside the repository instead (ADR 0031)."""
-        self.metrics.finish("stopped")
-        path = stopped_metrics_path(self.repo_root, self.branch)
-        # Best effort: a failure to record must not hide why verify stopped.
-        with contextlib.suppress(OSError):
-            path.parent.mkdir(parents=True, exist_ok=True)
-            ticket.write_file(path, self.metrics.render())
+        self.metrics.keep_stopped(stopped_metrics_path(self.repo_root, self.branch))
 
     def _tree_for(self, replay: Path, k: int) -> Path:
         tree = replay.with_name(f"{replay.name}-{k}")
@@ -253,6 +248,8 @@ class _Verification:
             git.name_status(self.repo_root, self.base, self.head, ticket.WORK_DIR),
         )
         record_truncation(folder, diff[0])
+        # The temporary journal is not committed: review.md carries the note (ADR 0031).
+        self.truncation = truncation_note(diff[0])
         tree = replay.with_name(replay.name + "-reviewer")
         if tree.exists():
             raise Refused(f"the reviewer working tree already exists at {tree}", "remove it")
@@ -301,7 +298,7 @@ class _Verification:
         self.metrics.reviewed(settled.go)
         model = self.config.reviewer.model
         texts = {
-            REVIEW: review.record(settled, self.head, model),
+            REVIEW: review.record(settled, self.head, model) + _truncation_section(self.truncation),
             ticket.CHECKS: checks.report(results, self.head, changed),
         }
         green = settled.go and not checks.blocking_failures(results)
@@ -427,3 +424,7 @@ class _Verification:
         finally:
             if temporary:
                 git.remove_worktree(self.repo_root, tree)
+
+
+def _truncation_section(note: str) -> str:
+    return f"\n## Diff given to the reviewer\n\n{note}\n" if note else ""

@@ -11,6 +11,7 @@ One round of replay and review of a ticket, moved out of `flow` unchanged (ADR 0
 | `replay(run, checked, start_commit, guard, refs_before)` | function | Replays every check in its own clean tree at the delivered commit; returns the results. |
 | `review_round(run, checked, start_commit, guard, refs_before, results, round_)` | function | Runs review `round_` on the reviewer tree and returns the settled review. |
 | `remove(run, replay)` | function | Removes a replay or reviewer tree, journaling a warning if it cannot. |
+| `truncation_note(diff)` | function | Where the reviewer's diff was cut and the files whose hunks it lacks, or `""` when it is whole (ADR 0031). |
 | `record_truncation(folder, diff)` | function | Journals `ticket.review.diff_truncated` with the files whose hunks the reviewer's diff lacks; returns them (empty when the diff is not cut). |
 
 ## Behaviour and errors

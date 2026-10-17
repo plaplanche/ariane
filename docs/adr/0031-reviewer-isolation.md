@@ -84,12 +84,16 @@ An internal security review found three ways left to weaken the reviewer. Decide
    untrusted-data block. When the diff is over 200,000 characters it is cut there, the prompt names
    the files whose hunks are missing or incomplete and tells the reviewer to read them in the tree,
    the journal records them (`ticket.review.diff_truncated`) and the pull request body says the
-   diff given to the reviewer was truncated.
+   diff given to the reviewer was truncated. `verify` keeps no journal, so its committed
+   `review.md` names them in a `Diff given to the reviewer` section.
 3. **No surviving agent processes (Linux).** `ariane` sets `PR_SET_CHILD_SUBREAPER` at start, so
    a process that leaves its process group (`setsid`, `setpgid`) is reparented to Ariane, not to
    init. It fails closed: if Linux refuses it, `start` and `verify` stop before running any agent,
    setup or check ("Did nothing: Ariane could not become the subreaper"), since without it a
-   detached process would escape every scan; `status`, `report` and `judge` run nothing and go on. Every command Ariane runs (an agent session, a setup, a check, git) kills, in the same
+   detached process would escape every scan; `status`, `report` and `judge` run nothing and go on.
+   A ticket stopped before its folder exists (Ctrl-C or an error in the first setup) writes its
+   metrics, survivors included, to `<repo>.ariane/stopped/<n>/metrics.json`, as a `verify` that
+   commits nothing does to `<repo>.ariane/verify/<branch>/metrics.json`. Every command Ariane runs (an agent session, a setup, a check, git) kills, in the same
    teardown that kills its process group, the descendants that appeared since it started, also
    when it fails, times out or is interrupted (Ctrl-C): nothing it started runs when the next
    command starts or a tree is removed. A `/proc` scan is not atomic and a survivor can fork

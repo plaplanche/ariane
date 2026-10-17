@@ -15,6 +15,7 @@
 | `Outcome` | dataclass | What `ariane start` reports: `exit_code`, `line`, `detail`. |
 | `QUIET` | constant | The sentence naming the rule that nobody touches the repository while a ticket runs. |
 | `worktree_path(repo_root, number)` | function | Where the ticket's working tree lives. |
+| `stopped_metrics_path(worktree, number)` | function | `<repo>.ariane/stopped/<n>/metrics.json`: where a ticket stopped before its folder exists (Ctrl-C or an error in the first setup) keeps its metrics, survivors included (ADR 0031). |
 | `branch_name(number)` | function | The ticket's branch, `ariane/<n>`. |
 | `start(number, ...)` | function | The whole flow for one ticket number; returns an `Outcome`. |
 

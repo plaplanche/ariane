@@ -8,7 +8,7 @@ The measurements of one ticket, `work/<n>/metrics.json` (C19, ADR 0034): UTF-8, 
 | --- | --- | --- |
 | `METRICS` | constant | `metrics.json`, the file name. |
 | `NOT_REVIEWED` | constant | `not reviewed`, the first-pass verdict before any review. |
-| `Metrics` | class | `Metrics(number, mode, write)`: ticket number, mode (`delivered`, `verify`, `shadow`), start time, steps, sessions, fix rounds, attempts, first-pass verdict and outcome; `render()` gives the file's text. |
+| `Metrics` | class | `Metrics(number, mode, write)`: ticket number, mode (`delivered`, `verify`, `shadow`), start time, steps, sessions, fix rounds, attempts, first-pass verdict and outcome; `render()` gives the file's text; `keep_stopped(path)` writes it, outcome `stopped`, to a path outside the repository without the usual writer (a stop before the ticket folder exists, or a verify that commits nothing; ADR 0031). |
 
 ## Behaviour and errors
 
