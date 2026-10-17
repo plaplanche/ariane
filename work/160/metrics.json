@@ -7,7 +7,7 @@
   "blocking_red_at_delivery": 0,
   "first_pass_verdict": "no-go",
   "mode": "delivered",
-  "outcome": "delivered",
+  "outcome": "stopped",
   "rounds": 1,
   "sessions": [
     {
@@ -100,6 +100,10 @@
     {
       "at": "2026-10-17T12:17:49Z",
       "name": "outcome: delivered"
+    },
+    {
+      "at": "2026-10-17T12:17:50Z",
+      "name": "outcome: stopped"
     }
   ],
   "ticket": 160,

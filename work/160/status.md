@@ -1,6 +1,6 @@
 # Status
 
-- Last action: pushed
-- At: 2026-10-17 12:17:49Z
-- Detail: ariane/160 pushed; opening the pull request
-- Next: see the pull request, or run ariane status 160
+- Last action: stopped
+- At: 2026-10-17 12:17:50Z
+- Detail: git configuration rewrites URLs, which could reroute the push (url.https://github.com/.insteadof=git@github.com:; url.https://github.com/.insteadof=ssh://***@github.com/)
+- Next: remove the url.*.insteadOf keys; Ariane pushed nothing

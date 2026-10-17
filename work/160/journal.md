@@ -371,3 +371,9 @@ Same branch and history, git unchanged, remote unchanged.
 ## 2026-10-17 12:17:49Z Delivering
 
 Pushing ariane/160 and opening the pull request.
+
+## 2026-10-17 12:17:50Z Verified after the delivery
+
+Same branch and history, git unchanged, remote unchanged.
+
+## 2026-10-17 12:17:50Z Stopped: git configuration rewrites URLs, which could reroute the push (url.https://github.com/.insteadof=git@github.com:; url.https://github.com/.insteadof=ssh://***@github.com/)
