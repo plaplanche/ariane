@@ -8,7 +8,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | --- | --- | --- |
 | `BLOCKED_PUSH_URL` | constant | The push URL agents see, which cannot be pushed to. |
 | `INSTRUCTION_FILES` | constant | Lower-case names of the instruction files left out of the reviewer tree. |
-| `INSTRUCTION_DIRS` | constant | Directories left out of the reviewer tree (`.claude`). |
+| `INSTRUCTION_DIRS` | constant | Directories left out of the reviewer tree (`.claude`, `.codex`, `.agents`). |
 | `GitError` | exception | A git command failed. |
 | `git(args, cwd, env, check)` | function | Runs git with safe options; returns the completed process. |
 | `out(args, cwd, env)` | function | Runs git and returns its stripped output. |
@@ -55,7 +55,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 
 - `git`, `out`: run git and return output.
 - `add_worktree`, `add_detached_worktree`, `remove_worktree`: ticket and replay trees.
-- `add_reviewer_worktree`: a detached tree without `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md` and `.claude/` at any depth, and without symlinks that leave the tree; a tree that cannot be built is removed (ADR 0031). `base_instructions`: the base branch's `CLAUDE.md` read with git, or empty.
+- `add_reviewer_worktree`: a detached tree without `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `.claude/`, `.codex/` and `.agents/` at any depth, and without symlinks that leave the tree; a tree that cannot be built is removed (ADR 0031). `base_instructions`: the base branch's `CLAUDE.md` read with git, or empty.
 - `worktree_of`, `merge_base`, `commit_messages`: where a branch is checked out, and what `ariane verify` reads of a branch (ADR 0028).
 - `config_snapshot`, `snapshot_changes`: detect configuration tampering; the snapshot also holds the refs in `watch_refs` (`refs/remotes/<remote>/<base>`). `push_rewrites`: the URL-rewriting keys that apply to the push URL and would reroute it (ADR 0017).
 - Every git command runs with `protocol.ext.allow=never`; every diff with `--no-ext-diff --no-textconv`, so that no configured driver runs (ADR 0017). `fast_forwarded` fetches from the URL, so the base's tracking ref (part of the snapshot) stays where `fetch` left it.

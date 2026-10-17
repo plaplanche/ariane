@@ -11,6 +11,7 @@ from ariane import measures, metrics, shadow, ticket
 from ariane.tracker import Tracker
 
 PARTLY = "partly not reported"
+COVERED = "covered by plan"
 
 
 @dataclass(frozen=True)
@@ -62,7 +63,9 @@ def build(root: Path, since: str | None, tracker: Tracker | None = None) -> Repo
             tracker = None  # the tracker failed once: do not wait for it again per ticket
     flagged = {id(d): measures.bypassed(d, takeovers, people[id(d)].merged) for d in delivered}
     lines.extend(_row(d) + _extra(d, people, flagged) for d in rows)
-    cost, partial = _cost([s for d in rows for s in d["sessions"]])
+    all_sessions = [s for d in rows for s in d["sessions"]]
+    cost, partial = _cost(all_sessions)
+    plan = _has_plan(all_sessions)
     seconds = sum(_duration(d) for d in rows)
     rounds = sum(d["rounds"] for d in rows)
     lines.extend(_measure_lines(rows, recent, delivered, people, flagged))
@@ -70,8 +73,8 @@ def build(root: Path, since: str | None, tracker: Tracker | None = None) -> Repo
     go = sum(1 for d in reviewed if d["first_pass_verdict"] == "go")
     rate = f"{go}/{len(reviewed)}" + (f" ({100 * go // len(reviewed)}%)" if reviewed else "")
     lines.append(
-        f"Totals: {len(rows)} tickets, cost {_money(cost, partial)}, agent time {_time(seconds)},"
-        f" {rounds} rounds, first-pass go rate {rate}."
+        f"Totals: {len(rows)} tickets, cost {_money(cost, partial, plan)},"
+        f" agent time {_time(seconds)}, {rounds} rounds, first-pass go rate {rate}."
     )
     since_text = f" since {since}" if since else ""
     problem = f", {failed} unreadable file(s) skipped" if failed else ""
@@ -130,15 +133,27 @@ def _duration(data: dict[str, Any]) -> float:
     return sum(_duration_of(s) for s in data["sessions"])
 
 
+def _is_plan(session: dict[str, Any]) -> bool:
+    return session.get("billing") == "plan"
+
+
 def _cost(sessions: list[dict[str, Any]]) -> tuple[float, bool]:
-    costs = [s.get("cost_usd") for s in sessions]
+    """The reported cost, and whether some is missing; plan-billed sessions have no dollar cost."""
+    costs = [s.get("cost_usd") for s in sessions if not _is_plan(s)]
     return sum(c for c in costs if isinstance(c, int | float)), any(
         not isinstance(c, int | float) for c in costs
     )
 
 
-def _money(cost: float, partial: bool) -> str:
-    return f"${cost:.2f}" + (f" ({PARTLY})" if partial else "")
+def _money(cost: float, partial: bool, plan: bool = False) -> str:
+    text = f"${cost:.2f}" + (f" ({PARTLY})" if partial else "")
+    if not plan:
+        return text
+    return f"{text}, {COVERED}" if cost or partial else COVERED
+
+
+def _has_plan(sessions: list[dict[str, Any]]) -> bool:
+    return any(_is_plan(s) for s in sessions)
 
 
 def _time(seconds: float) -> str:
@@ -151,6 +166,8 @@ def _row(data: dict[str, Any]) -> str:
     cost_text = PARTLY if partial else _money(cost, False)
     if partial and cost:
         cost_text = f"{_money(cost, False)}, {PARTLY}"
+    if _has_plan(data["sessions"]):
+        cost_text = COVERED if cost_text == "$0.00" else f"{cost_text}, {COVERED}"
     branch = f" ({data['branch']})" if "branch" in data else ""
     return (
         f"#{data['ticket']}{branch} {data['mode']} {data['outcome']}: cost {cost_text},"

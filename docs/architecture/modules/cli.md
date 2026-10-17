@@ -84,6 +84,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 flowchart LR
   __main__ --> cli
   cli --> claude_code
+  cli --> codex
   cli --> config
   cli --> flow
   cli --> git

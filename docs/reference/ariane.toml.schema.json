@@ -121,6 +121,11 @@
             "timeout_minutes": {
               "type": "number",
               "exclusiveMinimum": 0
+            },
+            "api_key_env": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Codex reviewer only: variable holding an API key, passed to the session as CODEX_API_KEY; without it the CLI's own login (ChatGPT plan) is used."
             }
           }
         },
@@ -138,7 +143,8 @@
             "runtime": {
               "enum": [
                 "claude-code",
-                "opencode"
+                "opencode",
+                "codex"
               ]
             },
             "model": {
@@ -166,6 +172,11 @@
             "timeout_minutes": {
               "type": "number",
               "exclusiveMinimum": 0
+            },
+            "api_key_env": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Codex reviewer only: variable holding an API key, passed to the session as CODEX_API_KEY; without it the CLI's own login (ChatGPT plan) is used."
             }
           },
           "allOf": [

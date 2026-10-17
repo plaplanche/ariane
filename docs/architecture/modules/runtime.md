@@ -1,14 +1,14 @@
 # Module `ariane.runtime`
 
-The agent runtime interface (C5): one fresh session per stage, whatever the agent CLI. Claude Code implements it, and opencode for the reviewer role.
+The agent runtime interface (C5): one fresh session per stage, whatever the agent CLI. Claude Code implements it, and opencode and Codex for the reviewer role.
 
 ## Public API
 
 | Name | Kind | What it does |
 | --- | --- | --- |
-| `StopReason` | enum | Why a session ended: `finished`, `budget`, `turns`, `timeout`, `error`. |
+| `StopReason` | enum | Why a session ended: `finished`, `budget`, `turns`, `timeout`, `quota` (a subscription's usage limit is reached, ADR 0043), `error`. |
 | `Session` | class | What to run: role, model, tools, cost cap `max_budget_usd`, Ariane's optional token cap `max_tokens`, timeout, `cwd`, prompt, complete `env`, optional `json_schema`, and `add_dirs`, the extra trees the agent may read (the reviewer's cwd is an empty folder and its tree is listed here, ADR 0031). |
-| `SessionResult` | class | What came back: stop reason, cost, tokens, summary, permission denials, `cap` (which cap stopped a `budget` session), `structured_output` and `attempts` (pushes and pull requests attempted, C19, ADR 0036); `usage()` words cost and tokens for the journal; `usage_text()` is the journal line with the cap, cost and tokens; `SessionResult.failed(reason, summary, cap=None)` builds a result with no usage. |
+| `SessionResult` | class | What came back: stop reason, cost, tokens, summary, permission denials, `cap` (which cap stopped a `budget` session), `structured_output` and `attempts` (pushes and pull requests attempted, C19, ADR 0036); `usage()` words cost and tokens for the journal; `usage_text()` is the journal line with the cap, cost and tokens; `billing` (`plan`, `api` or none) and `next_step` (what to do, for a quota or a login stop); `with_next(step)` returns a copy with a next step; `SessionResult.failed(reason, summary, cap=None)` builds a result with no usage. |
 | `AgentRuntime` | protocol | `name`, `login_variables` (exact names and prefixes ending in `_` of the variables kept in the agent's environment for its login, ADR 0024) and `run(session)`. |
 | `RoutedRuntime` | class | `RoutedRuntime(runtimes)`: one runtime per role (`[agents.<role>] runtime`, ADR 0029); `for_role(role)` and `run(session)` go to the runtime of the session's role. It has no login variables of its own. |
 | `for_role(runtime, role)` | function | The runtime that serves `role` (the runtime itself unless it routes by role). |
@@ -82,6 +82,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 flowchart LR
   claude_code --> runtime
   cli --> runtime
+  codex --> runtime
   flow --> runtime
   metrics --> runtime
   opencode --> runtime

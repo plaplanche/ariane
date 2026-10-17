@@ -161,8 +161,8 @@ def add_detached_worktree(cwd: Path, path: Path, commit: str) -> None:
 
 
 # Lower case: names are compared case-folded, as case-insensitive file systems find them.
-INSTRUCTION_FILES = ("claude.md", "claude.local.md", "agents.md")
-INSTRUCTION_DIRS = (".claude",)
+INSTRUCTION_FILES = ("claude.md", "claude.local.md", "agents.md", "agents.override.md")
+INSTRUCTION_DIRS = (".claude", ".codex", ".agents")
 
 
 def add_reviewer_worktree(cwd: Path, path: Path, commit: str) -> None:

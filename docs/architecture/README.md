@@ -53,6 +53,7 @@ flowchart LR
 - [`checks`](modules/checks.md)
 - [`claude_code`](modules/claude_code.md)
 - [`cli`](modules/cli.md)
+- [`codex`](modules/codex.md)
 - [`config`](modules/config.md)
 - [`config_schema`](modules/config_schema.md)
 - [`context`](modules/context.md)

@@ -96,7 +96,7 @@ class ReviewSession:
         after_session: Callable[[], None],
     ) -> review.Review:
         agent = self.agent
-        claude = agent.runtime != "opencode"
+        claude = agent.runtime == "claude-code"
         runtime = for_role(self.runtime, "reviewer")
         error = ""
         for attempt in (1, 2):
@@ -152,6 +152,14 @@ class ReviewSession:
                     f" ariane/{number}",
                     ticket.fenced(result.summary),
                 )
+            if result.stop_reason is StopReason.QUOTA:
+                raise ReviewFailed(
+                    "reviewer quota reached",
+                    result.next_step or "restart the ticket later",
+                    ticket.fenced(result.summary),
+                )
+            if result.next_step:
+                raise ReviewFailed(result.summary, result.next_step)
             if result.stop_reason is not StopReason.FINISHED:
                 raise ReviewFailed(
                     f"the reviewer session stopped: {result.stop_reason.value}",
@@ -176,4 +184,7 @@ def cap_text(agent: AgentConfig) -> str:
             "runtime cost cap none; Ariane stops at"
             f" {agent.max_budget_usd:g} USD of reported cost or {agent.max_tokens} tokens"
         )
+    if agent.runtime == "codex":
+        cap = f", Ariane stops at {agent.max_tokens} tokens" if agent.max_tokens else ""
+        return f"runtime cost cap none (billed by the plan or the API key){cap}"
     return f"runtime cost cap {agent.max_budget_usd:g} USD"

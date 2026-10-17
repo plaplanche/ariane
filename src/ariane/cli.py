@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ariane import __version__, config, flow, git, logs, process, report, shadow, ticket, verify
 from ariane.claude_code import ClaudeCodeRuntime
+from ariane.codex import CodexRuntime
 from ariane.github import GitHubTracker
 from ariane.opencode import OpenCodeRuntime
 from ariane.runtime import AgentRuntime, RoutedRuntime
@@ -131,6 +132,8 @@ def _runtime(cfg: config.Config) -> RoutedRuntime:
     for role, agent in (("implementer", cfg.implementer), ("reviewer", cfg.reviewer)):
         if agent.runtime == config.OPENCODE:
             runtimes[role] = OpenCodeRuntime(model=agent.model)
+        elif agent.runtime == config.CODEX:
+            runtimes[role] = CodexRuntime(api_key_env=agent.api_key_env)
         else:
             runtimes[role] = ClaudeCodeRuntime()
     return RoutedRuntime(runtimes)
