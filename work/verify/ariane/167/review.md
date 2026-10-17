@@ -1,26 +1,18 @@
 # Review 0
 
-- Reviewed commit: `e651ba300c6e28bad699b0f0f9f6790debec990e`
+- Reviewed commit: `3478a06dd0bb1194c0112203a0fe1c4344e9e8c5`
 - Reviewer model: gpt-6-astra
 - Verdict: **no-go** (the reviewer answered no-go)
 
 ## Findings
 
-- **blocking** (`src/ariane/verify.py:303`) Verification deletes its truncation journal
+- **blocking** (`src/ariane/process.py:180`) Cleanup can abandon survivors without sending SIGKILL
 
-  For an oversized diff, verification writes ticket.review.diff_truncated into the temporary folder's journal, runs the reviewer, commits only review.md, checks.md and metrics.json, then deletes the temporary folder at line 194. The committed review record does not contain the truncation warning or missing paths. Consequently the required journal evidence disappears after verification. Preserve the journal or explicitly persist this evidence in the verification records, and test the records after verify returns.
+  The teardown sends SIGSTOP, waits until every survivor reports T/t, and only then sends SIGKILL. If a descendant remains in uninterruptible I/O (D) for five seconds, the deadline branch returns without ever sending SIGKILL. It nevertheless records that descendant as killed. One such descendant also prevents killing the other, already stopped descendants. Subsequent guard cleanup repeats the same sequence and can abandon them again when the ticket exits. A read-only mocked reproduction returned a supposedly killed process with SIGSTOP as the only signal sent. Queue SIGKILL before abandoning cleanup, distinguish remaining processes from confirmed kills, and test this deadline path.
 
-- **blocking** (`src/ariane/flow.py:589`) An interrupted initial setup loses survivor metrics
+- **minor** (`src/ariane/review.py:242`) Quoted binary filenames are corrupted in the truncation list
 
-  The initial setup runs before folder.create. If it starts a detached child and is interrupted, process teardown kills and records the child, then execute enters _stopped. That method consumes take_killed and updates the in-memory counter, but folder.exists() is false, so metrics.finish and every metrics write are skipped. The run returns without metrics.json recording the survivor, contrary to the ticket and ADR's interrupted-command guarantee. Persist stopped metrics even before the ticket folder opens. Existing interruption coverage starts inside an agent session, after folder creation, and misses this path.
-
-- **minor** (`docs/architecture/modules/logs.md:1`) Touched logs module documentation was not updated
-
-  The log catalogue was updated, and this module page still accurately links to it, but the project's explicit rule requires updating the module document for every touched module. Add the new reviewer-integrity logging responsibility and its ADR 0031 reference.
-
-- **blocking** Definition of done not met: The documentation the change affects is updated (C25).
-
-  README, ADR 0031, the log catalogue and the principal affected module pages were updated. docs/architecture/modules/logs.md remains untouched despite the explicit per-module documentation requirement.
+  The header fallback assumes unquoted a/path and b/path strings. Git quotes filenames containing non-ASCII bytes or special characters. For a binary file whose header contains "a/\303\251.png" and "b/\303\251.png", a read-only reproduction returned /\303\251.png" as the missing path. The changed-file list remains intact, but the prompt and journal name a nonexistent path. Parse quoted headers and add coverage for binary and mode-only changes with quoted filenames.
 
 ## Definition of done
 
@@ -46,17 +38,17 @@
 
 - met: The change is covered by tests that fail without it.
 
-  The new integrity tests assert external-instruction rejection, complete changed-file lists and PR truncation warnings, and detached-process cleanup with survivor metrics. These behaviors are absent from the base implementation. Ariane reports the suite passing; I inspected the tests without rerunning filesystem-writing tests in this read-only review. The findings identify additional uncovered paths.
+  The added integrity tests exercise external instruction-file writes, complete changed-file lists and truncation notices, and detached-process cleanup and refusal. These assertions depend on the new behavior. Ariane reports the suite passing; I did not rerun filesystem-writing tests in this read-only review. The cleanup deadline case remains uncovered.
 
-- **not met**: The documentation the change affects is updated (C25).
+- met: The documentation the change affects is updated (C25).
 
-  README, ADR 0031, the log catalogue and the principal affected module pages were updated. docs/architecture/modules/logs.md remains untouched despite the explicit per-module documentation requirement.
+  README, ADR 0031, the affected architecture modules and the log catalogue are updated. The unchanged shadow document still describes its behavior accurately: its direct code change only relocates the error-description helper. Cleanup's documented guarantee requires the blocking fix.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  The ADR 0031 amendment records runtime-specific snapshot coverage, cleanup timing and scan limits, timeout counting, stopped-verification metrics storage, and platform residuals.
+  The ADR 0031 amendment records runtime-specific instruction coverage, survivor accounting, cleanup deadlines, interrupted-run metrics, and platform residuals. Recording the deadline does not resolve the implementation's failure to send a kill signal.
 
 ## Proposed learnings (not decided)
 
-- Proposed: Test audit evidence after temporary-directory cleanup, not merely when it is first written.
-- Proposed: Exercise interruption before record initialization as well as during established sessions.
+- Proposed: test cleanup deadlines with descendants that never acknowledge SIGSTOP; a signal request is not proof of termination.
+- Proposed: test Git path parsing with quoted filenames, binary changes and mode-only changes.
