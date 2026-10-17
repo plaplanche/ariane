@@ -1,14 +1,14 @@
 # Review 0
 
-- Reviewed commit: `964e75b15a0dce0bea7ee0efa43c1ff1d212da5c`
+- Reviewed commit: `17b29be6b550b7dc4f98d023840fe3acb17b5e9d`
 - Reviewer model: gpt-6-astra
 - Verdict: **no-go** (the reviewer answered no-go)
 
 ## Findings
 
-- **blocking** (`src/ariane/context.py:186`) Credential-bearing proxy URLs pass without declaration
+- **blocking** (`src/ariane/context.py:149`) Declared proxy credentials escape redaction
 
-  The issue and ADR 0024 say a proxy URL containing credentials must be declared by the project. However, every proxy variable passes through BASE_VARIABLES without inspecting its value. A read-only reproduction with env=[] and HTTPS_PROXY=http://***@proxy:3128 confirmed that the complete credential-bearing URL passes and produces no declared-secret warning. In start, this environment reaches setup before ticket-folder creation and journal writes, then reaches implementer sessions and check replay; verify also supplies it to setup and checks. No declaration check guards those subprocess launches. Require explicit declaration for credential-bearing proxy URLs and add regression tests covering undeclared rejection and declared acceptance.
+  Credential-bearing proxies are classified as declared secrets here, but known_secrets omits their values. Reproduced read-only with HTTPS_PROXY=user:long-proxy-password@proxy:3128 declared in project.env: it passes, the journal names HTTPS_PROXY, known_secrets returns [], and redact preserves the complete credential. The existing URL redactor requires ://, whereas this change explicitly supports scheme-less proxies. The affected sequence is: setup/check receives the declared proxy; its output includes the value; TicketFolder.write redacts using the incomplete secret list and writes checks.md; git.commit records it; delivery pushes it. Verify likewise writes and commits the unmasked report. Include credential-bearing proxy values in known_secrets and add a regression test covering recorded output, including scheme-less values.
 
 ## Definition of done
 
@@ -34,16 +34,16 @@
 
 - met: The change is covered by tests that fail without it.
 
-  The new tests exercise allow-list filtering, declarations, extended redaction patterns and schema validation, which the previous implementation lacks. Nine acceptance test functions passed when invoked directly without filesystem-writing fixtures. Ariane reports the full suite passed. Credential-bearing proxies remain untested.
+  Twelve test_c21_env_allow_list_* tests cover filtering, declarations, journal entries, extended secret patterns, schema validation and proxies. The new configuration and filtering assertions fail against the previous implementation. Ariane reports the suite passed; independent pytest execution was unavailable because the installed Python lacks pytest. Proxy-output redaction remains uncovered, as reported above.
 
 - met: The documentation the change affects is updated (C25).
 
-  README, example and project configuration, affected module documentation, schema reference and log catalogue are updated. The proxy behavior contradicts the updated ADR, as reported above.
+  README, example configuration, affected module documentation, generated schema and log catalogue are updated. Ariane reports the generated-reference check passed.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0024's amendment records matching semantics, secret-pattern boundaries, warning severity, verify's journal exception and restoration of git identity variables for Ariane's commits.
+  ADR 0024 records the allow list, declaration matching, credential-bearing proxy handling, secret-pattern boundaries, commit identity restoration, warning severity and verify logging behavior.
 
 ## Proposed learnings (not decided)
 
-- Proposed: Test credential-bearing values in otherwise allowed variables; a name-based allow list alone cannot enforce value-dependent exceptions.
+- Proposed: whenever a new path deliberately passes a secret, test its complete journey through captured output, redaction and persisted records.
