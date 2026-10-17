@@ -66,3 +66,19 @@ place of the ticket branch, comparing the remote at the start of the run and aft
 checks and the reviewer; it skips the check when the repository has no `origin`. An agent that
 creates a branch other than its own is no longer detected; the branch rules on the repository
 and the credential-free sessions above remain the protection.
+
+## Amendment (2026-10-17): where the token lives during a run
+
+- **Read once, then gone from the environment.** The CLI reads `tracker.token_env` and removes it
+  from `os.environ`. The value then lives in the tracker, in the push, and in the copy of the
+  environment handed to the run (in memory only, filtered by `untrusted_environment` before any
+  agent, check or setup command).
+- **Token-free git.** `git.git` and `git.out` use by default the environment without any variable
+  the credential filter withholds (`TOKEN`, `SECRET`, `PASSWORD`, ... and the SSH/askpass
+  channels); only `git.push` receives the authorization header. A consequence: Ariane's own
+  fetches cannot use an SSH agent.
+- **Not dumpable on Linux.** At start the CLI calls `prctl(PR_SET_DUMPABLE, 0)` through
+  `ctypes`; a failure is journaled as a warning, never fatal.
+- **Residuals.** On macOS, on Windows and when running as root, a same-user process can still read
+  Ariane's memory; only the operating-system sandbox of the security slice (C21) closes it. The
+  README recommends a fine-grained token limited to the one repository.

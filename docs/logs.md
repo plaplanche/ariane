@@ -39,6 +39,7 @@ Records of the `ariane` logger.
 | Identifier | Level | Meaning |
 | --- | --- | --- |
 | `git.command` | debug | A git command is run, with its arguments. |
+| `process.undumpable_failed` | warning | Ariane could not make its process undumpable. |
 | `process.started` | debug | A subprocess started. |
 | `process.exited` | debug | A subprocess ended, with its exit code and duration. |
 | `github.request` | info | A GitHub API call and its status. |

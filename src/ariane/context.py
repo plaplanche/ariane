@@ -20,9 +20,8 @@ from ariane.tracker import Issue
 
 UNTRUSTED_TAG = "untrusted-ticket"
 _CLOSING_TAG = re.compile(rf"<\s*/\s*{UNTRUSTED_TAG}", re.IGNORECASE)
-# Variables that can carry a credential; never given to an agent or to code it wrote.
-_SECRET_NAME = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|PRIVATE_?KEY")
-_CREDENTIAL_CHANNELS = ("SSH_AUTH_SOCK", "SSH_ASKPASS", "GIT_ASKPASS", "SUDO_ASKPASS")
+_SECRET_NAME = git.SECRET_NAME  # one credential filter, defined where git needs it too
+_CREDENTIAL_CHANNELS = git.CREDENTIAL_CHANNELS
 _OWN_PREFIX = "ARIANE_"
 _VENV_VARIABLES = ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT")
 

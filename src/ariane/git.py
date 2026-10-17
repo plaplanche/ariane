@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import re
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
@@ -37,6 +38,10 @@ _AUTH_REFUSALS = (
     "returned error: 403",
     "permission denied",
 )
+# Variables that can carry a credential; never given to an agent, to code it wrote, or to a git
+# command of Ariane's other than the push (C21, ADR 0017).
+SECRET_NAME = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|PRIVATE_?KEY")
+CREDENTIAL_CHANNELS = ("SSH_AUTH_SOCK", "SSH_ASKPASS", "GIT_ASKPASS", "SUDO_ASKPASS")
 _GENERATED_LISTINGS = frozenset({"info/refs", "info/packs"})
 
 
@@ -44,10 +49,26 @@ class GitError(Exception):
     """A git command failed."""
 
 
+def token_free_environment(base: Mapping[str, str] | None = None) -> dict[str, str]:
+    """`base` (default: Ariane's environment) without any variable the credential filter withholds.
+
+    The tracker token is not in Ariane's environment once the CLI has read it; this also drops
+    anything else that looks like a credential, so only `push` ever carries one.
+    """
+    source = os.environ if base is None else base
+    return {
+        name: value
+        for name, value in source.items()
+        if name.upper() not in CREDENTIAL_CHANNELS and not SECRET_NAME.search(name.upper())
+    }
+
+
 def git(
     args: list[str], cwd: Path, *, env: Mapping[str, str] | None = None, check: bool = True
 ) -> process.Completed:
     logs.emit("git.command", "git " + " ".join(args))
+    if env is None:
+        env = token_free_environment()
     completed = process.run(["git", *_SAFE_OPTIONS, *args], cwd=cwd, timeout_s=_TIMEOUT_S, env=env)
     if check and not completed.ok:
         raise GitError(redact(f"git {' '.join(args)} failed:\n{completed.output.strip()}"))
