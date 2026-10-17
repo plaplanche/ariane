@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 from ariane import config, context
@@ -179,3 +181,64 @@ def test_c21_login_variables_never_keep_the_tracker_token() -> None:
 
 def test_c21_login_variables_a_kept_key_is_a_known_secret() -> None:
     assert context.known_secrets({"OPENAI_API_KEY": "sk", "PATH": "/bin"}, "T") == ["sk"]
+
+
+def _venv_base(venv: str, other: str) -> dict[str, str]:
+    scripts = os.path.join(venv, "Scripts" if sys.platform == "win32" else "bin")
+    return {
+        "VIRTUAL_ENV": venv,
+        "VIRTUAL_ENV_PROMPT": "(ariane)",
+        "PATH": scripts + os.pathsep + other,
+        "ARIANE_LOG_LEVEL": "debug",
+        "ARIANE_CONFIG": "x.toml",
+        "KEEP": "1",
+    }
+
+
+def test_c9_own_environment_is_withheld_from_the_checks() -> None:
+    other = os.path.join(os.sep, "usr", "bin")
+    base = _venv_base(os.path.join(os.sep, "opt", "ariane-venv"), other)
+    env = context.untrusted_environment(base, token_env="T", remotes=[], is_root=False)
+    assert "VIRTUAL_ENV" not in env and "VIRTUAL_ENV_PROMPT" not in env
+    assert not [n for n in env if n.upper().startswith("ARIANE_")]
+    assert env["PATH"] == other and env["KEEP"] == "1"
+
+
+def test_c9_own_environment_leaves_a_path_without_the_entry_unchanged() -> None:
+    path = os.pathsep.join([os.path.join(os.sep, "usr", "bin"), os.path.join(os.sep, "bin")])
+    env = context.untrusted_environment(
+        {"PATH": path, "VIRTUAL_ENV": os.path.join(os.sep, "v")},
+        token_env="T",
+        remotes=[],
+        is_root=False,
+    )
+    assert env["PATH"] == path
+
+
+def test_c9_own_environment_is_withheld_from_an_agent_session() -> None:
+    other = os.path.join(os.sep, "usr", "bin")
+    base = _venv_base(os.path.join(os.sep, "opt", "ariane-venv"), other)
+    env = context.untrusted_environment(
+        base,
+        token_env="T",
+        remotes=[],
+        login_variables=("ANTHROPIC_API_KEY", "ARIANE_"),
+        is_root=False,
+    )
+    assert "VIRTUAL_ENV" not in env and "VIRTUAL_ENV_PROMPT" not in env
+    assert not [n for n in env if n.upper().startswith("ARIANE_")]
+    assert env["PATH"] == other
+
+
+def test_c9_own_environment_matches_names_without_case_and_normalises_entries() -> None:
+    venv = os.path.join(os.sep, "opt", "ariane-venv")
+    scripts = os.path.join(venv, "Scripts" if sys.platform == "win32" else "bin")
+    other = os.path.join(os.sep, "usr", "bin")
+    base = {
+        "virtual_env": venv,
+        "Path": os.pathsep.join([other, scripts + os.sep, other]),
+        "ariane_x": "1",
+    }
+    env = context.untrusted_environment(base, token_env="T", remotes=[], is_root=False)
+    assert "virtual_env" not in env and "ariane_x" not in env
+    assert env["Path"] == os.pathsep.join([other, other])
