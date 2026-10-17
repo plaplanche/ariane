@@ -10,7 +10,7 @@ Builds what an agent receives from Ariane (C5, C21, C25, C26): its prompt and an
 | `implementer_prompt(issue, branch, checks, definition_of_done=DEFAULT_DEFINITION_OF_DONE, documentation=NO_DOCUMENTATION, *, recorded=False, read_at='', fix_round=0, findings='')` | function | The prompt of the implementer session; a check with `not_run_locally` is marked as not run locally (ADR 0042). |
 | `BASE_VARIABLES` | constant | The variables untrusted code receives without being declared: system, proxy and certificate variables (ADR 0024). |
 | `WINDOWS_VARIABLES` | constant | The system variables added to the base set on Windows. |
-| `known_secrets(environ, token_env)` | function | The values to redact: the tracker token, the credential channels and every variable named like a secret (`git.SECRET_NAME`), declared or not. |
+| `known_secrets(environ, token_env)` | function | The values to redact: the tracker token, the credential channels and every variable named like a secret (`git.SECRET_NAME`), declared or not, and a proxy URL with credentials (its value and its `user:password` part, with or without a scheme). |
 | `declared_secrets(environ, declared, token_env)` | function | One journal line naming (never valuing) the variables named like secrets that pass because `[project] env` declares them; empty if none. |
 | `untrusted_environment(base, *, token_env, remotes, login_variables=(), declared=(), is_root=None)` | function | The environment of an agent session or of checks and setup commands running code an agent wrote. |
 

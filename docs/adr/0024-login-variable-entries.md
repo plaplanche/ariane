@@ -46,7 +46,7 @@ Proxies and certificates are in the base set because checks behind a proxy canno
 anything without them; a proxy URL that carries credentials is the project's to declare instead:
 `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` whose value has a user or password before `@`
 (`http://user:pass@host`) does not pass unless `[project] env` names it, and is then journaled
-by name as a declared secret.
+by name as a declared secret and masked in every record (its whole value and its `user:pass`).
 
 A declared name that looks like a secret passes (the project asked for it); `flow` journals
 `ticket.env.declared_secret` once per run, names only (`context.declared_secrets`). `verify` has no

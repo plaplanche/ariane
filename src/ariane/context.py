@@ -122,7 +122,8 @@ def _documentation_section(documentation: Documentation) -> str:
 
 
 def known_secrets(environ: Mapping[str, str], token_env: str) -> list[str]:
-    """The tracker token, the credential channels and every variable named like a secret."""
+    """The tracker token, the credential channels, every variable named like a secret, and a
+    proxy URL with credentials (its whole value and its `user:password` part, ADR 0024)."""
     token_name = token_env.upper()
     values = [
         value
@@ -131,6 +132,9 @@ def known_secrets(environ: Mapping[str, str], token_env: str) -> list[str]:
         or name.upper() in _CREDENTIAL_CHANNELS
         or _SECRET_NAME.search(name.upper())
     ]
+    for name, value in environ.items():
+        if _proxy_with_credentials(name.upper(), value):
+            values += [value, _authority(value).rpartition("@")[0]]
     return [v for v in values if v]
 
 
@@ -204,8 +208,12 @@ def _proxy_with_credentials(upper: str, value: str) -> bool:
     """A proxy variable whose URL holds a user or password (`http://user:pass@host`)."""
     if upper not in _PROXY_VARIABLES:
         return False
-    authority = value.partition("://")[2] if "://" in value else value
-    return "@" in authority.partition("/")[0]
+    return "@" in _authority(value)
+
+
+def _authority(url: str) -> str:
+    """`user:pass@host:port` of a URL, with or without a scheme."""
+    return (url.partition("://")[2] if "://" in url else url).partition("/")[0]
 
 
 def _never_passes(upper: str, token_name: str) -> bool:

@@ -12,7 +12,8 @@ from test_config import with_change
 from test_docs_reference import errors
 
 from ariane import config, context
-from ariane.tracker import InMemoryTracker
+from ariane.ticket import TicketFolder
+from ariane.tracker import InMemoryTracker, Issue
 
 from conftest import FakeRuntime, Project, make_config
 from test_flow import journal, start
@@ -194,3 +195,20 @@ def test_c21_env_allow_list_a_proxy_url_with_credentials_passes_only_if_declared
         assert env["HTTPS_PROXY"] == base["HTTPS_PROXY"] and env["http_proxy"] == base["http_proxy"]
     note = context.declared_secrets(base, declared, "GH_TOKEN")
     assert "`HTTPS_PROXY`, `http_proxy`" in note and "s3cret" not in note
+
+
+def test_c21_env_allow_list_a_declared_proxy_with_credentials_is_masked_in_records(
+    tmp_path: Path,
+) -> None:
+    """A declared proxy URL with credentials, with or without a scheme, never reaches a record."""
+    base = {
+        "HTTPS_PROXY": "user:long-proxy-password@proxy:3128",
+        "http_proxy": "http://other:second-proxy-password@proxy:3128",
+    }
+    secrets = context.known_secrets(base, "GH_TOKEN")
+    folder = TicketFolder(tmp_path, 7, secrets=secrets)
+    folder.create(Issue(7, "Title", "Body", "url"))
+    output = f"via {base['HTTPS_PROXY']}, user:long-proxy-password and {base['http_proxy']}"
+    folder.write("checks.md", output)
+    recorded = (folder.path / "checks.md").read_text(encoding="utf-8")
+    assert "long-proxy-password" not in recorded and "second-proxy-password" not in recorded
