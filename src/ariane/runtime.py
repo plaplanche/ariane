@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -9,6 +10,43 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ariane.attempts import Attempts
+from ariane.config import AgentConfig
+
+OUTPUT_TAIL_CHARS = 2000
+_TOKEN_CAP_PREFIX = "Ariane token cap"
+
+
+def token_cap(tokens: int | None) -> str:
+    return f"{_TOKEN_CAP_PREFIX} ({tokens} tokens)"
+
+
+def cost_cap(usd: float) -> str:
+    return f"runtime cost cap ({usd:g} USD)"
+
+
+def is_token_cap(cap: str) -> bool:
+    return cap.startswith(_TOKEN_CAP_PREFIX)
+
+
+def timeout_summary(seconds: float) -> str:
+    return f"killed after {seconds:g} s (time limit)"
+
+
+def json_object(line: str) -> dict[str, Any] | None:
+    """The JSON object a line holds, or None for anything else."""
+    try:
+        data = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def as_number(value: Any) -> float | None:
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
+
+
+def as_int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 class StopReason(StrEnum):
@@ -48,6 +86,17 @@ class SessionResult:
     structured_output: Any = None  # the answer parsed by the runtime, when a schema was given
     # pushes and pull requests the agent attempted (ADR 0036)
     attempts: Attempts = field(default_factory=Attempts)
+
+    @classmethod
+    def failed(cls, reason: StopReason, summary: str, cap: str | None = None) -> SessionResult:
+        """A session that reported no usage."""
+        return cls(reason, None, None, None, None, None, summary, cap=cap)
+
+    def usage_text(self) -> str:
+        """The cap line, then the cost and the tokens, as the journal words them."""
+        cost, tokens = self.usage()
+        cap = f"Cap reached: {self.cap}.\n\n" if self.cap else ""
+        return f"{cap}Cost {cost} (as reported), tokens {tokens}."
 
     def usage(self) -> tuple[str, str]:
         """The cost and the tokens as the journal words them."""
@@ -100,3 +149,27 @@ def describe(runtime: AgentRuntime) -> str:
     """The runtime as the journal words it: its name, plus its own description if it has one."""
     describer = getattr(runtime, "describe", None)
     return str(describer()) if callable(describer) else runtime.name
+
+
+def session_for(
+    agent: AgentConfig,
+    role: str,
+    *,
+    cwd: Path,
+    prompt: str,
+    env: Mapping[str, str],
+    **extra: Any,
+) -> Session:
+    """The session of `role` as `agent` configures it."""
+    return Session(
+        role=role,
+        model=agent.model,
+        tools=agent.tools,
+        max_budget_usd=agent.max_budget_usd,
+        max_tokens=agent.max_tokens,
+        timeout_s=agent.timeout_minutes * 60,
+        cwd=cwd,
+        prompt=prompt,
+        env=env,
+        **extra,
+    )

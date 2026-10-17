@@ -96,6 +96,7 @@ flowchart TD
   review_session --> ticket
   review_session --> tracker
   runtime --> attempts
+  runtime --> config
   shadow --> checks
   shadow --> config
   shadow --> flow

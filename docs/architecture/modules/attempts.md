@@ -7,7 +7,7 @@ Counts the commands an agent attempted that push or open a pull request (C19, AD
 | Name | Kind | What it does |
 | --- | --- | --- |
 | `Attempts` | class | Frozen counts `push` and `pull_request`; they add up with `+`. |
-| `AttemptTally` | class | The running total of one session (`attempts`); `add_command(command)` adds the attempts of one shell command. The runtime adapters feed it each shell tool call once. |
+| `AttemptTally` | class | The running total of one session (`attempts`); `add_command(command, call_id)` adds the attempts of one shell command, once per call id. |
 | `count(command, depth=0)` | function | The attempts in one shell command. |
 
 ## Behaviour and errors

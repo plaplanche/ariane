@@ -28,9 +28,13 @@ class AttemptTally:
 
     def __init__(self) -> None:
         self.attempts = Attempts()
+        self._seen: set[str] = set()
 
-    def add_command(self, command: str) -> None:
-        self.attempts += count(command)
+    def add_command(self, command: str, call_id: str) -> None:
+        """Count a command once per call id (a streamed message repeats its calls)."""
+        if call_id not in self._seen:
+            self._seen.add(call_id)
+            self.attempts += count(command)
 
 
 def count(command: str, depth: int = 0) -> Attempts:

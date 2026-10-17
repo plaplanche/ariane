@@ -10,7 +10,18 @@ from typing import Any
 
 from ariane import process
 from ariane.attempts import AttemptTally
-from ariane.runtime import Session, SessionResult, StopReason
+from ariane.runtime import (
+    OUTPUT_TAIL_CHARS,
+    Session,
+    SessionResult,
+    StopReason,
+    as_int,
+    as_number,
+    cost_cap,
+    json_object,
+    timeout_summary,
+    token_cap,
+)
 
 # opencode has no turn option on its command line: the agent's `steps` is the turn cap.
 STEPS = 20
@@ -111,17 +122,15 @@ class OpenCodeRuntime:
                 input_text=_message(session),
             )
         except (process.CommandNotFoundError, OSError) as exc:
-            return SessionResult(StopReason.ERROR, None, None, None, None, None, str(exc))
+            return SessionResult.failed(StopReason.ERROR, str(exc))
         if completed.stopped:
             return events.result(StopReason.BUDGET, events.stop_text, cap=events.cap)
         if completed.timed_out:
-            return events.result(
-                StopReason.TIMEOUT, f"killed after {session.timeout_s:g} s (time limit)"
-            )
+            return events.result(StopReason.TIMEOUT, timeout_summary(session.timeout_s))
         if events.error is not None:
             return events.result(StopReason.ERROR, events.error)
         if completed.returncode != 0:
-            tail = (completed.stderr or completed.stdout).strip()[-2000:]
+            tail = (completed.stderr or completed.stdout).strip()[-OUTPUT_TAIL_CHARS:]
             return events.result(StopReason.ERROR, f"opencode exit {completed.returncode}: {tail}")
         if not events.stopped_normally:
             return events.result(StopReason.ERROR, "no final step (reason stop) in the events")
@@ -153,7 +162,6 @@ class Events:
         self.cap: str | None = None
         self.stop_text = ""
         self.attempts = AttemptTally()
-        self._seen: set[str] = set()
 
     @property
     def total(self) -> int:
@@ -161,11 +169,8 @@ class Events:
 
     def add_line(self, line: str) -> bool:
         """Count one event line; True when a cap is reached and the session must stop."""
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            return False
-        if not isinstance(event, dict):
+        event = json_object(line)
+        if event is None:
             return False
         kind, part = event.get("type"), event.get("part")
         if kind == "text" and isinstance(part, dict) and isinstance(part.get("text"), str):
@@ -185,9 +190,8 @@ class Events:
         command = tool_input.get("command") if isinstance(tool_input, dict) else None
         call = str(part.get("callID") or part.get("id") or command)
         is_shell = str(part.get("tool")).lower() == "bash"
-        if is_shell and isinstance(command, str) and call not in self._seen:
-            self._seen.add(call)
-            self.attempts.add_command(command)
+        if is_shell and isinstance(command, str):
+            self.attempts.add_command(command, call)
 
     def _step_finish(self, part: dict[str, Any]) -> bool:
         tokens = part.get("tokens")
@@ -195,20 +199,18 @@ class Events:
         cache = tokens.get("cache")
         cache = cache if isinstance(cache, dict) else {}
         self.steps += 1
-        self.input += _int(tokens.get("input"))
-        self.output += _int(tokens.get("output"))
-        self.cache_read += _int(cache.get("read"))
-        self.cache_write += _int(cache.get("write"))
-        cost = part.get("cost")
-        if isinstance(cost, int | float) and not isinstance(cost, bool):
-            self.cost += cost
+        self.input += as_int(tokens.get("input")) or 0
+        self.output += as_int(tokens.get("output")) or 0
+        self.cache_read += as_int(cache.get("read")) or 0
+        self.cache_write += as_int(cache.get("write")) or 0
+        self.cost += as_number(part.get("cost")) or 0.0
         self.stopped_normally = part.get("reason") == "stop"
         if self.max_tokens is not None and self.total >= self.max_tokens:
-            self.cap = f"Ariane token cap ({self.max_tokens} tokens)"
+            self.cap = token_cap(self.max_tokens)
             self.stop_text = f"stopped by Ariane at {self.total} tokens"
         elif self.reported_cost is not None and self.max_budget_usd is not None:
             if self.reported_cost >= self.max_budget_usd:
-                self.cap = f"runtime cost cap ({self.max_budget_usd:g} USD)"
+                self.cap = cost_cap(self.max_budget_usd)
                 self.stop_text = f"stopped by Ariane at {self.reported_cost:.4f} USD"
         return self.cap is not None
 

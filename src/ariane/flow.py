@@ -12,7 +12,7 @@ from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
-from ariane.runtime import AgentRuntime, Session, SessionResult, StopReason, for_role
+from ariane.runtime import AgentRuntime, SessionResult, StopReason, for_role, session_for
 from ariane.stop import Stop
 from ariane.tracker import Issue, Tracker, TrackerError
 
@@ -242,13 +242,9 @@ class _TicketRun:
         )
         name = f"Fix session {fix_round}" if fix_round else "Implementer session"
         tokens_cap = "none" if agent.max_tokens is None else f"{agent.max_tokens} tokens"
-        session = Session(
-            role="implementer",
-            model=agent.model,
-            tools=agent.tools,
-            max_budget_usd=agent.max_budget_usd,
-            max_tokens=agent.max_tokens,
-            timeout_s=agent.timeout_minutes * 60,
+        session = session_for(
+            agent,
+            "implementer",
             cwd=self.worktree,
             prompt=prompt,
             env=self.agent_envs["implementer"],
@@ -263,13 +259,11 @@ class _TicketRun:
             f"Context given to the agent:\n\n{ticket.fenced(recorded)}",
         )
         result = self.metrics.run_session(for_role(self.runtime, session.role), session, fix_round)
-        cost, tokens = result.usage()
         denials = "\n".join(f"- {d}" for d in result.permission_denials) or "none"
-        cap = f"Cap reached: {result.cap}.\n\n" if result.cap else ""
         self.folder.log(
             "ticket.session.stopped",
             f"{name} stopped: {result.stop_reason.value}",
-            f"{cap}Cost {cost} (as reported), tokens {tokens}.\n\n"
+            f"{result.usage_text()}\n\n"
             f"Refused tool calls:\n{denials}\n\n"
             f"Agent summary:\n\n{ticket.fenced(result.summary)}",
         )

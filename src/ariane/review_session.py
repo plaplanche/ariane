@@ -12,7 +12,15 @@ from pathlib import Path
 from ariane import checks, review, ticket
 from ariane.config import AgentConfig, CheckConfig, DoneItem
 from ariane.metrics import Metrics
-from ariane.runtime import AgentRuntime, Session, SessionResult, StopReason, describe, for_role
+from ariane.runtime import (
+    AgentRuntime,
+    SessionResult,
+    StopReason,
+    describe,
+    for_role,
+    is_token_cap,
+    session_for,
+)
 from ariane.tracker import Issue
 
 
@@ -92,13 +100,9 @@ class ReviewSession:
         runtime = for_role(self.runtime, "reviewer")
         error = ""
         for attempt in (1, 2):
-            session = Session(
-                role="reviewer",
-                model=agent.model,
-                tools=agent.tools,
-                max_budget_usd=agent.max_budget_usd,
-                max_tokens=agent.max_tokens,
-                timeout_s=agent.timeout_minutes * 60,
+            session = session_for(
+                agent,
+                "reviewer",
                 cwd=empty if claude else replay,
                 prompt=review.prompt(
                     self.issue,
@@ -128,19 +132,17 @@ class ReviewSession:
                 if self.metrics
                 else runtime.run(session)
             )
-            cost, tokens = result.usage()
-            reached = f"Cap reached: {result.cap}.\n\n" if result.cap else ""
             self.folder.log(
                 "ticket.review.stopped",
                 f"Reviewer session {attempt} stopped: {result.stop_reason.value}",
-                f"{reached}Cost {cost} (as reported), tokens {tokens}.",
+                result.usage_text(),
             )
             after_session()
             number = self.issue.number
             if result.stop_reason is StopReason.BUDGET and result.cap:
                 key = (
                     "agents.reviewer.max_tokens"
-                    if result.cap.startswith("Ariane token cap")
+                    if is_token_cap(result.cap)
                     else "agents.reviewer.max_budget_usd"
                 )
                 kind = "token cap" if key.endswith("max_tokens") else "cost cap"
