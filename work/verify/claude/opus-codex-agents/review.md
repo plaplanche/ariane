@@ -1,22 +1,12 @@
 # Review 0
 
-- Reviewed commit: `6f2ce1caf4eb07a914e717a5061a92c1f8f6f30e`
+- Reviewed commit: `549f25a3e65475551eca0631384c0321a61a29bd`
 - Reviewer model: gpt-6-astra
-- Verdict: **no-go** (the reviewer answered no-go)
+- Verdict: **go**
 
 ## Findings
 
-- **blocking** (`ariane.toml:30`) Token cap does not bound the newly enabled API-billed review
-
-  An API-key CLI login is accepted. The execution order is: write review-start log; check login; launch Codex and incur API charges; receive turn.completed; check max_tokens; stop the process; record metrics and review-stop log. src/ariane/codex.py only counts usage at turn.completed, and its command supplies no native token cap. Consequently, an entire review turn can exceed 2,000,000 tokens before the check runs; max_budget_usd is also unused by this runtime. An in-memory reproduction reported 3,001,000 tokens before triggering the configured 2,000,000-token cap. This contradicts ADR 0044's billing bound and C5's requirement for a native cap when usage arrives only at the end. Require a plan login for this configuration or enforce a runtime-supported spending bound before allowing API-billed execution. Add a test covering consumption before turn completion; the existing test only kills a fake process hanging after completion.
-
-- **minor** (`docs/adr/0044-opus-implements-codex-reviews.md:12`) Login prerequisite contradicts the accepted API-key fallback
-
-  This sentence says that without a ChatGPT login the ticket stops with 'Codex is not logged in', but an existing API-key login proceeds, as the following sentence and runtime explicitly establish. State that only an absent login causes this error. Update the README's Codex setup guidance to explain the same distinction.
-
-- **blocking** Definition of done not met: The documentation the change affects is updated (C25).
-
-  ADR 0044 and configuration comments document the switch, but claim an unenforced billing bound and contain contradictory login guidance. The README does not incorporate the API-key-login clarification.
+None.
 
 ## Definition of done
 
@@ -42,17 +32,17 @@
 
 - met: The change is covered by tests that fail without it.
 
-  The new configuration assertions pass on this checkout and fail against the base configuration's Sonnet implementer and Claude reviewer. Ariane reports all replayed tests passing. This coverage does not establish the claimed spending bound.
+  The new configuration test pins both roles and excludes api_key_env. Read-only, in-memory verification confirmed its assertions pass with the current configuration and reject the base settings. Ariane reports all six checks passing; the full suite was not rerun.
 
-- **not met**: The documentation the change affects is updated (C25).
+- met: The documentation the change affects is updated (C25).
 
-  ADR 0044 and configuration comments document the switch, but claim an unenforced billing bound and contain contradictory login guidance. The README does not incorporate the API-key-login clarification.
+  ADR 0044 and configuration comments document the models, implementer budget, ChatGPT login prerequisite, and failure behavior. Existing README and architecture documentation already describe the Codex runtime; no runtime implementation changed.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0044 records the implementer model and budget, reviewer runtime and model, CLI login policy, token threshold, and alternatives.
+  ADR 0044 records the model selection, increased implementer budget, plan-only reviewer authentication, alternatives, and operational consequences, building on ADR 0043.
 
 ## Proposed learnings (not decided)
 
-- A usage threshold checked after a completed agent turn cannot guarantee a spending bound within that turn.
-- Test billing safeguards at the point charges occur, rather than only testing termination after usage is reported.
+- Keep configuration regression tests independent of previous model names.
+- Preserve the tested ordering: sanitize the environment, check login, reject unsupported authentication, then launch Codex. Review-start logging precedes this check; model execution follows it.
