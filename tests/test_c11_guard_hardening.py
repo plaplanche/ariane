@@ -177,7 +177,7 @@ def test_c11_guard_hardening_verify_records_replace_a_symlinked_checks_file(
     other = project.root.parent / "link-tree"
     sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
     target = tmp_path / "target.txt"
-    target.write_text(str(outside), encoding="utf-8")
+    target.write_text(outside.as_posix(), encoding="utf-8")
     blob = sh(["git", "hash-object", "-w", str(target)], other)
     sh(["git", "update-index", "--add", "--cacheinfo", f"120000,{blob},{RECORD}"], other)
     sh(["git", "commit", "--quiet", "-m", "A link where the record goes"], other)
