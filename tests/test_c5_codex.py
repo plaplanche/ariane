@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -132,6 +131,27 @@ def test_c5_codex_not_logged_in_without_a_key_does_not_start(tmp_path: Path) -> 
     assert result.next_step == "run codex login, or set agents.reviewer.api_key_env"
 
 
+def test_c5_codex_an_api_key_login_is_billed_per_token_not_by_plan(tmp_path: Path) -> None:
+    result, seen = run(tmp_path, login="apikey")
+    assert seen  # the session ran
+    assert (result.billing, result.cost_usd) == ("api", None)
+
+
+def test_c5_codex_a_failing_login_status_is_an_error_not_a_missing_login(tmp_path: Path) -> None:
+    result, seen = run(tmp_path, login="crash")
+    assert seen == {}
+    assert result.stop_reason is StopReason.ERROR
+    assert "codex login status exit 1" in result.summary and "boom" in result.summary
+    assert result.next_step is None
+
+
+def test_c5_codex_an_unset_api_key_env_is_an_error(tmp_path: Path) -> None:
+    result, seen = run(tmp_path, api_key_env="NOPE_KEY", env={"PATH": os.environ["PATH"]})
+    assert seen == {}
+    assert result.stop_reason is StopReason.ERROR
+    assert "agents.reviewer.api_key_env: variable NOPE_KEY is not set" in result.summary
+
+
 def test_c5_codex_a_usage_limit_stops_the_session_as_quota(tmp_path: Path) -> None:
     result, _ = run(tmp_path, QUOTA, code=1)
     assert result.stop_reason is StopReason.QUOTA
@@ -191,36 +211,17 @@ def test_c5_codex_the_reviewer_config_and_its_api_key_env_load() -> None:
         config.parse(data)
 
 
-@dataclass
-class QuotaReviewer(FakeRuntime):
-    name: str = "codex"
-
-    def review(self, session: Session) -> SessionResult:
-        return SessionResult(
-            StopReason.QUOTA,
-            0.0,
-            1,
-            2,
-            3,
-            4,
-            "Codex usage limit reached: try again at 3:45 PM",
-            billing="plan",
-            next_step="restart the ticket after 3:45 PM",
-        )
-
-
-@dataclass
-class LoggedOutReviewer(FakeRuntime):
-    def review(self, session: Session) -> SessionResult:
-        return SessionResult.failed(StopReason.ERROR, "Codex is not logged in").with_next(
-            "run codex login, or set agents.reviewer.api_key_env"
-        )
+def fake_reviewer(tmp_path: Path, events: Path, login: str = "in") -> CodexRuntime:
+    args = (PY, str(HERE / "fake_codex.py"), str(events), str(tmp_path / "d.json"), "0", "end")
+    return CodexRuntime((*args, login))
 
 
 def test_c5_codex_a_quota_stop_ends_the_ticket_with_the_quota_status(
-    project: Project, tracker: InMemoryTracker
+    project: Project, tracker: InMemoryTracker, tmp_path: Path
 ) -> None:
-    routed = RoutedRuntime({"implementer": FakeRuntime(), "reviewer": QuotaReviewer()})
+    routed = RoutedRuntime(
+        {"implementer": FakeRuntime(), "reviewer": fake_reviewer(tmp_path, QUOTA)}
+    )
     outcome = flow.start(
         7,
         repo_root=project.root,
@@ -241,9 +242,11 @@ def test_c5_codex_a_quota_stop_ends_the_ticket_with_the_quota_status(
 
 
 def test_c5_codex_not_logged_in_ends_the_ticket_with_the_login_message(
-    project: Project, tracker: InMemoryTracker
+    project: Project, tracker: InMemoryTracker, tmp_path: Path
 ) -> None:
-    routed = RoutedRuntime({"implementer": FakeRuntime(), "reviewer": LoggedOutReviewer()})
+    routed = RoutedRuntime(
+        {"implementer": FakeRuntime(), "reviewer": fake_reviewer(tmp_path, REVIEW, "out")}
+    )
     outcome = flow.start(
         7,
         repo_root=project.root,
@@ -296,7 +299,7 @@ def test_c5_codex_the_key_variable_is_dropped_whatever_its_case_or_a_prefix(
         fake = HERE / "fake_codex.py"
         dump = tmp_path / "dump.json"
         adapter = CodexRuntime((PY, str(fake), str(REVIEW), str(dump), "0", "end", "out"), name)
-        adapter.run(session(tmp_path, env=base))
+        adapter.run(session(tmp_path, env={**base, name: "k"}))
         seen = json.loads(dump.read_text(encoding="utf-8"))["env"]
         assert not dropped & set(seen)
 

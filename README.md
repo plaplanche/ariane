@@ -53,9 +53,9 @@ The reviewer loads nothing from the tree under review (no hooks, settings or ins
 ### Reviewer on Codex
 
 The reviewer can run on the [Codex CLI](https://github.com/openai/codex) (install it and put
-`codex` on the PATH): `runtime = "codex"`, `model = "<model>"` and `tools = ["Read", "Glob", "Grep"]`
-in `[agents.reviewer]`. Ariane only drives the official CLI: a read-only `codex exec` with the
-prompt on standard input. Log in once with `codex login` (or `codex login --device-auth`); the
+`codex` on the PATH): `runtime = "codex"` and `model = "<model>"` in `[agents.reviewer]`. Ariane only drives the official CLI: a read-only `codex exec` with the
+prompt on standard input; the read-only sandbox, not `tools`, is what restricts the reviewer (it can
+run read-only shell commands, and `tools` has no effect on Codex). Log in once with `codex login` (or `codex login --device-auth`); the
 session then bills your ChatGPT plan and `ariane report` shows it as "covered by plan". Keep
 `~/.codex/auth.json` private, like a password: Ariane never reads, copies or logs it. Or set
 `api_key_env = "<variable>"` in `[agents.reviewer]`: that variable's value is given to the Codex

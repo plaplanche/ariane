@@ -24,6 +24,7 @@ NOT_LOGGED_IN = "Codex is not logged in"
 LOGIN_NEXT = "run codex login, or set agents.reviewer.api_key_env"
 PLAN = "plan"
 API = "api"
+ERROR_PREFIX = "error: "
 
 _FENCE = re.compile(r"```(?:json)?[ \t]*\n(.*?)\n[ \t]*```", re.DOTALL)
 _USAGE_LIMIT = re.compile(r"usage[ _]limit", re.IGNORECASE)
@@ -42,10 +43,6 @@ class CodexRuntime:
         self.api_key_env = api_key_env
         # The key's variable is the one login variable the reviewer's environment keeps.
         self.login_variables: tuple[str, ...] = (api_key_env,) if api_key_env else ()
-
-    @property
-    def billing(self) -> str:
-        return API if self.api_key_env else PLAN
 
     def command(self, session: Session) -> list[str]:
         return [
@@ -76,21 +73,41 @@ class CodexRuntime:
             version = ""
         return f"codex {version or '(version unknown)'}"
 
-    def logged_in(self, env: Mapping[str, str]) -> bool:
-        """`codex login status` says the CLI holds a login (Ariane never reads the credentials)."""
+    def login(self, env: Mapping[str, str]) -> str:
+        """What `codex login status` says: `chatgpt`, `api`, `none`, or an error text.
+
+        Ariane never reads the credentials; it only reads the CLI's one-line answer.
+        """
         try:
             done = process.run(
                 [*self.executable, "login", "status"], cwd=Path.cwd(), timeout_s=30, env=env
             )
-        except (process.CommandNotFoundError, OSError):
-            return True  # `run` reports the unstartable executable
-        return done.ok and "not logged in" not in done.output.lower()
+        except (process.CommandNotFoundError, OSError) as exc:
+            return f"{ERROR_PREFIX}{exc}"
+        text = done.output.lower()
+        if "not logged in" in text:
+            return "none"
+        if not done.ok:
+            tail = done.output.strip()[-OUTPUT_TAIL_CHARS:]
+            return f"{ERROR_PREFIX}codex login status exit {done.returncode}: {tail}"
+        return "chatgpt" if "chatgpt" in text else "api"
 
     def run(self, session: Session) -> SessionResult:
         env = self.environment(session)
-        if self.api_key_env is None and not self.logged_in(env):
-            return SessionResult.failed(StopReason.ERROR, NOT_LOGGED_IN).with_next(LOGIN_NEXT)
-        events = Events(session.max_tokens, self.billing)
+        if self.api_key_env is not None:
+            if not session.env.get(self.api_key_env):
+                message = f"agents.reviewer.api_key_env: variable {self.api_key_env} is not set"
+                return SessionResult.failed(StopReason.ERROR, message)
+            billing = API
+        else:
+            login = self.login(env)
+            if login == "none":
+                return SessionResult.failed(StopReason.ERROR, NOT_LOGGED_IN).with_next(LOGIN_NEXT)
+            if login.startswith(ERROR_PREFIX):
+                return SessionResult.failed(StopReason.ERROR, login[len(ERROR_PREFIX) :])
+            # Only a ChatGPT login is covered by a plan; an API-key login bills per token.
+            billing = PLAN if login == "chatgpt" else API
+        events = Events(session.max_tokens, billing)
         try:
             completed = process.stream(
                 self.command(session),
