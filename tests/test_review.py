@@ -264,6 +264,23 @@ def test_c10_out_of_scope_section_returns_text_ignores_case_and_stops() -> None:
     assert ticket.section(fenced, "Out of scope") == "```"
 
 
+def test_c10_prompt_checks_order_of_side_effects() -> None:
+    text = " ".join(_scope_prompt("## Context\nc\n").split())
+    rule = (
+        "- Check the order of side effects. Where the issue, the spec or the code relies on an"
+        " order of operations, on atomicity, on idempotent retries or on concurrent requests"
+        ' (words such as "before", "after", "in one statement", "atomically", "only if",'
+        ' "never overwritten", "retry", "concurrent"), follow each request path step by step and'
+        " list every write (database, storage, files, external calls, logs) in the order it"
+        " happens. A write that happens before the check that should guard it, a decision split"
+        " across separate statements that a concurrent request can interleave, or a retry that"
+        " can write twice is a blocking finding; name the two steps and the interleaving that"
+        " breaks them."
+    )
+    anchor = "that it is tested, and that the documentation it affects is updated. "
+    assert anchor + rule in text
+
+
 def test_c10_out_of_scope_prompt_holds_the_block_and_the_rule() -> None:
     text = _scope_prompt("## Out of scope\n- later work\n")
     assert 'kind="out-of-scope"' in text
