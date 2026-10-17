@@ -38,6 +38,9 @@ class Fake:
         self.owner = {"login": "Olivia", "type": "User"}
         self.permission_status = 200
         self.paths: list[str] = []
+        self.lag = 0
+        self.late: list[dict[str, Any]] | None = None
+        self.reads = 0
 
     @staticmethod
     def labeled(actor: str, when: str, name: str = "ariane") -> dict[str, Any]:
@@ -61,7 +64,10 @@ class Fake:
                 "updated_at": self.updated_at,
             }
         if route == "/repos/o/n/issues/5/events":
-            return 200, self.events
+            self.reads += 1
+            if self.reads <= self.lag:
+                return 200, self.events if self.late is not None else []
+            return 200, self.events + (self.late or [])
         if route == "/repos/o/n":
             return 200, {"full_name": "o/n", "owner": self.owner}
         prefix = "/repos/o/n/collaborators/"
@@ -105,8 +111,11 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Fake, str]]:
     server.server_close()
 
 
-def gate(url: str, label: str = "ariane") -> GitHubTracker:
-    return GitHubTracker(repository="o/n", token="t", api_url=url, ready_label=label)
+def gate(url: str, label: str = "ariane", sleeps: list[float] | None = None) -> GitHubTracker:
+    record = sleeps if sleeps is not None else []
+    return GitHubTracker(
+        repository="o/n", token="t", api_url=url, ready_label=label, sleep=record.append
+    )
 
 
 def test_c21_issue_gate_accepts_an_issue_labelled_by_a_writer_and_not_edited(
@@ -295,3 +304,90 @@ def test_c21_issue_gate_a_user_without_permission_record_cannot_write(
     state.events = [state.labeled("ghost", LABELLED)]
     with pytest.raises(IssueRefused, match="'ghost'"):
         gate(url).read_issue(5)
+
+
+def test_c21_issue_gate_retry_accepts_an_event_listed_from_the_third_read(
+    fake: tuple[Fake, str],
+) -> None:
+    state, url = fake
+    state.lag = 2
+    sleeps: list[float] = []
+    assert gate(url, sleeps=sleeps).read_issue(5).number == 5
+    assert sleeps == [1, 2]
+
+
+def test_c21_issue_gate_retry_refuses_after_five_reads_when_the_event_never_comes(
+    fake: tuple[Fake, str],
+) -> None:
+    state, url = fake
+    state.lag = 99
+    sleeps: list[float] = []
+    with pytest.raises(IssueRefused, match="no event shows who added the label `ariane`"):
+        gate(url, sleeps=sleeps).read_issue(5)
+    assert sleeps == [1, 2, 4, 8]
+    assert state.paths.count("/repos/o/n/issues/5/events") == 5
+    assert state.paths.count("/repos/o/n/issues/5") == 1
+
+
+def test_c21_issue_gate_retry_does_not_wait_for_an_absent_label_or_a_reader(
+    fake: tuple[Fake, str],
+) -> None:
+    state, url = fake
+    sleeps: list[float] = []
+    state.labels = ["bug"]
+    with pytest.raises(IssueRefused, match="does not carry"):
+        gate(url, sleeps=sleeps).read_issue(5)
+    state.labels = ["ariane"]
+    state.events = [state.labeled("rita", LABELLED)]
+    with pytest.raises(IssueRefused, match="cannot write"):
+        gate(url, sleeps=sleeps).read_issue(5)
+    assert sleeps == []
+    assert state.paths.count("/repos/o/n/issues/5/events") == 1
+
+
+def test_c21_issue_gate_retry_accepts_a_re_added_label_listed_on_the_second_read(
+    fake: tuple[Fake, str],
+) -> None:
+    state, url = fake
+    state.events = [state.labeled("wendy", BEFORE)]
+    state.late = [state.labeled("wendy", AFTER)]
+    state.updated_at = AFTER
+    state.lag = 1
+    sleeps: list[float] = []
+    assert gate(url, sleeps=sleeps).read_issue(5).number == 5
+    assert sleeps == [1]
+
+
+def test_c21_issue_gate_retry_refuses_a_change_after_the_label_after_five_reads(
+    fake: tuple[Fake, str],
+) -> None:
+    state, url = fake
+    state.events = [state.labeled("wendy", BEFORE)]
+    state.updated_at = AFTER
+    sleeps: list[float] = []
+    with pytest.raises(IssueRefused, match="changed after the label"):
+        gate(url, sleeps=sleeps).read_issue(5)
+    assert sleeps == [1, 2, 4, 8]
+    assert state.paths.count("/repos/o/n/issues/5/events") == 5
+
+
+def test_c21_issue_gate_retry_logs_each_retried_read_with_its_reason(
+    fake: tuple[Fake, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ariane import logs
+
+    records: list[tuple[str, str]] = []
+    monkeypatch.setattr(logs, "emit", lambda type_id, message: records.append((type_id, message)))
+    retried = "github.label_event_retry"
+    state, url = fake
+    state.lag = 99
+    with pytest.raises(IssueRefused):
+        gate(url, sleeps=[]).read_issue(5)
+    retries = [m for t, m in records if t == retried]
+    assert len(retries) == 4
+    assert "read 1 of the events retried in 1 s: no event lists the label" in retries[0]
+    records.clear()
+    state.labels = ["bug"]
+    with pytest.raises(IssueRefused):
+        gate(url, sleeps=[]).read_issue(5)
+    assert [t for t, _ in records if t == retried] == []
