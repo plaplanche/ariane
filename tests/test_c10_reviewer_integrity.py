@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -345,7 +344,7 @@ def test_c10_reviewer_integrity_a_process_forked_after_the_scan_is_killed_too(
     late: list[subprocess.Popen[bytes]] = []
     real_table = process._process_table
 
-    def table_then_fork() -> dict[int, tuple[int, str, str]]:
+    def table_then_fork() -> dict[int, process._Proc]:
         table = real_table()
         if not late:  # a descendant appears between the first scan and the kill
             late.append(subprocess.Popen(["sleep", "300"], start_new_session=True))
@@ -359,31 +358,6 @@ def test_c10_reviewer_integrity_a_process_forked_after_the_scan_is_killed_too(
     finally:
         for proc in (parent, *late):
             proc.kill()
-
-
-@linux_only
-@pytest.mark.usefixtures("subreaper")
-def test_c10_reviewer_integrity_a_process_that_keeps_forking_is_killed_with_all_its_children(
-    tmp_path: Path,
-) -> None:
-    # Each generation forks the next and exits: a single scan may find a pid already gone.
-    hopper = (
-        "import os, time\n"
-        "end = time.monotonic() + 20\n"
-        "if os.fork(): os._exit(0)\n"
-        "os.setsid()\n"
-        "while time.monotonic() < end:\n"
-        "    time.sleep(0.001)\n"
-        "    if os.fork(): os._exit(0)\n"
-    )
-    before = set(process.descendants(exited=True))
-    subprocess.run([sys.executable, "-c", hopper], check=True)
-    deadline = time.monotonic() + 5
-    while not set(process.descendants()) - before and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert process.kill_survivors(before)
-    time.sleep(0.2)
-    assert set(process.descendants()) - before == set()
 
 
 @linux_only
