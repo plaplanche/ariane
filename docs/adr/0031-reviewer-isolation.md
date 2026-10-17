@@ -72,9 +72,11 @@ An internal security review found three ways left to weaken the reviewer. Decide
    (`$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`) and `$OPENCODE_CONFIG`. An absent file
    is recorded as absent, so creating one is a change. The snapshot is part of the guard's
    snapshot, taken before the ticket's first setup command (so a setup cannot make its own
-   instruction file part of the baseline) and compared right after that setup, then after every
-   session, setup and check (in `ariane verify` it is taken before the first check): a difference stops the ticket as a
-   guard violation, before the review. Before each reviewer session the journal records the
+   instruction file part of the baseline) and compared right after every setup command (the
+   ticket's own and each replay tree's, before its check runs), then after every session and
+   check (in `ariane verify` it is taken before the first check and compared after each setup,
+   check and reviewer session): a difference stops the ticket as a guard violation, before the
+   review. Before each reviewer session the journal records the
    files present with their digests (`ticket.review.instructions`). This detects the residual
    vector above: a `CLAUDE.md` written into the temporary directory stops the ticket.
 2. **No silent truncation.** The review prompt always holds the untruncated
@@ -93,10 +95,12 @@ An internal security review found three ways left to weaken the reviewer. Decide
    scans repeat until every survivor is stopped and none is new; then they are killed, and the
    scans go on until one finds no survivor and no newly exited child (a process that forks and
    exits to change pids leaves one, since Ariane is the subreaper). The running descendants are
-   noted when the ticket starts; after each agent session, check and setup command (before a
-   failing setup is reported), what was killed is counted in `metrics.json`
-   (`surviving_processes`) and the ticket stops as a guard violation; a ticket stopped or
-   interrupted for another reason still counts them.
+   noted when the ticket starts. When a command exits by itself, every descendant it started
+   that still runs is named before its process group is killed, so an ordinary background
+   child counts as a survivor, not only one that left the group. After each agent session, check
+   and setup command (before a failing setup is reported), what was killed is counted in
+   `metrics.json` (`surviving_processes`) and the ticket stops as a guard violation; a ticket
+   stopped or interrupted for another reason still counts them.
 
 Choices the spec left open, taken as the simplest design that meets it:
 
@@ -108,6 +112,12 @@ Choices the spec left open, taken as the simplest design that meets it:
   ones included, so Ariane never reaps a child someone else waits for) taken just before that
   command started, so a process Ariane did not start through the command is never killed. The
   scans give up after 5 seconds (`process.survivors_remaining`); the ticket stops anyway.
+- `ariane verify` commits nothing when it refuses or is interrupted (a guard violation may have
+  changed the hooks a commit runs), so it writes that run's `metrics.json` (outcome `stopped`,
+  with its survivors and guard violations) to `<repo>.ariane/verify/<branch slug>/metrics.json`,
+  outside the repository, before removing its temporary records.
+- A command stopped at its time limit or by its caller has its group killed without counting
+  it: those children did not outlive the command.
 - A process an agent's own git starts in the background (for example an automatic `git gc`) and
   that is still running when the session ends counts as a survivor too.
 

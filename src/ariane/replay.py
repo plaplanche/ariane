@@ -75,7 +75,8 @@ def replay(
         return tree
 
     def set_up(check: CheckConfig, tree: Path) -> None:
-        error = run.setup(tree, check.setup if check.setup is not None else run.config.setup)
+        command = check.setup if check.setup is not None else run.config.setup
+        error = run.setup(tree, command, guard)
         if error is not None:
             raise Stop(
                 f"{error.reason} (in the working tree of check {check.name!r})",

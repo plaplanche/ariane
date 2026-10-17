@@ -171,9 +171,7 @@ class _TicketRun:
             self.processes_before = set(process.descendants(exited=True))
             # Taken before the setup: instruction files it writes are not part of the baseline.
             guard = self.snapshot()
-            setup_error = self.setup(self.worktree)
-            if setup_error is None and (setup_error := self._unchanged("setup", guard)):
-                self.metrics.guard_violation()
+            setup_error = self.setup(self.worktree, self.config.setup, guard)
             self.folder.create(self.issue)
             self.metrics.step("folder opened")
             self.folder.log(
@@ -228,17 +226,19 @@ class _TicketRun:
             listing,
         )
 
-    def setup(self, cwd: Path, command: tuple[str, ...] | None = None) -> Stop | None:
+    def setup(
+        self, cwd: Path, command: tuple[str, ...] | None, guard: dict[str, str]
+    ) -> Stop | None:
         """Run the setup command (C8) in `cwd` without credentials (it may run agent-written
-        code); an error is journaled once the folder exists."""
-        command = command or self.config.setup
+        code), then, before anything else runs, compare git and the instruction files to `guard`
+        (ADR 0031); an error is journaled once the folder exists."""
         if not command:
             return None
         try:
             done = process.run(command, cwd=cwd, timeout_s=SETUP_TIMEOUT_S, env=self.untrusted_env)
         except process.CommandNotFoundError as exc:
             return Stop(f"setup failed: {exc}", "install it or fix project.setup")
-        survived = self.survivors(f"setup `{' '.join(command)}`")
+        survived = self.survivors(f"setup `{' '.join(command)}`") or self._unchanged("setup", guard)
         if survived is not None:
             self.metrics.guard_violation()
             return survived

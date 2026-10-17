@@ -13,14 +13,15 @@
 | `Refused` | exception | The branch cannot be verified; carries `reason`, `next_action` and `exit_code`. |
 | `relative_folder(branch)` | function | The records folder of a branch, relative to the repository. |
 | `replay_path(repo_root, branch)` | function | Where the replay trees of a branch are (the name of tree `k` ends in `-<k>`). |
+| `stopped_metrics_path(repo_root, branch)` | function | Where a run that committed nothing keeps its `metrics.json`: `<repo>.ariane/verify/<branch slug>/metrics.json`. |
 | `verify(branch, ...)` | function | The entry point; returns an `Outcome`. |
 
 ## Behaviour and errors
 
 - `verify`: the entry point; returns an `Outcome` whose line gives the checks' summary, the verdict and the next action. Exit 0 only for a `go` with green blocking checks. Ctrl-C (`KeyboardInterrupt`, also raised through a killed reviewer or setup process tree) gives exit 130 (`EXIT_INTERRUPTED`) and the line "Stopped verifying <branch>: interrupted by the user. Next: run verify again."; the replay tree and the temporary records folder are removed and nothing is committed or journaled.
 - `Refused`: carries the exit code and next action; a tracker refusal (`TrackerError`, `IssueRefused`) passes its own through, so an issue refused by the issue gate (C21, ADR 0032) gives exit 2 before any checkout or review. The branch cannot be verified (unknown branch, uncommitted changes in the working tree that holds it, failed setup or reviewer).
-- Metrics (C19): the records also hold `metrics.json` (mode `verify`, the reviewer sessions, outcome `delivered` when green, else `stopped`).
-- Git guard (C11, ADR 0017, ADR 0028): a snapshot of git (as `ariane start` takes) is taken before the first check and compared after every check and the reviewer, before any other git command; a change is refused with the wording of `start`. The base branch's instructions are read once, before the first check. The remote-tracking ref of the base branch is part of the snapshot, and so are the instruction files the reviewer can load from outside its tree (`git.instruction_snapshot`; a change is refused as "changed instruction files the reviewer can load"). Each command's teardown kills what it left running (`process.kill_survivors`); after each setup (before a failing setup is refused), check and reviewer session, what was killed (`process.take_killed`) is counted in `metrics.json` and refused, and on any end of `run` (a refusal, Ctrl-C) the survivors are killed again before the records folder is removed. The review prompt gets the untruncated `git diff --name-status` of the branch, and a cut diff is journaled with the missing files (ADR 0031).
+- Metrics (C19): the records also hold `metrics.json` (mode `verify`, the reviewer sessions, survivors and guard violations, outcome `delivered` when green, else `stopped`); a refused or interrupted run writes it to `stopped_metrics_path` instead.
+- Git guard (C11, ADR 0017, ADR 0028): a snapshot of git (as `ariane start` takes) is taken before the first check and compared after every check and the reviewer, before any other git command; a change is refused with the wording of `start`. The base branch's instructions are read once, before the first check. The remote-tracking ref of the base branch is part of the snapshot, and so are the instruction files the reviewer can load from outside its tree (`git.instruction_snapshot`; a change is refused as "changed instruction files the reviewer can load"). Each command's teardown kills what it left running (`process.kill_survivors`); the snapshot is compared right after each setup, before its check runs; after each setup (before a failing setup is refused), check and reviewer session, what was killed (`process.take_killed`) is counted in `metrics.json` and refused as a guard violation, and on any end of `run` (a refusal, Ctrl-C) the survivors are killed again and counted. A run that commits nothing (a refusal, Ctrl-C) writes its `metrics.json` (outcome `stopped`) to `stopped_metrics_path` before the temporary records folder is removed (ADR 0031). The review prompt gets the untruncated `git diff --name-status` of the branch, and a cut diff is journaled with the missing files (ADR 0031).
 - Records: written with `ticket.ensure_folder` and `ticket.write_file` (a symlink is replaced, never followed) and committed as regular files: each record path leaves the index first.
 - `replay_path`, `relative_folder`: where the replay tree and the records are.
 
@@ -59,6 +60,7 @@ class verify {
   <<module>>
   relative_folder(branch) str
   replay_path(repo_root, branch) Path
+  stopped_metrics_path(repo_root, branch) Path
   verify(branch, repo_root, config, runtime, environ, tracker, issue_number) Outcome
 }
 class Outcome

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import shutil
 import tempfile
 from collections.abc import Mapping, Sequence
@@ -48,6 +49,12 @@ def relative_folder(branch: str) -> str:
 def replay_path(repo_root: Path, branch: str) -> Path:
     slug = branch.replace("/", "-")
     return repo_root.parent / f"{repo_root.name}.ariane" / "worktrees" / f"verify-{slug}"
+
+
+def stopped_metrics_path(repo_root: Path, branch: str) -> Path:
+    """Where a verification that ended without committing keeps its `metrics.json`."""
+    slug = branch.replace("/", "-")
+    return repo_root.parent / f"{repo_root.name}.ariane" / "verify" / slug / METRICS
 
 
 def verify(
@@ -173,13 +180,28 @@ class _Verification:
     def run(self) -> Outcome:
         replay = replay_path(self.repo_root, self.branch)
         records = Path(tempfile.mkdtemp(prefix="ariane-verify-"))
+        committed = False
         try:
-            return self._replay_and_review(replay, records)
+            outcome = self._replay_and_review(replay, records)
+            committed = True
+            return outcome
         finally:
             # A stop or Ctrl-C may come before the survivors were counted: none outlives verify.
             process.kill_survivors(self.processes_before)
-            process.take_killed()
+            self.metrics.surviving_processes(len(process.take_killed()))
+            if not committed:
+                self._keep_stopped_metrics()
             shutil.rmtree(records, ignore_errors=True)
+
+    def _keep_stopped_metrics(self) -> None:
+        """Nothing is committed on a refusal or Ctrl-C (a guard violation may have changed the
+        hooks a commit runs): the metrics go outside the repository instead (ADR 0031)."""
+        self.metrics.finish("stopped")
+        path = stopped_metrics_path(self.repo_root, self.branch)
+        # Best effort: a failure to record must not hide why verify stopped.
+        with contextlib.suppress(OSError):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            ticket.write_file(path, self.metrics.render())
 
     def _tree_for(self, replay: Path, k: int) -> Path:
         tree = replay.with_name(f"{replay.name}-{k}")
@@ -199,6 +221,7 @@ class _Verification:
         except process.CommandNotFoundError as exc:
             raise Refused(f"setup failed: {exc}{where}", "install it or fix the setup") from None
         self._survivors(f"setup `{' '.join(command)}`{where}")
+        self._guard_unchanged(f"setup `{' '.join(command)}`{where}")
         if not done.ok:
             raise Refused(
                 f"setup `{' '.join(command)}` failed (exit {done.returncode}){where}",
@@ -297,19 +320,7 @@ class _Verification:
         """Untrusted code ran: nothing it started still runs, and git, the instruction files
         the reviewer can load, the branch and the replay tree are as they were."""
         self._survivors(after)
-        changes = git.snapshot_changes(self.guard, self._snapshot())
-        written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
-        if written:
-            raise Refused(
-                f"{after} changed instruction files the reviewer can load ({'; '.join(written)})",
-                "inspect and remove them (they are outside the repository)",
-            )
-        if changes:
-            raise Refused(
-                f"{after} changed git configuration, hooks or local branches"
-                f" ({'; '.join(changes)})",
-                "inspect .git/config, .git/hooks and the branches",
-            )
+        self._guard_unchanged(after)
         moved = git.out(["rev-parse", f"refs/heads/{self.branch}"], self.repo_root) != self.head
         if git.current_branch(replay) or git.head(replay) != self.head or moved:
             raise Refused(f"{after} moved a head", "inspect the branch and the replay tree")
@@ -330,12 +341,32 @@ class _Verification:
                     "check it was not the agent, then run verify again",
                 )
 
+    def _guard_unchanged(self, after: str) -> None:
+        """Refuse when git or the instruction files the reviewer can load differ from the
+        guard's snapshot."""
+        changes = git.snapshot_changes(self.guard, self._snapshot())
+        written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
+        if written:
+            self.metrics.guard_violation()
+            raise Refused(
+                f"{after} changed instruction files the reviewer can load ({'; '.join(written)})",
+                "inspect and remove them (they are outside the repository)",
+            )
+        if changes:
+            self.metrics.guard_violation()
+            raise Refused(
+                f"{after} changed git configuration, hooks or local branches"
+                f" ({'; '.join(changes)})",
+                "inspect .git/config, .git/hooks and the branches",
+            )
+
     def _survivors(self, after: str) -> None:
         """Refuse when `after` left processes running; each command's teardown killed them."""
         process.kill_survivors(self.processes_before)
         killed = process.take_killed()
         if killed:
             self.metrics.surviving_processes(len(killed))
+            self.metrics.guard_violation()
             raise Refused(
                 f"{after} left {len(killed)} process(es) running after it ended; Ariane killed"
                 " them",

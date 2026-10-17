@@ -145,9 +145,12 @@ def take_killed() -> dict[int, str]:
     return taken
 
 
-def kill_survivors(before: Collection[int]) -> dict[int, str]:
-    """Kill the descendants that are not in `before` and reap them; returns them, and keeps
-    them for `take_killed`.
+def kill_survivors(
+    before: Collection[int], left: Mapping[int, str] | None = None
+) -> dict[int, str]:
+    """Kill the descendants that are not in `before` and reap them; returns them with `left`
+    (what the command left in its own group, already killed with it), and keeps them all for
+    `take_killed`.
 
     Called once a session or command ended: anything it started is still running only if it
     left its process group (C10, ADR 0031). A scan of `/proc` is not atomic, so each survivor
@@ -186,6 +189,7 @@ def kill_survivors(before: Collection[int]) -> dict[int, str]:
             time.sleep(0.01)
         elif alive:
             time.sleep(0.01)  # a stop signal is not delivered yet
+    found = dict(left or {}) | found
     if found:
         listing = ", ".join(f"{name} ({pid})" for pid, name in sorted(found.items()))
         logs.emit("process.survivors_killed", f"Killed processes that outlived it: {listing}")
@@ -251,7 +255,8 @@ def run(
 
     The process gets its own process group. When it exits or reaches its time limit, the whole
     group is killed, so background children cannot outlive it or hold its output open; on Linux,
-    so is any descendant that left the group (`kill_survivors`, `take_killed`).
+    so is any descendant that left the group, and every descendant still running when the
+    command exited by itself is counted (`kill_survivors`, `take_killed`).
     """
     return _execute(argv, cwd, timeout_s, env, input_text, merge_stderr, None)
 
@@ -318,11 +323,16 @@ def _execute(
     if input_text is not None and proc.stdin is not None:
         threading.Thread(target=_feed, args=(proc.stdin, input_text), daemon=True).start()
     timed_out = False
+    left: dict[int, str] = {}
     try:
         try:
             proc.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired:
             timed_out = True
+        if not timed_out and not stop.is_set():
+            # The command ended by itself: what it started and still runs outlived it, in its
+            # group or not. Named before the group is killed, so it is counted (C10, ADR 0031).
+            left = {pid: name for pid, name in descendants().items() if pid not in before}
     finally:
         # Whatever ended the wait (exit, timeout, Ctrl-C, any error), nothing outlives the call.
         kill_tree(proc.pid)
@@ -330,7 +340,7 @@ def _execute(
         with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=_DRAIN_SECONDS)
         # What left the group dies too, before the caller goes on (C10, ADR 0031).
-        kill_survivors(before)
+        kill_survivors(before, left)
     completed = Completed(
         argv=tuple(argv),
         returncode=None if timed_out else proc.returncode,
