@@ -1,0 +1,60 @@
+# Product brief: Keep Ariane's own virtual environment and ARIANE_* variables out of the project's checks and agents (C9, C5, C22)
+
+- Source: issue #132 (https://github.com/plaplanche/ariane/issues/132)
+
+## Issue
+
+Prefilled from the issue title and body (never its comments).
+
+## Context
+
+Ariane often runs from its own virtual environment (`uv run ariane ...`, or an activated venv): `VIRTUAL_ENV` names that environment and its scripts directory comes first on `PATH`. Every child process that runs the project's code (the setup, the checks, the agent sessions) inherits both, so the project's `uv run`, `python`, `pytest` or `ruff` can resolve to Ariane's environment instead of the project's. In the benchmark on a reference project (a TypeScript Worker and a Python node), every Ariane run had to be wrapped in `env -u VIRTUAL_ENV -u ARIANE_CONFIG` to get checks that behave as in CI. A replay that does not run what CI runs breaks C9; an agent environment that carries Ariane's own settings breaks C5 and C22 (Ariane's configuration is not the project's).
+
+## Current state
+
+- `src/ariane/context.py:110-145`: `untrusted_environment` builds the environment of every agent session (`src/ariane/flow.py:147-155`, `src/ariane/verify.py:127-132`) and of the setup and checks (`src/ariane/flow.py:156-158`, used at `flow.py:198` and `src/ariane/replay.py:42`; `src/ariane/verify.py:133-135`). It drops the tracker token, credential variables and `ARIANE_CONFIG` (`context.py:132-133`, since #87); every other variable passes unchanged (`context.py:128-139`), `VIRTUAL_ENV` and `PATH` included.
+- `ARIANE_LOG_LEVEL` (`src/ariane/logs.py:19`) and any other `ARIANE_*` variable also pass to the project's code; the runtimes add `ARIANE_ROLE` themselves afterwards (`src/ariane/claude_code.py:94`, `src/ariane/opencode.py:89`).
+- `ARIANE_CONFIG` already does not reach the children. The benchmark's `-u ARIANE_CONFIG` came from the operator's shell: Ariane itself reads `ARIANE_CONFIG` (`src/ariane/config.py:161`), which is intended and not changed here.
+
+## Decided spec
+
+- `untrusted_environment` also withholds, for every caller (agents, setup, checks, commit hooks):
+  - `VIRTUAL_ENV` and `VIRTUAL_ENV_PROMPT`, whatever their value (a virtual environment of the main checkout is wrong for a ticket's working tree too);
+  - every `PATH` entry equal to the scripts directory of the withheld `VIRTUAL_ENV` (`<VIRTUAL_ENV>/bin` on POSIX, `<VIRTUAL_ENV>\Scripts` on Windows), and the scripts directory of the interpreter running Ariane when it runs in a virtual environment (`sys.prefix != sys.base_prefix`, `sysconfig.get_path("scripts")`). Entries are compared after `os.path.normcase(os.path.normpath(...))`; the other entries keep their order. The variable's name is matched without case (`Path` on Windows) and keeps its original spelling;
+  - every variable whose upper-cased name starts with `ARIANE_`. `ARIANE_ROLE` is still added by the runtimes after this function, unchanged.
+- No other variable changes (`PYTHONPATH`, `CONDA_*`, `UV_*` stay as they are: see Out of scope).
+- A short ADR (next free number) records the rule "Ariane's own environment is not the project's" and why the whole `ARIANE_` prefix is withheld rather than a list.
+
+## Release note
+
+Fixed: the project's setup, checks and agents no longer see Ariane's own virtual environment or `ARIANE_*` variables.
+
+## Acceptance criteria
+
+- Tests named `test_c9_own_environment_*` show, with paths built from `os.path.join` and `os.pathsep` so that they run on Windows, macOS and Linux:
+  - from a base environment holding `VIRTUAL_ENV=<x>`, `PATH=<x>/<scripts><pathsep><other>`, `ARIANE_LOG_LEVEL` and `ARIANE_CONFIG`, the result holds no `VIRTUAL_ENV`, no `ARIANE_*`, and `PATH` is `<other>`;
+  - a `PATH` without the virtual environment's entry is unchanged;
+  - with `login_variables` (an agent session) the same variables are withheld.
+- An end-to-end test with the fake runtime: a ticket whose `environ` holds `VIRTUAL_ENV` runs a check `python -c "import os, sys; sys.exit('VIRTUAL_ENV' in os.environ)"` that passes in the replay.
+- All checks in CLAUDE.md pass.
+
+## Acceptance checklist
+
+- [ ] `uv run pytest -k c9_own_environment` runs at least 4 tests and they pass.
+- [ ] The new ADR is in `docs/adr/`.
+- [ ] All checks in CLAUDE.md pass.
+- [ ] Definition of done, documentation (C25): `docs/architecture/modules/context.md` (behaviour and errors, workflow); README "While a ticket runs" says in one sentence what the project's code does not receive; generated references and `docs/logs.md` regenerated if they change.
+
+## Out of scope
+
+- Other interpreter or tool variables (`PYTHONPATH`, `PYTHONHOME`, `CONDA_*`, `UV_*`): no evidence yet.
+- How Ariane itself reads `ARIANE_CONFIG`.
+- The environment of Ariane's own push (`git.push`).
+
+## Related
+
+#87 (ARIANE_CONFIG withheld), ADR 0024, spec C5, C9, C21, C22. Benchmark findings in `docs/benchmark.md` (#130).
+
+
+---
+_Generated by [Claude Code](https://claude.ai/code)_
