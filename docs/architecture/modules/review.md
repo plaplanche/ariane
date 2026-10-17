@@ -31,6 +31,8 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 
 When the issue has an `Out of scope` section (`ticket.section`), the prompt shows it again as its own escaped untrusted block (`kind="out-of-scope"`) and the rules say that a finding about that work is never blocking: minor, with "out of scope" in its title, or left out. This is a framed opinion; `settle` is unchanged.
 
+Right after the "Be adversarial" rule, the prompt asks the reviewer to check the order of side effects: where the issue, the spec or the code relies on an order, atomicity, idempotent retries or concurrent requests, it follows each request path step by step and lists every write in order. A write before the check that should guard it, a decision split across statements that a concurrent request can interleave, or a retry that can write twice is a blocking finding that names the two steps and the interleaving.
+
 The reviewer's prompt also states, as a fact from Ariane, the mapped documents the change left untouched (C25). It says "all blocking checks green" only when they are, else it lists the blocking checks that failed.
 The paths of those documents come from the agent, so each goes in its own escaped `<untrusted-ticket kind="paths">` block; only the sentence saying Ariane found them is outside (C21).
 
