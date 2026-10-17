@@ -178,6 +178,9 @@ def kill_survivors(
         if not alive and not reaped:
             break
         if time.monotonic() > deadline:
+            # Not all stopped in time (one may sit in uninterruptible I/O): kill them anyway,
+            # the signal is queued and none is left running unsignalled.
+            _signal(alive, signal.SIGKILL)
             listing = ", ".join(f"{name} ({pid})" for pid, (_, name) in sorted(alive.items()))
             logs.emit("process.survivors_remaining", f"Could not kill: {listing or 'none'}")
             found.update({pid: name for pid, (_, name) in alive.items()})

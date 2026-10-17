@@ -117,7 +117,9 @@ Choices the spec left open, taken as the simplest design that meets it:
 - The survivors are killed in each command's teardown, compared with the descendants (exited
   ones included, so Ariane never reaps a child someone else waits for) taken just before that
   command started, so a process Ariane did not start through the command is never killed. The
-  scans give up after 5 seconds (`process.survivors_remaining`); the ticket stops anyway.
+  scans give up after 5 seconds (`process.survivors_remaining`), after sending `SIGKILL` to every
+  survivor still there, stopped or not (one in uninterruptible I/O gets it queued); the ticket
+  stops anyway.
 - `ariane verify` commits nothing when it refuses or is interrupted (a guard violation may have
   changed the hooks a commit runs), so it writes that run's `metrics.json` (outcome `stopped`,
   with its survivors and guard violations) to `<repo>.ariane/verify/<branch slug>/metrics.json`,
