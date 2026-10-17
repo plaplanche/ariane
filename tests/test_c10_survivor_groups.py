@@ -131,6 +131,9 @@ def test_c10_survivor_groups_a_zombie_group_is_read_before_it_is_reaped(
     assert process.kill_survivors(set()) == {}
     assert (300_000, SIGSTOP) in killpg
     assert (300_001, SIGSTOP) in killpg
+    # The scan after the reap finds nothing: the stopped groups are still killed (review of #188).
+    assert (300_000, SIGKILL) in killpg
+    assert (300_001, SIGKILL) in killpg
 
 
 @linux_only
@@ -143,3 +146,21 @@ def test_c10_survivor_groups_at_the_deadline_the_groups_found_get_sigkill(
     assert process.kill_survivors(set()) == {stuck: "stuck"}
     assert (400_000, SIGKILL) in killpg
     assert (400_001, SIGKILL) in killpg
+
+
+@linux_only
+def test_c10_survivor_groups_a_group_stays_protected_after_its_process_from_before_exits(
+    monkeypatch: pytest.MonkeyPatch, killpg: list[tuple[int, int]]
+) -> None:
+    """Review of #188: the older process leaves after the first scan; its group, which a new
+    process joined, is never signalled in a later scan."""
+    me = os.getpid()
+    first = {
+        999_980: _Proc(me, "S", "older", 500_000, 500_001),
+        999_981: _Proc(me, "S", "joined", 500_000, 500_001),
+    }
+    later = {999_981: _Proc(me, "T", "joined", 500_000, 500_001)}
+    scans = iter([first])
+    monkeypatch.setattr(process, "_process_table", lambda: next(scans, later))
+    process.kill_survivors({999_980})
+    assert {group for group, _ in killpg} & {500_000, 500_001} == set()

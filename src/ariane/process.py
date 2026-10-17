@@ -181,12 +181,15 @@ def kill_survivors(
         return {}
     found: dict[int, str] = {}
     groups: set[int] = set()
+    killed: set[int] = set()  # the groups already sent SIGKILL
     me = os.getpid()
+    # 0 would be this process's own group for `killpg`; a group of a process in `before` stays
+    # protected even after that process is gone.
+    kept = {0, os.getpgid(0), os.getsid(0)}
     deadline = time.monotonic() + _REAP_SECONDS
     while True:
         table = _process_table()
-        # 0 would be this process's own group for `killpg`.
-        kept = {0, os.getpgid(0), os.getsid(0)} | _groups(table, before)
+        kept |= _groups(table, before)
         tree = _tree(table)
         exited = {p for p, proc in table.items() if proc.parent == me and proc.state == "Z"}
         # Read from the scan's table, before the exited ones are reaped.
@@ -200,11 +203,19 @@ def kill_survivors(
             if pid not in before and table[pid].state not in _GONE
         }
         if not alive and not reaped and not new_groups:
-            break
+            if not groups - killed:
+                break
+            # Nothing seen running, but groups found earlier were only stopped: kill them, then
+            # scan again for what that leaves to reap.
+            _signal_groups(groups - killed, signal.SIGKILL)
+            killed |= groups
+            time.sleep(0.01)
+            continue
         if time.monotonic() > deadline:
             # Not all stopped in time (one may sit in uninterruptible I/O): kill them anyway,
             # the signal is queued and none is left running unsignalled.
             _signal_groups(groups, signal.SIGKILL)
+            killed |= groups
             _signal(alive, signal.SIGKILL)
             listing = ", ".join(f"{name} ({pid})" for pid, (_, name) in sorted(alive.items()))
             logs.emit("process.survivors_remaining", f"Could not kill: {listing or 'none'}")
@@ -217,6 +228,7 @@ def kill_survivors(
             found.update(new)
         elif all(state in ("T", "t") for state, _ in alive.values()):
             _signal_groups(groups, signal.SIGKILL)
+            killed |= groups
             _signal(alive, signal.SIGKILL)
             time.sleep(0.01)
         else:

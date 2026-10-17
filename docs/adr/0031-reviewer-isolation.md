@@ -145,10 +145,12 @@ the process kept running. Decided for C10:
 1. **Kill by group and session too.** The `/proc` scan also keeps each process's process group
    and session. Every process a scan finds that is not in `before`, running or exited and about to
    be reaped, adds its process group and its session to the groups to stop, unless Ariane belongs
-   to that group or session (`os.getpgid(0)`, `os.getsid(0)`) or a process in `before` does. Each
+   to that group or session (`os.getpgid(0)`, `os.getsid(0)`) or a process in `before` does (once
+   seen with such a process, a group stays protected for the rest of the scans). Each
    scan that finds a new process or group sends `SIGSTOP` to every such group (`killpg`) as well
    as to the new pids; once a scan finds nothing new and all are stopped, they get `SIGKILL`, the
-   groups and the pids. Every process of those groups not in `before` is found, stopped, counted
+   groups and the pids; a scan that finds nothing left still kills the groups that were only
+   stopped before the scans end. Every process of those groups not in `before` is found, stopped, counted
    and returned like a descendant. A group stopped as a whole cannot fork, so the running
    generation is caught by the next scan.
 2. **Read the group before reaping.** A zombie's `stat` still holds its process group and
