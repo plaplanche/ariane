@@ -18,16 +18,14 @@ tools = ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
 max_budget_usd = 10.0
 timeout_minutes = 30
 
-# Runs on the CLI's own login (`codex login --device-auth` with ChatGPT): no api_key_env, and
-# OpenAI key variables are removed from its environment (ADR 0043). A CLI logged in with an
-# API key would bill per token: max_tokens caps that case (ADR 0044).
+# Runs on the CLI's ChatGPT login (`codex login --device-auth`): with no api_key_env, an API-key
+# login stops the ticket instead of billing per token (ADR 0043, ADR 0044).
 [agents.reviewer]
 runtime = "codex"
 model = "gpt-6-astra"
 tools = ["Read", "Glob", "Grep"]
 max_budget_usd = 3.0
 timeout_minutes = 20
-max_tokens = 2000000
 
 [[checks]]
 name = "lint"

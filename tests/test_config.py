@@ -219,9 +219,8 @@ def test_c22_config_path_a_folder_is_not_reported_as_missing(tmp_path: Path) -> 
 
 
 def test_c10_own_config_opus_implements_codex_reviews_on_the_plan() -> None:
-    """ADR 0044: Ariane's own tickets; the reviewer never holds an API key and has a token cap."""
+    """ADR 0044: Ariane's own tickets; the reviewer never holds an API key (plan login only)."""
     cfg = config.load(Path(__file__).resolve().parent.parent, {})
     assert (cfg.implementer.runtime, cfg.implementer.model) == ("claude-code", "claude-opus-5-5")
     assert (cfg.reviewer.runtime, cfg.reviewer.model) == (config.CODEX, "gpt-6-astra")
     assert cfg.reviewer.api_key_env is None
-    assert cfg.reviewer.max_tokens is not None
