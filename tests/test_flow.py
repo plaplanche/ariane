@@ -441,3 +441,25 @@ def test_c23_records_a_project_ignoring_work_does_not_deliver_a_ticket_without_r
     outcome = start(project, tracker, FakeRuntime())
     assert outcome.exit_code != 0
     assert project.remote_branches().keys() == {"main"}
+
+
+def test_c9_own_environment_does_not_reach_the_checks(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    code = (
+        "import os, sys; sys.exit('VIRTUAL_ENV' in os.environ or 'ARIANE_LOG_LEVEL' in os.environ)"
+    )
+    checks = (CheckConfig("own environment", (PY, "-c", code), True, 1),)
+    outcome = flow.start(
+        7,
+        repo_root=project.root,
+        config=make_config(checks=checks),
+        tracker=tracker,
+        runtime=FakeRuntime(),
+        environ={
+            **environ(),
+            "VIRTUAL_ENV": str(project.root / ".venv"),
+            "ARIANE_LOG_LEVEL": "debug",
+        },
+    )
+    assert outcome.exit_code == 0, outcome.line

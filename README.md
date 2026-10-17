@@ -197,6 +197,8 @@ merged pull request and the count of steps skipped or gates bypassed; Ariane's c
 
 ## While a ticket runs
 
+The project's setup, checks and agents do not receive Ariane's own virtual environment (`VIRTUAL_ENV` and its scripts directory on `PATH`) or any `ARIANE_*` variable.
+
 Nobody runs git commands in the repository while a ticket runs. Ariane checks that the agent
 changed nothing outside the ticket branch (git configuration, hooks, local branches, the
 remote). A merge on the base branch (a fast-forward) does not stop the ticket; any other remote

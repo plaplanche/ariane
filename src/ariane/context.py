@@ -5,11 +5,11 @@ from __future__ import annotations
 import os
 import re
 import sys
+import sysconfig
 from collections.abc import Mapping, Sequence
 
 from ariane import git
 from ariane.config import (
-    CONFIG_ENV,
     DEFAULT_DEFINITION_OF_DONE,
     NO_DOCUMENTATION,
     CheckConfig,
@@ -23,6 +23,8 @@ _CLOSING_TAG = re.compile(rf"<\s*/\s*{UNTRUSTED_TAG}", re.IGNORECASE)
 # Variables that can carry a credential; never given to an agent or to code it wrote.
 _SECRET_NAME = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|PRIVATE_?KEY")
 _CREDENTIAL_CHANNELS = ("SSH_AUTH_SOCK", "SSH_ASKPASS", "GIT_ASKPASS", "SUDO_ASKPASS")
+_OWN_PREFIX = "ARIANE_"
+_VENV_VARIABLES = ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT")
 
 
 def implementer_prompt(
@@ -117,7 +119,8 @@ def untrusted_environment(
 ) -> dict[str, str]:
     """The environment of an agent session or of checks running code an agent wrote.
 
-    No credential variable, no `ARIANE_CONFIG`, no SSH agent, and a git that cannot push. With
+    No credential variable, no `ARIANE_*` variable, no virtual environment of Ariane's (nor its
+    scripts directory on `PATH`, ADR 0040), no SSH agent, and a git that cannot push. With
     `keep_agent_login`, the runtime's own login variables are kept (an agent session needs them;
     checks get none). An entry ending in `_` is a prefix, any other is an exact name (ADR 0024).
     """
@@ -125,12 +128,16 @@ def untrusted_environment(
     kept = tuple(v.upper() for v in login_variables)
     env = {}
     token_name = token_env.upper()
+    own_scripts = _own_scripts_directories(base)
     for name, value in base.items():
         upper = name.upper()  # Windows environment names are case-insensitive
         if upper == token_name:
             continue  # the tracker token never passes, whatever its name
-        if upper == CONFIG_ENV.upper():
-            continue  # Ariane's own configuration, not that of the code a ticket runs
+        if upper.startswith(_OWN_PREFIX) or upper in _VENV_VARIABLES:
+            continue  # Ariane's own settings and environment, not the project's
+        if upper == "PATH":
+            env[name] = _without_entries(value, own_scripts)
+            continue
         if _is_login_variable(upper, kept):
             env[name] = value
         elif upper in _CREDENTIAL_CHANNELS or _SECRET_NAME.search(upper):
@@ -143,6 +150,29 @@ def untrusted_environment(
     if is_root and keep_agent_login:  # Claude Code refuses bypassPermissions as root otherwise
         env["IS_SANDBOX"] = "1"
     return git.blocked_push_env(env, remotes)
+
+
+def _normal(path: str) -> str:
+    return os.path.normcase(os.path.normpath(path))
+
+
+def _own_scripts_directories(base: Mapping[str, str]) -> set[str]:
+    """The scripts directories of Ariane's virtual environment: `VIRTUAL_ENV`'s and its own."""
+    found: set[str] = set()
+    for name, value in base.items():
+        if name.upper() == "VIRTUAL_ENV" and value:
+            scripts = "Scripts" if sys.platform == "win32" else "bin"
+            found.add(_normal(os.path.join(value, scripts)))
+    if sys.prefix != sys.base_prefix:
+        found.add(_normal(sysconfig.get_path("scripts")))
+    return found
+
+
+def _without_entries(path: str, withheld: set[str]) -> str:
+    if not withheld:
+        return path
+    entries = [e for e in path.split(os.pathsep) if not e or _normal(e) not in withheld]
+    return os.pathsep.join(entries)
 
 
 def _is_login_variable(upper: str, kept: tuple[str, ...]) -> bool:
