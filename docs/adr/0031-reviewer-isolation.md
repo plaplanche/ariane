@@ -57,3 +57,51 @@ outside. A tree that cannot be built is removed at once, so the next run is not 
 - Keep `cwd` = tree and filter the settings sources: the probe shows the hook runs.
 - `--restricted` with the original tree: the `CLAUDE.md` is still loaded on read.
 - Keep the deny list of tools: it accepts `WebFetch`, `Task` and others by omission.
+
+## Amendment (#167, 2026-10-17)
+
+An internal security review found three ways left to weaken the reviewer. Decided for C10 and C26:
+
+1. **Instruction files outside the tree are guarded.** Ariane takes a snapshot of the digests of
+   the instruction files the configured reviewer runtime can load from outside the reviewer
+   tree: `CLAUDE.md` and `CLAUDE.local.md` in the system temporary folder (where the empty working
+   directory is made), in the reviewer tree's parent folder and in all their ancestors (as given
+   and resolved); the user-level Claude file (`$CLAUDE_CONFIG_DIR/CLAUDE.md`, else
+   `~/.claude/CLAUDE.md`, with `HOME` from the reviewer's environment); for opencode `AGENTS.md`,
+   `opencode.json`, `opencode.jsonc` and `config.json` of its global folder
+   (`$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`) and `$OPENCODE_CONFIG`. An absent file
+   is recorded as absent, so creating one is a change. The snapshot is part of the guard's
+   snapshot, taken before the implementer's session and compared after every session, setup and
+   check (and in `ariane verify` before the first check): a difference stops the ticket as a
+   guard violation, before the review. Before each reviewer session the journal records the
+   files present with their digests (`ticket.review.instructions`). This detects the residual
+   vector above: a `CLAUDE.md` written into the temporary directory stops the ticket.
+2. **No silent truncation.** The review prompt always holds the untruncated
+   `git diff --name-status` of the whole range (without `work/`, like the diff), in an
+   untrusted-data block. When the diff is over 200,000 characters it is cut there, the prompt names
+   the files whose hunks are missing or incomplete and tells the reviewer to read them in the tree,
+   the journal records them (`ticket.review.diff_truncated`) and the pull request body says the
+   diff given to the reviewer was truncated.
+3. **No surviving agent processes (Linux).** `ariane` sets `PR_SET_CHILD_SUBREAPER` at start, so
+   a process that leaves its process group (`setsid`, `setpgid`) is reparented to Ariane, not to
+   init. The running descendants are noted when the ticket starts; after each agent session,
+   check and setup command, any new one is killed and reaped, counted in `metrics.json`
+   (`surviving_processes`) and the ticket stops as a guard violation.
+
+Choices the spec left open, taken as the simplest design that meets it:
+
+- The ancestor files and the user-level Claude file are guarded for every reviewer runtime
+  (opencode and Codex also read `CLAUDE.md` files); for a Codex reviewer the snapshot also holds
+  `AGENTS.md`, `AGENTS.override.md` and `config.toml` of `$CODEX_HOME` (else `~/.codex`), its
+  global instructions and configuration.
+- The survivors check runs where the guard already runs (after each session, check and
+  reviewer session) and after each setup command; it compares with the descendants Ariane had
+  when the ticket started, so a process Ariane did not start through the ticket is never killed.
+- A process an agent's own git starts in the background (for example an automatic `git gc`) and
+  that is still running when the session ends counts as a survivor too.
+
+Residuals: on macOS and Windows no survivor is found (no subreaper; Job objects on Windows and a
+process scan on macOS are later work), so a process started in a new session there still outlives
+its session. Instruction files are guarded, not removed: one that was there before the ticket
+started (for example the owner's own `~/.claude/CLAUDE.md`) is still loaded by the reviewer;
+running the reviewer in bare mode needs an owner decision about logins and stays out of scope.

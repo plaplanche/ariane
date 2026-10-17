@@ -32,6 +32,7 @@ class Metrics:
         self.unchanged_fix_rounds = 0
         self.attempts = Attempts()
         self.guard_violations = 0
+        self.surviving = 0
         self.blocking_red = 0
         self.first_pass_verdict = NOT_REVIEWED
         self.outcome = "running"
@@ -83,6 +84,10 @@ class Metrics:
         """The post-session check found a change it forbids (C11)."""
         self.guard_violations += 1
 
+    def surviving_processes(self, count: int) -> None:
+        """Processes that outlived a session or command and were killed (C10)."""
+        self.surviving += count
+
     def delivered_red(self, count: int) -> None:
         """The number of blocking checks that were red when the ticket was delivered (C19)."""
         self.blocking_red = count
@@ -103,6 +108,7 @@ class Metrics:
             "mode": self.mode,
             "started": self.started,
             "steps": self.steps,
+            "surviving_processes": self.surviving,
             "sessions": self.sessions,
             "rounds": self.rounds,
             "unchanged_fix_rounds": self.unchanged_fix_rounds,

@@ -37,6 +37,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     logs.configure(level)
     process.make_undumpable()
+    process.set_child_subreaper()
     try:
         root = git.repo_root(Path.cwd())
     except git.GitError as exc:

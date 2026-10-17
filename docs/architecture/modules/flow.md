@@ -37,6 +37,9 @@
 - `worktree_path`, `branch_name`: where a ticket lives.
 - Shadow mode (C19, ADR 0036): delivery is the overridable `_TicketRun._deliver`; [shadow](shadow.md) subclasses the run, with its own preparation, no remote check and a local record instead of the push.
 - Guard violations (C19): `verify` counts each `Stop` of the post-session check in the metrics before raising it.
+- Reviewer instruction files (C10, ADR 0031): the guard's snapshot also holds `git.instruction_snapshot` of the folders the reviewer can load instructions from (`review_session.instruction_dirs` of `<n>-review`) for the configured reviewer runtime and its environment; it is taken before the implementer's session, so an instruction file written outside the repository by a session, a setup or a check stops the ticket before the review ("<step> changed instruction files the reviewer can load", the changed paths in the journal).
+- Surviving processes (C10, ADR 0031): the running descendants are noted when the ticket starts; after each setup command (`setup`) and at the start of every post-session check (`verify`: after each agent session, check and reviewer session), `survivors` kills any new one with `process.kill_survivors`, counts them in `metrics.json` (`surviving_processes`) and stops the ticket as a guard violation ("<step> left N process(es) running after it ended"). It finds them on Linux only.
+- Truncated diff (C10, ADR 0031): `run.truncated` keeps the files whose hunks the last reviewed diff lacked; the delivery says so in the pull request body.
 
 ## Workflow
 
@@ -112,6 +115,7 @@ flowchart LR
   flow --> redact
   flow --> replay
   flow --> review
+  flow --> review_session
   flow --> runtime
   flow --> stop
   flow --> ticket

@@ -54,6 +54,7 @@ flowchart TD
   flow --> redact
   flow --> replay
   flow --> review
+  flow --> review_session
   flow --> runtime
   flow --> stop
   flow --> ticket
@@ -93,6 +94,7 @@ flowchart TD
   review --> tracker
   review_session --> checks
   review_session --> config
+  review_session --> git
   review_session --> metrics
   review_session --> review
   review_session --> runtime

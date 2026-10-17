@@ -9,7 +9,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
@@ -19,6 +19,9 @@ from ariane import logs
 # After the process exits or is killed, how long to wait for its pipes to close.
 _DRAIN_SECONDS = 10.0
 _PR_SET_DUMPABLE = 4
+_PR_SET_CHILD_SUBREAPER = 36
+# After killing the processes that outlived a session, how long to wait for them to be gone.
+_REAP_SECONDS = 2.0
 
 
 class CommandNotFoundError(Exception):
@@ -66,6 +69,94 @@ def make_undumpable() -> None:
             raise OSError(ctypes.get_errno(), "prctl(PR_SET_DUMPABLE) failed")
     except (OSError, AttributeError) as exc:
         logs.emit("process.undumpable_failed", f"Could not make the process undumpable: {exc}")
+
+
+def set_child_subreaper(on: bool = True) -> None:
+    """On Linux, make this process the reaper of its orphaned descendants
+    (`prctl(PR_SET_CHILD_SUBREAPER)`): a process an agent starts in a new session stays a
+    descendant of Ariane, which `kill_survivors` finds. A no-op elsewhere; a failure is only
+    journaled as a warning (C10, ADR 0031)."""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(_PR_SET_CHILD_SUBREAPER, int(on), 0, 0, 0) != 0:
+            raise OSError(ctypes.get_errno(), "prctl(PR_SET_CHILD_SUBREAPER) failed")
+    except (OSError, AttributeError) as exc:
+        logs.emit("process.subreaper_failed", f"Could not become the subreaper: {exc}")
+
+
+def _process_table() -> dict[int, tuple[int, str, str]]:
+    """Linux: every process as pid -> (parent pid, state, command name), from `/proc`."""
+    table = {}
+    for entry in os.scandir("/proc"):
+        if not entry.name.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry.name}/stat", "rb") as file:
+                stat = decode(file.read())
+        except OSError:
+            continue
+        head, _, tail = stat.rpartition(")")
+        fields = tail.split()
+        if len(fields) >= 2 and fields[1].isdigit():
+            table[int(entry.name)] = (int(fields[1]), fields[0], head.partition("(")[2])
+    return table
+
+
+def descendants() -> dict[int, str]:
+    """The running descendants of this process (pid -> command name) on Linux; empty
+    elsewhere. Exited processes not yet reaped are left out."""
+    if not sys.platform.startswith("linux"):
+        return {}
+    table = _process_table()
+    children: dict[int, list[int]] = {}
+    for pid, (parent, _, _) in table.items():
+        children.setdefault(parent, []).append(pid)
+    found = {}
+    pending = list(children.get(os.getpid(), []))
+    while pending:
+        pid = pending.pop()
+        _, state, name = table[pid]
+        if state not in ("Z", "X"):
+            found[pid] = name
+        pending += children.get(pid, [])
+    return found
+
+
+def kill_survivors(before: Collection[int]) -> dict[int, str]:
+    """Kill the running descendants that are not in `before` and reap them; returns them.
+
+    Called once a session or command ended: anything it started is still running only if it
+    left its process group (C10, ADR 0031). Linux only; elsewhere it finds nothing."""
+    found = {pid: name for pid, name in descendants().items() if pid not in before}
+    for pid in found:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.kill(pid, signal.SIGKILL)
+    if sys.platform.startswith("linux"):
+        _reap(set(found), before)
+    if found:
+        listing = ", ".join(f"{name} ({pid})" for pid, name in sorted(found.items()))
+        logs.emit("process.survivors_killed", f"Killed processes that outlived it: {listing}")
+    return found
+
+
+def _reap(killed: set[int], before: Collection[int]) -> None:
+    """Collect the exit status of the processes reparented to this one once exited (the killed
+    ones included), best effort."""
+    me = os.getpid()
+    deadline = time.monotonic() + _REAP_SECONDS
+    while True:
+        table = _process_table()
+        for pid, (parent, state, _) in table.items():
+            if parent == me and state == "Z" and pid not in before:
+                with contextlib.suppress(ChildProcessError):
+                    os.waitpid(pid, os.WNOHANG)
+        if not killed & table.keys() or time.monotonic() > deadline:
+            return
+        time.sleep(0.02)
 
 
 def resolve(name: str, env: Mapping[str, str] | None = None) -> str:

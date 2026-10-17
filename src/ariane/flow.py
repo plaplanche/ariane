@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ariane import checks, context, git, logs, process, replay, review, ticket
+from ariane import checks, context, git, logs, process, replay, review, review_session, ticket
 from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.metrics import METRICS, Metrics
@@ -145,6 +145,8 @@ class _TicketRun:
         self.base_instructions = ""
         self.not_updated: list[str] = []
         self.changed: list[str] = []
+        self.truncated: list[str] = []  # the files whose hunks the last reviewed diff lacked
+        self.processes_before: set[int] = set()
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
         self.folder = ticket.TicketFolder(worktree, issue.number, secrets=self.secrets)
         self.metrics = Metrics(issue.number, "delivered", lambda t: self.folder.write(METRICS, t))
@@ -166,6 +168,7 @@ class _TicketRun:
 
     def execute(self, refs_before: dict[str, str]) -> Outcome:
         try:
+            self.processes_before = set(process.descendants())
             setup_error = self.setup(self.worktree)
             self.folder.create(self.issue)
             self.metrics.step("folder opened")
@@ -194,11 +197,31 @@ class _TicketRun:
             return self._stopped(exc)
 
     def snapshot(self) -> dict[str, str]:
-        """The guard's view of git: configuration, hooks, refs, and the base's tracking ref."""
+        """The guard's view of git (configuration, hooks, refs, and the base's tracking ref) and
+        of the instruction files the reviewer can load from outside its tree (ADR 0031)."""
+        reviewer_tree = self.worktree.with_name(f"{self.number}-review")
         return git.config_snapshot(
             self.worktree,
             ignore_ref=self.branch,
             watch_refs=[f"refs/remotes/{self.remote}/{self.config.base_branch}"],
+        ) | git.instruction_snapshot(
+            review_session.instruction_dirs(reviewer_tree),
+            self.config.reviewer.runtime,
+            self.agent_envs["reviewer"],
+        )
+
+    def survivors(self, after: str) -> Stop | None:
+        """Kill the processes `after` left running (C10, ADR 0031); they are counted in
+        `metrics.json` and stop the ticket as a guard violation."""
+        killed = process.kill_survivors(self.processes_before)
+        if not killed:
+            return None
+        self.metrics.surviving_processes(len(killed))
+        listing = "\n".join(f"- {name} (pid {pid})" for pid, name in sorted(killed.items()))
+        return Stop(
+            f"{after} left {len(killed)} process(es) running after it ended; Ariane killed them",
+            "find what started them in the background; Ariane pushed nothing",
+            listing,
         )
 
     def setup(self, cwd: Path, command: tuple[str, ...] | None = None) -> Stop | None:
@@ -213,6 +236,10 @@ class _TicketRun:
             done = process.run(command, cwd=cwd, timeout_s=SETUP_TIMEOUT_S, env=self.untrusted_env)
         except process.CommandNotFoundError as exc:
             return Stop(f"setup failed: {exc}", "install it or fix project.setup")
+        survived = self.survivors(f"setup `{' '.join(command)}`")
+        if survived is not None:
+            self.metrics.guard_violation()
+            return survived
         if not done.ok:
             status = "timed out" if done.timed_out else f"exit {done.returncode}"
             return Stop(
@@ -293,6 +320,9 @@ class _TicketRun:
         expected_head: str | None,
     ) -> None:
         keep = "inspect the working tree; Ariane pushed nothing"
+        survived = self.survivors(after)
+        if survived is not None:
+            raise survived
         branch = git.current_branch(self.worktree)
         if branch != self.branch:
             raise Stop(f"{after} left branch {self.branch} (now {branch or 'detached'})", keep)
@@ -301,6 +331,14 @@ class _TicketRun:
         if expected_head is not None and git.head(self.worktree) != expected_head:
             raise Stop(f"{after} moved the ticket branch", keep)
         changes = git.snapshot_changes(guard, self.snapshot())
+        written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
+        if written:
+            raise Stop(
+                f"{after} changed instruction files the reviewer can load",
+                "inspect and remove them (they are outside the repository); Ariane pushed"
+                f" nothing; {QUIET}",
+                "\n".join(f"- {line}" for line in written),
+            )
         if changes:
             raise Stop(
                 f"{after} changed git configuration, hooks or local branches",
@@ -499,6 +537,7 @@ class _TicketRun:
             settled,
             reviewed,
             last_guard,
+            self.truncated,
         )
         self.metrics.delivered_red(len(checks.blocking_failures(results)))
         self.metrics.finish("needs a human" if delivery.draft else "delivered")

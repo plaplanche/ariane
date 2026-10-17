@@ -16,7 +16,8 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 | `validate(data)` | function | The problems of an answer against the schema; empty when valid. |
 | `parse(data)` | function | Turns a valid answer into a `Review`. |
 | `settle(review, items, results)` | function | Applies Ariane's rules to a review and the check results. |
-| `prompt(issue, diff, results, check_configs, items, ...)` | function | The reviewer's instructions with the untrusted data; with `changed`, a block naming the changed files whose tests no replay ran (`not_run_locally`, ADR 0042). |
+| `prompt(issue, diff, results, check_configs, items, ...)` | function | The reviewer's instructions with the untrusted data; with `changed`, a block naming the changed files whose tests no replay ran (`not_run_locally`, ADR 0042); with `name_status`, the full list of changed files. |
+| `truncated_paths(diff, limit=MAX_DIFF_CHARS)` | function | The files whose hunks are missing or incomplete when the diff is cut at `limit` characters; empty when it is not cut. |
 | `findings_table(settled)` | function | The findings as a Markdown table. |
 | `record(settled, commit, model, round_)` | function | The text of `work/<n>/review-<round>.md`. |
 | `fix_feedback(settled, failed)` | function | The findings and failed blocking checks given to a fix session. |
@@ -26,6 +27,7 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 
 - `SCHEMA`, `validate`, `parse`: the answer's description (also passed to the runtime as `--json-schema`; the Claude Code runtime drops its `$schema`), its validator and its typed form.
 - `prompt`: the review instructions, the issue, the diff and the base branch's `CLAUDE.md` under "Project instructions (from the base branch)" (all untrusted data), the checks' summary and the sentence items.
+- No silent truncation (ADR 0031): the prompt always holds `name_status`, the untruncated `git diff --name-status` of the whole range, in its own untrusted block (`kind="changed-files"`), before the diff. A diff over `MAX_DIFF_CHARS` is cut there and ends with "(diff truncated at 200,000 characters)"; the prompt then names the files whose hunks are missing or incomplete (`truncated_paths`, read from the `rename to`, `copy to`, `+++ b/` or `--- a/` line of each file's part, else from its `diff --git` header) in a `kind="paths"` block and tells the reviewer to read them in the tree.
 - `settle`: `go` with a blocking finding is `no-go`; a sentence item missing or `met: false` is a blocking finding; check items come from the replay's results.
 - `record`: the text of `work/<n>/review-<round>.md`. `fix_feedback`: the findings (and failed blocking checks) given to a fix session. `pull_request_section`: the verdict, the item results and the findings table (3,000 characters at most, else a summary and a link).
 

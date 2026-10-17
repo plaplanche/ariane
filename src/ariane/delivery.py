@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -49,6 +49,7 @@ class Delivery:
     settled: review.Settled | None = None
     review_round: int = 0
     guard: Callable[[], None] = lambda: None
+    truncated: Sequence[str] = ()  # the files whose hunks the reviewed diff lacked
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
@@ -161,6 +162,12 @@ class Delivery:
         )
         url = self.tracker.file_url(self.branch, path)
         section = review.pull_request_section(self.settled, url, path)
+        if self.truncated:
+            section += (
+                f"\nThe diff given to the reviewer was truncated at {review.MAX_DIFF_CHARS:,}"
+                f" characters: the hunks of {len(self.truncated)} file(s) were missing and the"
+                " reviewer was told to read them in the tree (listed in the journal).\n"
+            )
         if self.draft:
             section = (
                 "**Needs a human**: the review is still no-go after the fix rounds. Finish by"

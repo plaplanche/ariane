@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from ariane import process
 from ariane.config import (
     DEFAULT_DEFINITION_OF_DONE,
     AgentConfig,
@@ -50,6 +51,13 @@ def isolated_git(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     for name in ("AUTHOR", "COMMITTER"):
         monkeypatch.setenv(f"GIT_{name}_NAME", "Ariane Test")
         monkeypatch.setenv(f"GIT_{name}_EMAIL", "ariane-test@example.invalid")
+
+
+@pytest.fixture(autouse=True)
+def no_subreaper(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`cli.main` would make the test process the subreaper of every orphan for the rest of the
+    run; the tests that need it call the real `process.set_child_subreaper` themselves."""
+    monkeypatch.setattr(process, "set_child_subreaper", lambda on=True: None)
 
 
 @dataclass

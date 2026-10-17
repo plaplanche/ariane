@@ -20,8 +20,8 @@ from ariane.flow import (
 )
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
-from ariane.replay import replay_each
-from ariane.review_session import ReviewFailed, ReviewSession
+from ariane.replay import record_truncation, replay_each
+from ariane.review_session import ReviewFailed, ReviewSession, instruction_dirs
 from ariane.runtime import AgentRuntime, for_role
 from ariane.tracker import Issue, Tracker, TrackerError
 
@@ -140,6 +140,7 @@ class _Verification:
         self.base = self._base()
         # Read once, before any check runs: a check cannot change what the reviewer is told.
         self.base_instructions = git.base_instructions(repo_root, REMOTE, self.config.base_branch)
+        self.processes_before = set(process.descendants())
         self.guard = self._snapshot()
         self.metrics = Metrics(issue.number if issue else 0, "verify", lambda text: None)
         self.issue = issue or Issue(
@@ -160,10 +161,13 @@ class _Verification:
         )
 
     def _snapshot(self) -> dict[str, str]:
+        reviewer = replay_path(self.repo_root, self.branch).with_name("reviewer")
         return git.config_snapshot(
             self.repo_root,
             ignore_ref=self.branch,
             watch_refs=[f"refs/remotes/{REMOTE}/{self.config.base_branch}"],
+        ) | git.instruction_snapshot(
+            instruction_dirs(reviewer), self.config.reviewer.runtime, self.reviewer_env
         )
 
     def run(self) -> Outcome:
@@ -217,7 +221,11 @@ class _Verification:
         changed = git.changed_between(self.repo_root, self.base, self.head)
         folder = ticket.TicketFolder(records, self.issue.number, secrets=self.secrets)
         folder.create(self.issue)
-        diff = git.diff(self.repo_root, self.base, self.head, ticket.WORK_DIR)
+        diff = (
+            git.diff(self.repo_root, self.base, self.head, ticket.WORK_DIR),
+            git.name_status(self.repo_root, self.base, self.head, ticket.WORK_DIR),
+        )
+        record_truncation(folder, diff[0])
         tree = replay.with_name(replay.name + "-reviewer")
         if tree.exists():
             raise Refused(f"the reviewer working tree already exists at {tree}", "remove it")
@@ -235,7 +243,7 @@ class _Verification:
         all_checks: Sequence[CheckConfig],
         results: list[checks.CheckResult],
         changed: list[str],
-        diff: str,
+        diff: tuple[str, str],
     ) -> Outcome:
         tree_before = git.status(tree)
         sessions = ReviewSession(
@@ -253,11 +261,12 @@ class _Verification:
             answer = sessions.run(
                 tree,
                 self.head,
-                diff,
+                diff[0],
                 results,
                 self.config.documentation.not_updated(changed),
                 changed,
                 lambda: self._unchanged(tree, "the reviewer", tree_before),
+                diff[1],
             )
         except ReviewFailed as exc:
             raise Refused(exc.reason, "read the error, then run verify again") from None
@@ -281,8 +290,23 @@ class _Verification:
         return Outcome(EXIT_OK if green else EXIT_STOPPED, line)
 
     def _unchanged(self, replay: Path, after: str, tree_before: str) -> None:
-        """Untrusted code ran: git, the branch and the replay tree are as they were."""
+        """Untrusted code ran: nothing it started still runs, and git, the instruction files
+        the reviewer can load, the branch and the replay tree are as they were."""
+        killed = process.kill_survivors(self.processes_before)
+        if killed:
+            self.metrics.surviving_processes(len(killed))
+            raise Refused(
+                f"{after} left {len(killed)} process(es) running after it ended; Ariane killed"
+                " them",
+                "find what started them in the background",
+            )
         changes = git.snapshot_changes(self.guard, self._snapshot())
+        written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
+        if written:
+            raise Refused(
+                f"{after} changed instruction files the reviewer can load ({'; '.join(written)})",
+                "inspect and remove them (they are outside the repository)",
+            )
         if changes:
             raise Refused(
                 f"{after} changed git configuration, hooks or local branches"

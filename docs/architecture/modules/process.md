@@ -14,11 +14,15 @@ Runs external commands from argument lists: PATH resolution, UTF-8 output, timeo
 | `stream(argv, *, cwd, on_line, timeout_s=None, env=None, input_text=None)` | function | Like `run`, but passes each standard output line to `on_line` while the command runs; it returns True to stop the whole tree (`Completed.stopped`). |
 | `make_undumpable()` | function | On Linux, `prctl(PR_SET_DUMPABLE, 0)` through `ctypes` so a same-user process cannot read Ariane's memory or environment block; a no-op elsewhere; a failure is journaled as `process.undumpable_failed`, never fatal (C21). |
 | `kill_tree(pid)` | function | Stop a process and all its descendants (its process group on POSIX). |
+| `set_child_subreaper(on=True)` | function | On Linux, `prctl(PR_SET_CHILD_SUBREAPER)` so that orphaned descendants are reparented to Ariane rather than to init; a no-op elsewhere; a failure is logged as `process.subreaper_failed`, never fatal (C10, ADR 0031). |
+| `descendants()` | function | The running descendants of this process (pid to command name), read from `/proc` on Linux; empty elsewhere. Exited, unreaped processes are left out. |
+| `kill_survivors(before)` | function | Kills (`SIGKILL`) the running descendants not in `before`, reaps those reparented to Ariane, logs `process.survivors_killed`; returns them by pid. |
 
 ## Behaviour and errors
 
 - Never uses a shell: `argv` is a list; an empty one raises `ValueError`. `resolve` raises `CommandNotFoundError` for a name not on the PATH.
 - Cleanup (C5): the process tree is killed in a `finally` around the wait, so a normal exit, a timeout, Ctrl-C (`KeyboardInterrupt`) or any other exception leaves nothing running; the exception is re-raised.
+- Surviving processes (C10, ADR 0031): a process that leaves the group (`setsid`, `setpgid`) outlives `kill_tree`. `cli.main` makes Ariane the subreaper, so such a process stays a descendant; the flow takes `descendants()` when a ticket starts and calls `kill_survivors` after each setup, agent session and check. On macOS and Windows `descendants()` finds nothing (a residual of ADR 0031).
 - A timeout does not raise: it sets `Completed.timed_out`. Output is decoded with `decode`.
 - Logs `process.started` (each argument cut to 200 characters) and `process.exited` through `logs`; reads and writes no file.
 
