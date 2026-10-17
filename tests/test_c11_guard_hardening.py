@@ -68,9 +68,6 @@ def test_c11_guard_hardening_diffs_ignore_external_and_textconv_drivers(
     sh(["git", "commit", "-q", "-m", "change"], project.root)
     text = git.diff(project.root, first, "HEAD", "work")
     assert "+changed" in text
-    assert (
-        git.committed_paths(project.root, first, ".") == ["app.txt", ".gitattributes"][::-1] or True
-    )
     assert not marker.exists()
 
 
@@ -79,13 +76,18 @@ def test_c11_guard_hardening_a_pushinsteadof_added_after_the_last_session_stops_
 ) -> None:
     pushed: list[str] = []
     monkeypatch.setattr(git, "push", lambda *a, **k: pushed.append("push"))
+    real = git.commit
 
-    def late(session: Session) -> None:
-        if session.role == "reviewer":
-            sh(["git", "config", "url.https://elsewhere.invalid/.pushInsteadOf", "x"], project.root)
+    def commit(cwd: Path, paths: list[str], message: str, **k: Any) -> Any:
+        done = real(cwd, paths, message, **k)
+        if "record the checks and the delivery" in message:
+            sh(["git", "config", "url.https://elsewhere.invalid/.pushInsteadOf", "x"], cwd)
+        return done
 
-    outcome = start(project, tracker, FakeRuntime(review_actions=[late]))
+    monkeypatch.setattr(git, "commit", commit)
+    outcome = start(project, tracker, FakeRuntime())
     assert outcome.exit_code == 1
+    assert "reroutes URLs before the push" in outcome.line
     assert pushed == [] and tracker.opened == []
 
 
@@ -107,7 +109,7 @@ def test_c11_guard_hardening_delivery_runs_the_guard_right_before_the_push(
 
     monkeypatch.setattr(git, "push", push)
     start(project, tracker, FakeRuntime())
-    assert order == ["guard", "push"]
+    assert order[-2:] == ["guard", "push"]
 
 
 def _publish_instructions(project: Project, text: str) -> None:
@@ -148,19 +150,32 @@ def test_c11_guard_hardening_instructions_are_read_before_any_agent_runs(
     assert "Base rule: fetched." in prompt
 
 
-@pytest.mark.usefixtures("branch")
 def test_c11_guard_hardening_verify_records_replace_a_symlinked_checks_file(
-    project: Project,
-    tmp_path: Path,
+    project: Project, tmp_path: Path
 ) -> None:
     outside = tmp_path / "outside.txt"
     outside.write_text("untouched\n", encoding="utf-8")
-    folder = project.root.parent / "records" / verify.relative_folder(BRANCH)
+    sh(["git", "branch", BRANCH], project.root)
+    other = project.root.parent / "hand-tree"
+    sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
+    (other / "app.txt").write_text("version 2\n", encoding="utf-8")
+    folder = other / verify.relative_folder(BRANCH)
     folder.mkdir(parents=True)
     (folder / ticket.CHECKS).symlink_to(outside)
-    ticket.write_file(folder / ticket.CHECKS, "recorded\n")
+    sh(["git", "add", "-A"], other)
+    sh(["git", "commit", "--quiet", "-m", "Bump by hand, with a link"], other)
+    sh(["git", "worktree", "remove", "--force", str(other)], project.root)
+    outcome = verify.verify(
+        BRANCH,
+        repo_root=project.root,
+        config=make_config(),
+        runtime=FakeRuntime(),
+        environ=environ(),
+    )
+    assert outcome.exit_code == 0, outcome.line
     assert outside.read_text(encoding="utf-8") == "untouched\n"
-    assert not (folder / ticket.CHECKS).is_symlink()
-    assert (folder / ticket.CHECKS).read_text(encoding="utf-8") == "recorded\n"
-    ticket.ensure_folder(folder.parents[1], folder)
-    assert folder.is_dir()
+    mode = sh(
+        ["git", "ls-tree", BRANCH, f"{verify.relative_folder(BRANCH)}/{ticket.CHECKS}"],
+        project.root,
+    )
+    assert mode.startswith("100644")

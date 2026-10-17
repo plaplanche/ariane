@@ -37,7 +37,7 @@ classDiagram
 class ShadowRun {
   remote str
   _remote_changes(refs_before) list
-  _deliver(checked, settled, reviewed, results) Outcome
+  _deliver(checked, settled, reviewed, results, unchanged, guard_push) Outcome
 }
 ShadowRun --|> _TicketRun
 class shadow {

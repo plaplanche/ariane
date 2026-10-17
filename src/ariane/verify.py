@@ -196,6 +196,7 @@ class _Verification:
                 f"setup `{' '.join(command)}` failed (exit {done.returncode}){where}",
                 "fix the setup command, then run verify again",
             )
+        self._git_unchanged("the setup")
         if git.untracked(replay):
             raise Refused(
                 f"setup left files that git does not ignore{where}",
@@ -284,13 +285,7 @@ class _Verification:
 
     def _unchanged(self, replay: Path, after: str, tree_before: str) -> None:
         """Untrusted code ran: git, the branch and the replay tree are as they were."""
-        changes = git.snapshot_changes(self.guard, self._snapshot())
-        if changes:
-            raise Refused(
-                f"{after} changed git configuration, hooks or local branches"
-                f" ({'; '.join(changes)})",
-                "inspect .git/config, .git/hooks and the branches",
-            )
+        self._git_unchanged(after)
         moved = git.out(["rev-parse", f"refs/heads/{self.branch}"], self.repo_root) != self.head
         if git.current_branch(replay) or git.head(replay) != self.head or moved:
             raise Refused(f"{after} moved a head", "inspect the branch and the replay tree")
@@ -310,6 +305,15 @@ class _Verification:
                     f"the remote changed during {after} ({', '.join(changed)})",
                     "check it was not the agent, then run verify again",
                 )
+
+    def _git_unchanged(self, after: str) -> None:
+        changes = git.snapshot_changes(self.guard, self._snapshot())
+        if changes:
+            raise Refused(
+                f"{after} changed git configuration, hooks or local branches"
+                f" ({'; '.join(changes)})",
+                "inspect .git/config, .git/hooks and the branches",
+            )
 
     def _before_commit(self) -> None:
         """The branch and where it is checked out are as they were at the start (minutes ago)."""

@@ -257,7 +257,10 @@ def config_snapshot(worktree: Path, *, ignore_ref: str, base_ref: str = "") -> d
 
 def url_rewrites(cwd: Path) -> list[str]:
     """Local `url.*.insteadof` and `url.*.pushinsteadof` keys: they reroute a push."""
-    listing = git(["config", "--local", "--name-only", "--list"], cwd, check=False).stdout
+    listed = git(["config", "--local", "--name-only", "--list"], cwd, check=False)
+    if not listed.ok:
+        return ["(the local git configuration cannot be listed)"]
+    listing = listed.stdout
     return [
         key
         for key in listing.splitlines()

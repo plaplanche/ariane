@@ -16,7 +16,7 @@ One round of replay and review of a ticket, moved out of `flow` unchanged (ADR 0
 
 - `replay_each`: for each check in order creates a fresh detached tree (`<n>-replay-<k>`, `verify-<slug>-<k>`), runs the setup (`checks[].setup`, else `project.setup`), runs that check only, verifies, removes the tree. A leftover tree of that name refuses. The setup duration is not part of the check's duration.
 - `replay`: `replay_each` for a ticket; a setup stop names the check whose tree it was; journals `ticket.checks.worktree`, one line per check; returns the results (no tree is kept, the reviewer has its own).
-- `review_round`: review `round_` on the reviewer tree; writes `review-<round>.md`, journals the verdict and tells the metrics the first-pass verdict.
+- `review_round`: review `round_` on the reviewer tree, with the base instructions read once before any agent ran (`run.base_instructions`), never re-read from git; writes `review-<round>.md`, journals the verdict and tells the metrics the first-pass verdict.
 - `remove`: removes a replay or reviewer tree, journaling a warning if it cannot.
 
 ## Workflow

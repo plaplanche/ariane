@@ -69,6 +69,7 @@ class Delivery:
                 f"{self.branch} pushed; opening the pull request",
                 "see the pull request, or run ariane status <n>".replace("<n>", str(number)),
             )
+        self.guard()
         self.commit_record(f"#{number}: record the checks and the delivery")
         self._require_replayed()
         self.guard()
