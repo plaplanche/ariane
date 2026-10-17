@@ -12,7 +12,7 @@ import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO
+from typing import IO, NamedTuple
 
 from ariane import logs
 
@@ -90,8 +90,19 @@ def set_child_subreaper(on: bool = True) -> str | None:
     return None
 
 
-def _process_table() -> dict[int, tuple[int, str, str]]:
-    """Linux: every process as pid -> (parent pid, state, command name), from `/proc`."""
+class _Proc(NamedTuple):
+    """One process of `/proc`: what `kill_survivors` needs of its `stat`."""
+
+    parent: int
+    state: str
+    name: str
+    group: int = 0  # process group id
+    session: int = 0  # session id
+
+
+def _process_table() -> dict[int, _Proc]:
+    """Linux: every process as pid -> `_Proc`, from `/proc`. A zombie's `stat` still holds its
+    process group and session."""
     table = {}
     for entry in os.scandir("/proc"):
         if not entry.name.isdigit():
@@ -103,8 +114,10 @@ def _process_table() -> dict[int, tuple[int, str, str]]:
             continue
         head, _, tail = stat.rpartition(")")
         fields = tail.split()
-        if len(fields) >= 2 and fields[1].isdigit():
-            table[int(entry.name)] = (int(fields[1]), fields[0], head.partition("(")[2])
+        if len(fields) >= 4 and all(field.isdigit() for field in fields[1:4]):
+            name = head.partition("(")[2]
+            parent, group, session = (int(field) for field in fields[1:4])
+            table[int(entry.name)] = _Proc(parent, fields[0], name, group, session)
     return table
 
 
@@ -121,17 +134,16 @@ def descendants(*, exited: bool = False) -> dict[int, str]:
 _GONE = ("Z", "X")
 
 
-def _tree(table: dict[int, tuple[int, str, str]]) -> dict[int, tuple[str, str]]:
+def _tree(table: Mapping[int, _Proc]) -> dict[int, tuple[str, str]]:
     """The descendants of this process in `table`: pid -> (state, command name)."""
     children: dict[int, list[int]] = {}
-    for pid, (parent, _, _) in table.items():
-        children.setdefault(parent, []).append(pid)
+    for pid, proc in table.items():
+        children.setdefault(proc.parent, []).append(pid)
     found = {}
     pending = list(children.get(os.getpid(), []))
     while pending:
         pid = pending.pop()
-        _, state, name = table[pid]
-        found[pid] = (state, name)
+        found[pid] = (table[pid].state, table[pid].name)
         pending += children.get(pid, [])
     return found
 
@@ -157,42 +169,69 @@ def kill_survivors(
     Called once a session or command ended: anything it started is still running only if it
     left its process group (C10, ADR 0031). A scan of `/proc` is not atomic, so each survivor
     is stopped first (a stopped process cannot fork) and the scans go on until every survivor
-    is stopped and none is new; then all are killed. The scans end only when one finds no
-    survivor and no newly exited child to reap: a process that forks and exits to change pids
-    leaves such a child (Ariane is the subreaper). Linux only; elsewhere it finds nothing.
+    is stopped and none is new; then all are killed. A process that forks and exits faster
+    than a scan may never be seen running, so the process group and session of every new
+    process found, running or exited (read before it is reaped), are stopped and killed as a
+    whole too, unless Ariane or a process in `before` belongs to them. The scans end only when
+    one finds no survivor and no newly exited child to reap: a process that forks and exits to
+    change pids leaves such a child (Ariane is the subreaper). Linux only; elsewhere it finds
+    nothing.
     """
     if not sys.platform.startswith("linux"):
         return {}
     found: dict[int, str] = {}
+    groups: set[int] = set()
+    killed: set[int] = set()  # the groups already sent SIGKILL
     me = os.getpid()
+    # 0 would be this process's own group for `killpg`; a group of a process in `before` stays
+    # protected even after that process is gone.
+    kept = {0, os.getpgid(0), os.getsid(0)}
     deadline = time.monotonic() + _REAP_SECONDS
     while True:
         table = _process_table()
-        exited = [p for p, (parent, state, _) in table.items() if parent == me and state == "Z"]
+        kept |= _groups(table, before)
+        tree = _tree(table)
+        exited = {p for p, proc in table.items() if proc.parent == me and proc.state == "Z"}
+        # Read from the scan's table, before the exited ones are reaped.
+        new_groups = _groups(table, (tree.keys() | exited) - set(before)) - kept - groups
+        groups = (groups | new_groups) - kept
         reaped = [pid for pid in exited if pid not in before and _wait(pid)]
+        members = {pid for pid, proc in table.items() if {proc.group, proc.session} & groups}
         alive = {
-            pid: seen
-            for pid, seen in _tree(table).items()
-            if pid not in before and seen[0] not in _GONE
+            pid: (table[pid].state, table[pid].name)
+            for pid in (tree.keys() | members) - {me}
+            if pid not in before and table[pid].state not in _GONE
         }
-        if not alive and not reaped:
-            break
+        if not alive and not reaped and not new_groups:
+            if not groups - killed:
+                break
+            # Nothing seen running, but groups found earlier were only stopped: kill them, then
+            # scan again for what that leaves to reap.
+            _signal_groups(groups - killed, signal.SIGKILL)
+            killed |= groups
+            time.sleep(0.01)
+            continue
         if time.monotonic() > deadline:
             # Not all stopped in time (one may sit in uninterruptible I/O): kill them anyway,
             # the signal is queued and none is left running unsignalled.
+            _signal_groups(groups, signal.SIGKILL)
+            killed |= groups
             _signal(alive, signal.SIGKILL)
             listing = ", ".join(f"{name} ({pid})" for pid, (_, name) in sorted(alive.items()))
             logs.emit("process.survivors_remaining", f"Could not kill: {listing or 'none'}")
             found.update({pid: name for pid, (_, name) in alive.items()})
             break
         new = {pid: name for pid, (_, name) in alive.items() if pid not in found}
-        if new:
+        if new or new_groups:
+            _signal_groups(groups, signal.SIGSTOP)
             _signal(new, signal.SIGSTOP)
             found.update(new)
-        elif alive and all(state in ("T", "t") for state, _ in alive.values()):
+        elif all(state in ("T", "t") for state, _ in alive.values()):
+            _signal_groups(groups, signal.SIGKILL)
+            killed |= groups
             _signal(alive, signal.SIGKILL)
             time.sleep(0.01)
-        elif alive:
+        else:
             time.sleep(0.01)  # a stop signal is not delivered yet
     found = dict(left or {}) | found
     if found:
@@ -202,10 +241,23 @@ def kill_survivors(
     return found
 
 
+def _groups(table: Mapping[int, _Proc], pids: Collection[int]) -> set[int]:
+    """The process groups and sessions of the `pids` listed in `table`."""
+    return {g for pid in pids if pid in table for g in (table[pid].group, table[pid].session)}
+
+
 def _signal(pids: Collection[int], signum: int) -> None:
     for pid in pids:
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.kill(pid, signum)
+
+
+def _signal_groups(groups: Collection[int], signum: int) -> None:
+    if sys.platform == "win32":
+        return
+    for group in groups:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(group, signum)
 
 
 def _wait(pid: int) -> bool:
