@@ -1,6 +1,6 @@
 # Module `ariane.verify`
 
-`ariane verify`: checks and reviews a local branch finished by hand (C10, C23). It replays the setup and the checks in a clean working tree at the branch's head, runs one read-only review on a separate tree without instruction files or `.claude/` (ADR 0031), and commits `work/verify/<branch>/review.md` and `checks.md` (redacted) on top of the branch. It never pushes. It also compares the remote's refs before and after the checks and the reviewer, with the rule of ADR 0017 (the branch, the base branch and tags are watched; other branches are ignored), and refuses when one changed. The agent environment is the reviewer's runtime's own. Just before committing it checks again that the branch has not moved and is checked out where it was, in a clean tree; otherwise it refuses without committing. When nothing is committed (for example `work/` is ignored) it exits 1 with "nothing was recorded".
+`ariane verify`: checks and reviews a local branch finished by hand (C10, C23). It replays each check in its own clean working tree at the branch's head, after the setup (`verify-<slug>-<k>`, ADR 0041), runs one read-only review on a separate tree without instruction files or `.claude/` (ADR 0031), and commits `work/verify/<branch>/review.md` and `checks.md` (redacted) on top of the branch. It never pushes. It also compares the remote's refs before and after the checks and the reviewer, with the rule of ADR 0017 (the branch, the base branch and tags are watched; other branches are ignored), and refuses when one changed. The agent environment is the reviewer's runtime's own. Just before committing it checks again that the branch has not moved and is checked out where it was, in a clean tree; otherwise it refuses without committing. When nothing is committed (for example `work/` is ignored) it exits 1 with "nothing was recorded".
 
 ## Public API
 
@@ -12,7 +12,7 @@
 | `FIX_NEXT` | constant | The next action after findings or red checks. |
 | `Refused` | exception | The branch cannot be verified; carries `reason`, `next_action` and `exit_code`. |
 | `relative_folder(branch)` | function | The records folder of a branch, relative to the repository. |
-| `replay_path(repo_root, branch)` | function | Where the replay tree of a branch is. |
+| `replay_path(repo_root, branch)` | function | Where the replay trees of a branch are (the name of tree `k` ends in `-<k>`). |
 | `verify(branch, ...)` | function | The entry point; returns an `Outcome`. |
 
 ## Behaviour and errors
@@ -29,7 +29,7 @@ flowchart TD
   A[verify branch] --> B{branch known, tree clean?}
   B -- no --> X[Refused: exit 1, or the tracker's exit code]
   B -- yes --> C[refs before]
-  C --> D[add replay tree at head, setup]
+  C --> D[per check: add replay tree at head, setup, run, remove]
   D --> E[run_checks]
   E --> F[add reviewer tree, ReviewSession.run]
   F --> G[remote_changes against refs before]
@@ -80,6 +80,7 @@ flowchart LR
   verify --> metrics
   verify --> process
   verify --> redact
+  verify --> replay
   verify --> review
   verify --> review_session
   verify --> runtime

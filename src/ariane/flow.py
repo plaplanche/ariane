@@ -186,14 +186,14 @@ class _TicketRun:
         except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
             return self._stopped(exc)
 
-    def setup(self, cwd: Path) -> Stop | None:
+    def setup(self, cwd: Path, command: tuple[str, ...] | None = None) -> Stop | None:
         """Run the setup command (C8) in `cwd` without credentials (it may run agent-written code).
 
         An error is journaled once the folder exists.
         """
-        if not self.config.setup:
+        command = command or self.config.setup
+        if not command:
             return None
-        command = self.config.setup
         try:
             done = process.run(command, cwd=cwd, timeout_s=SETUP_TIMEOUT_S, env=self.untrusted_env)
         except process.CommandNotFoundError as exc:
@@ -420,29 +420,26 @@ class _TicketRun:
                     round_, start_commit, guard, refs_before, review.fix_feedback(settled, failed)
                 )
             checked = git.head(self.worktree)
-            clean, results = replay.replay(self, checked, start_commit, guard, refs_before)
-            try:
-                self.folder.write(ticket.CHECKS, checks.report(results, checked))
-                self.folder.log(
-                    "ticket.checks.replayed",
-                    "Checks replayed by Ariane",
-                    checks.summary_table(results) + "\n\n" + checks.summary_line(results),
+            results = replay.replay(self, checked, start_commit, guard, refs_before)
+            self.folder.write(ticket.CHECKS, checks.report(results, checked))
+            self.folder.log(
+                "ticket.checks.replayed",
+                "Checks replayed by Ariane",
+                checks.summary_table(results) + "\n\n" + checks.summary_line(results),
+            )
+            self.metrics.step("checks replayed")
+            failed = checks.blocking_failures(results)
+            if failed and not round_:
+                names = ", ".join(r.name for r in failed)
+                raise Stop(
+                    f"blocking checks failed: {names}",
+                    f"read work/{self.number}/checks.md in {self.worktree}",
                 )
-                self.metrics.step("checks replayed")
-                failed = checks.blocking_failures(results)
-                if failed and not round_:
-                    names = ", ".join(r.name for r in failed)
-                    raise Stop(
-                        f"blocking checks failed: {names}",
-                        f"read work/{self.number}/checks.md in {self.worktree}",
-                    )
-                if not failed:
-                    reviewed = round_
-                    settled = replay.review_round(
-                        self, checked, start_commit, guard, refs_before, results, round_
-                    )
-            finally:
-                replay.remove(self, clean)
+            if not failed:
+                reviewed = round_
+                settled = replay.review_round(
+                    self, checked, start_commit, guard, refs_before, results, round_
+                )
             if settled is not None and settled.go and not failed:
                 break
         return self._deliver(checked, settled, reviewed, results)

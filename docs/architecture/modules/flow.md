@@ -1,6 +1,6 @@
 # Module `ariane.flow`
 
-`ariane start`: turns one issue into a pull request whose checks Ariane replayed. It sets up the working tree, runs the agent session, applies the guards, commits, replays the checks on a clean tree, runs the read-only reviewer on a separate tree without instruction files or `.claude/` (C10, ADR 0031), runs up to two fix rounds after a negative review and hands over to delivery.
+`ariane start`: turns one issue into a pull request whose checks Ariane replayed. It sets up the working tree, runs the agent session, applies the guards, commits, replays each check in its own clean tree, runs the read-only reviewer on a separate tree without instruction files or `.claude/` (C10, ADR 0031), runs up to two fix rounds after a negative review and hands over to delivery.
 
 ## Public API
 
@@ -48,7 +48,7 @@ flowchart TD
   E --> F[implementer session]
   F --> G[guards: config snapshot, remote changes]
   G --> H[commit the agent's work]
-  H --> I[replay the checks in a clean tree]
+  H --> I[replay each check in its own clean tree]
   I --> K{blocking checks red?}
   K -- "red, round 0" --> S
   K -- green --> J[review round]
@@ -79,7 +79,7 @@ class Outcome {
 }
 class _TicketRun {
   execute(refs_before) Outcome
-  setup(cwd) Stop
+  setup(cwd, command) Stop
   verify(after, start_commit, guard, refs_before, expected_head)
 }
 class flow {

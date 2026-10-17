@@ -1,6 +1,6 @@
 # 0018. Checks replayed in a clean working tree; statuses come from a replay
 
-- Status: accepted
+- Status: accepted; clean-tree part superseded by 0041
 - Date: 2026-10-08
 - Capabilities: C9, C8, C11
 

@@ -369,6 +369,15 @@
             "type": "number",
             "exclusiveMinimum": 0,
             "default": 15
+          },
+          "setup": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Replaces project.setup in this check's replay tree."
           }
         }
       }

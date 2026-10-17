@@ -7,7 +7,7 @@ you never lose the thread of your own code.
 **Status:** slice 4 (measurement and shadow mode) is built; its gate is pending the second user's
 run on macOS (see [Measure Ariane on your project](#measure-ariane-on-your-project-shadow-mode)).
 Slice 3 (review, vendor-neutral) is done: `ariane start <issue>` takes a GitHub issue to a
-pull request whose checks Ariane replayed in a clean tree and that a read-only reviewer on a
+pull request whose checks Ariane replayed, each in its own clean tree, and that a read-only reviewer on a
 different model approved, after up to two fix rounds (`[agents.reviewer]` in `ariane.toml`; the
 reviewer can run on Claude Code or opencode). `ariane verify <branch>` gives a branch finished by
 hand the same checks and review. Approvals
@@ -82,7 +82,7 @@ example before `ariane verify --issue N`) ([ADR 0032](docs/adr/0032-issue-gate.m
 `ariane start` creates the branch `ariane/12` in a working tree beside the repository
 (`<repo>.ariane/worktrees/12`), runs the setup command, one implementer session and every check. If a blocking check fails
 before any review, it stops there and pushes nothing. Otherwise a read-only reviewer on a
-different model reviews a clean replay; on a no-go, up to two fix rounds follow, each with a fresh
+different model reviews the delivered commit; on a no-go, up to two fix rounds follow, each with a fresh
 implementer session, a replay and a review. Then it pushes the branch, opens the pull request (a
 draft that needs a human if the review is still no-go) and publishes each check's result as a
 commit status (`ariane/<check name>`) on its head commit. The ticket's records are in `work/12/`, including `work/12/metrics.json`: cost, tokens, durations,
@@ -114,7 +114,7 @@ ariane start --shadow 12
 A GitHub Actions workflow (`check-statuses.yml`) also publishes these statuses from the committed
 report, including when Ariane cannot (for example from a cloud session).
 `ariane verify <branch> [--issue N]` checks and reviews a local branch finished by hand: a clean
-replay of the checks, one review, then `work/verify/<branch>/review.md`, `checks.md` and `metrics.json` committed
+replay of the checks (each in its own tree), one review, then `work/verify/<branch>/review.md`, `checks.md` and `metrics.json` committed
 on the branch (never pushed). It exits 0 only on a `go` with green blocking checks; the issue's
 text goes to the reviewer with `--issue`, else the branch's commit messages.
 `ariane report [--since YYYY-MM-DD]` summarises cost, agent time, rounds and first-pass verdicts per

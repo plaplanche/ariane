@@ -39,7 +39,7 @@ def test_c10_reviewer_isolation_tree_has_no_instruction_files_but_replay_keeps_t
         tree = session.add_dirs[0]
         seen["review"] = [n for n in (*PLANTED, *DEEP) if (tree / n).exists()]
         seen["kept"] = [p.relative_to(tree).as_posix() for p in tree.glob("sub/keep.txt")]
-        replay = tree.with_name("7-replay")
+        replay = tree.with_name("7")
         seen["replay"] = [n for n in (*PLANTED, *DEEP) if (replay / n).exists()]
 
     runtime = FakeRuntime(action=plant, review_actions=[look])

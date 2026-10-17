@@ -58,7 +58,11 @@ FUNCTIONAL_TYPES = _declare(
             "info",
             "Documents mapped to changed files that the ticket left untouched.",
         ),
-        ("ticket.checks.worktree", "info", "The clean working tree used to replay the checks."),
+        (
+            "ticket.checks.worktree",
+            "info",
+            "The clean working trees used to replay the checks, one per check.",
+        ),
         ("ticket.checks.replayed", "info", "The checks were replayed by Ariane, with the result."),
         ("ticket.review.started", "info", "A reviewer session started, with its model and limits."),
         (

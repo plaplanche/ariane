@@ -214,6 +214,10 @@ SCHEMA: dict[str, Any] = {
                     "command": {**_ARGV, "description": "Command to run (list of arguments)."},
                     "blocking": {"type": "boolean", "default": True},
                     "timeout_minutes": {**_POSITIVE, "default": 15},
+                    "setup": {
+                        **_ARGV,
+                        "description": "Replaces project.setup in this check's replay tree.",
+                    },
                 },
             },
         },

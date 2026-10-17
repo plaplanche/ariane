@@ -70,6 +70,7 @@ flowchart TD
   opencode --> runtime
   process --> logs
   replay --> checks
+  replay --> config
   replay --> delivery
   replay -.-> flow
   replay --> git
@@ -115,6 +116,7 @@ flowchart TD
   verify --> metrics
   verify --> process
   verify --> redact
+  verify --> replay
   verify --> review
   verify --> review_session
   verify --> runtime
@@ -149,8 +151,11 @@ sequenceDiagram
   F->>G: guard checks (configuration, branch, untracked files)
   F->>G: commit
   F->>P: replay and review
-  P->>G: add a clean replay tree
-  P->>C: replay the checks
+  loop for each check
+    P->>G: add a clean replay tree (setup runs there)
+    P->>C: run that check
+    P->>G: verify, remove the tree
+  end
   C-->>P: results
   alt a blocking check failed
     P-->>F: stop before any review, push nothing
@@ -231,9 +236,12 @@ sequenceDiagram
   U->>CLI: ariane verify branch
   CLI->>V: verify
   V->>G: refuse a checked-out branch with uncommitted changes
-  V->>G: add a clean replay tree at the branch head
-  V->>V: setup command
-  V->>C: replay the checks
+  loop for each check
+    V->>G: add a clean replay tree at the branch head
+    V->>V: setup command
+    V->>C: run that check
+    V->>G: remove the tree
+  end
   C-->>V: results
   V->>S: review in the `-reviewer` tree (no instruction files, ADR 0031)
   S->>R: run a read-only reviewer session

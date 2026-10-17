@@ -52,6 +52,9 @@ command = ["uv", "run", "ruff", "check", "."]
 [[checks]]
 name = "tests"
 command = ["uv", "run", "pytest", "-q"]
+# Optional: each check is replayed in its own fresh working tree, after project.setup. A "setup"
+# on a check replaces project.setup in that check's tree only (what its CI job installs).
+# setup = ["uv", "sync", "--only-group", "test"]
 
 # Optional: what a change must satisfy to be done. Each item is a declared check ({ check = "name" })
 # or a sentence ({ text = "..." }). The implementer receives every item. Without this table,
