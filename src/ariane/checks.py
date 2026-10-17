@@ -77,7 +77,12 @@ def _shown_output(r: CheckResult) -> str:
 
 def report(results: Sequence[CheckResult], commit: str) -> str:
     """The full report: one section per check with its complete output, then a summary line."""
-    parts = [f"# Checks\n\nReplayed by Ariane on commit `{commit}`.\n", summary_table(results), ""]
+    parts = [
+        f"# Checks\n\nReplayed by Ariane on commit `{commit}`.\n\n"
+        f"Each check was replayed in its own clean working tree at `{commit}`, after the setup.\n",
+        summary_table(results),
+        "",
+    ]
     for r in results:
         verdict = "passed" if r.passed else "failed"
         parts += [

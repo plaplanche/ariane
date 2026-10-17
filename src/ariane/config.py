@@ -50,6 +50,7 @@ class CheckConfig:
     command: tuple[str, ...]
     blocking: bool
     timeout_minutes: float
+    setup: tuple[str, ...] | None = None  # replaces project.setup in this check's replay tree
 
 
 @dataclass(frozen=True)
@@ -327,7 +328,7 @@ def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:
         where = f"checks[{index}]"
         if not isinstance(item, dict):
             raise ConfigError(f"{CONFIG_FILE}: {where}: expected a table")
-        _only(item, where, {"name", "command", "blocking", "timeout_minutes"})
+        _only(item, where, {"name", "command", "blocking", "timeout_minutes", "setup"})
         name = _str(item, "name", where + ".")
         if name in names:
             raise ConfigError(f"{CONFIG_FILE}: {where}.name: duplicate check name {name!r}")
@@ -345,6 +346,7 @@ def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:
                 command=_str_list(item, "command", where + "."),
                 blocking=blocking,
                 timeout_minutes=_positive(item, "timeout_minutes", where + ".", 15),
+                setup=_str_list(item, "setup", where + ".") if "setup" in item else None,
             )
         )
     return tuple(checks)

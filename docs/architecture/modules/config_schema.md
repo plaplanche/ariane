@@ -18,6 +18,7 @@ The description of `ariane.toml` as a JSON Schema, and the runtimes each role ma
 - Reads and writes no file itself; `scripts/generate_docs.py` writes `SCHEMA` to `docs/reference/ariane.toml.schema.json`.
 - The reviewer, the only role that may run on opencode, carries an `if`/`then` that requires `max_tokens` when `runtime` is `opencode`, as `config.parse` does; the implementer has none.
 - The reviewer also carries an `if`/`then` limiting a Claude Code reviewer's `tools` to `REVIEWER_TOOLS` (ADR 0031).
+- `checks[].setup` is an optional argument list.
 - Raises nothing.
 
 ## Workflow

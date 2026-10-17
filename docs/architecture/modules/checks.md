@@ -13,7 +13,7 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 | `blocking_failures(results)` | function | The blocking checks that did not pass. |
 | `summary_line(results)` | function | One line: how many checks passed and which blocking ones failed. |
 | `summary_table(results)` | function | A Markdown table of the results. |
-| `report(results, commit)` | function | The committed `checks.md` text for a commit. |
+| `report(results, commit)` | function | The committed `checks.md` text for a commit; it says each check was replayed in its own clean working tree, after the setup. |
 | `parse_summary_table(text)` | function | Reads a committed report back as (name, blocking, outcome) tuples. |
 
 ## Behaviour and errors

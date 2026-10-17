@@ -20,6 +20,7 @@ from ariane.flow import (
 )
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
+from ariane.replay import replay_each
 from ariane.review_session import ReviewFailed, ReviewSession
 from ariane.runtime import AgentRuntime, for_role
 from ariane.tracker import Issue, Tracker, TrackerError
@@ -157,61 +158,70 @@ class _Verification:
 
     def run(self) -> Outcome:
         replay = replay_path(self.repo_root, self.branch)
-        if replay.exists():
-            raise Refused(f"the replay working tree already exists at {replay}", "remove it")
         records = Path(tempfile.mkdtemp(prefix="ariane-verify-"))
-        git.add_detached_worktree(self.repo_root, replay, self.head)
         try:
             return self._replay_and_review(replay, records)
         finally:
             shutil.rmtree(records, ignore_errors=True)
-            git.remove_worktree(self.repo_root, replay)
 
-    def _setup(self, replay: Path) -> None:
-        command = self.config.setup
+    def _tree_for(self, replay: Path, k: int) -> Path:
+        tree = replay.with_name(f"{replay.name}-{k}")
+        if tree.exists():
+            raise Refused(f"the replay working tree already exists at {tree}", "remove it")
+        return tree
+
+    def _setup(self, check: CheckConfig, replay: Path) -> None:
+        command = check.setup if check.setup is not None else self.config.setup
         if not command:
             return
+        where = f" (in the working tree of check {check.name!r})"
         try:
             done = process.run(
                 command, cwd=replay, timeout_s=SETUP_TIMEOUT_S, env=self.untrusted_env
             )
         except process.CommandNotFoundError as exc:
-            raise Refused(f"setup failed: {exc}", "install it or fix project.setup") from None
+            raise Refused(f"setup failed: {exc}{where}", "install it or fix the setup") from None
         if not done.ok:
             raise Refused(
-                f"setup `{' '.join(command)}` failed (exit {done.returncode})",
+                f"setup `{' '.join(command)}` failed (exit {done.returncode}){where}",
                 "fix the setup command, then run verify again",
             )
         if git.untracked(replay):
             raise Refused(
-                "setup left files that git does not ignore",
+                f"setup left files that git does not ignore{where}",
                 "add them to .gitignore, then run verify again",
             )
 
     def _replay_and_review(self, replay: Path, records: Path) -> Outcome:
-        self._setup(replay)
         all_checks = (*self.config.checks, *self.config.documentation.checks())
-        results = checks.run_checks(all_checks, replay, self.untrusted_env)
-        self._unchanged(replay, "the checks", "")
-        changed = git.changed_paths(replay, self.base)
+        results = replay_each(
+            all_checks,
+            lambda k: self._tree_for(replay, k),
+            create=lambda tree: git.add_detached_worktree(self.repo_root, tree, self.head),
+            setup=self._setup,
+            verify=lambda tree: self._unchanged(tree, "the checks", ""),
+            remove=lambda tree: git.remove_worktree(self.repo_root, tree),
+            env=self.untrusted_env,
+            trees=[],
+        )
+        changed = git.out(
+            ["diff", "--name-only", self.base, self.head, "--"], self.repo_root
+        ).splitlines()
         folder = ticket.TicketFolder(records, self.issue.number, secrets=self.secrets)
         folder.create(self.issue)
-        diff = git.diff(replay, self.base, self.head, ticket.WORK_DIR)
+        diff = git.diff(self.repo_root, self.base, self.head, ticket.WORK_DIR)
         tree = replay.with_name(replay.name + "-reviewer")
         if tree.exists():
             raise Refused(f"the reviewer working tree already exists at {tree}", "remove it")
         git.add_reviewer_worktree(self.repo_root, tree, self.head)
         try:
-            return self._review_in(
-                tree, replay, records, folder, all_checks, results, changed, diff
-            )
+            return self._review_in(tree, records, folder, all_checks, results, changed, diff)
         finally:
             git.remove_worktree(self.repo_root, tree)
 
     def _review_in(
         self,
         tree: Path,
-        replay: Path,
         records: Path,
         folder: ticket.TicketFolder,
         all_checks: Sequence[CheckConfig],
