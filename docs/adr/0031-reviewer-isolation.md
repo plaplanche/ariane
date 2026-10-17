@@ -134,3 +134,28 @@ process scan on macOS are later work), so a process started in a new session the
 its session. Instruction files are guarded, not removed: one that was there before the ticket
 started (for example the owner's own `~/.claude/CLAUDE.md`) is still loaded by the reviewer;
 running the reviewer in bare mode needs an owner decision about logins and stays out of scope.
+
+## Amendment (#188, 2026-10-17)
+
+CI showed a process escaping the survivor scans: it called `setsid()` once, then forked every
+millisecond and let each parent exit. Every scan found only exited generations (zombies, reaped by
+Ariane as the subreaper), never the running one, so after 5 seconds nothing had been killed and
+the process kept running. Decided for C10:
+
+1. **Kill by group and session too.** The `/proc` scan also keeps each process's process group
+   and session. Every process a scan finds that is not in `before`, running or exited and about to
+   be reaped, adds its process group and its session to the groups to stop, unless Ariane belongs
+   to that group or session (`os.getpgid(0)`, `os.getsid(0)`) or a process in `before` does. Each
+   scan that finds a new process or group sends `SIGSTOP` to every such group (`killpg`) as well
+   as to the new pids; once a scan finds nothing new and all are stopped, they get `SIGKILL`, the
+   groups and the pids. Every process of those groups not in `before` is found, stopped, counted
+   and returned like a descendant. A group stopped as a whole cannot fork, so the running
+   generation is caught by the next scan.
+2. **Read the group before reaping.** A zombie's `stat` still holds its process group and
+   session: they are taken from the scan's table before the zombie is reaped.
+3. **The deadline still kills.** At 5 seconds every group found and every pid found get
+   `SIGKILL` before the scans give up (`process.survivors_remaining`).
+
+Residual: a process that changes its session at every fork (a new `setsid()` in each generation)
+still forms a new group the scans may never see running, and can escape them; only an
+operating-system sandbox (cgroups, slice 7) closes that.

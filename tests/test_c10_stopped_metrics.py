@@ -42,7 +42,7 @@ def test_c10_stopped_metrics_a_survivor_that_never_stops_still_gets_sigkill(
 ) -> None:
     """ADR 0031: at the deadline, a survivor stuck in uninterruptible I/O (`D`) is killed too."""
     stuck = 999_999
-    table = {stuck: (os.getpid(), "D", "stuck")}
+    table = {stuck: process._Proc(os.getpid(), "D", "stuck")}
     monkeypatch.setattr(process, "_process_table", lambda: table)
     monkeypatch.setattr(process, "_REAP_SECONDS", 0.05)
     sent: list[tuple[set[int], int]] = []
