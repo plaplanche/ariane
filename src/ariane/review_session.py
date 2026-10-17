@@ -124,13 +124,27 @@ class ReviewSession:
                 else runtime.run(session)
             )
             cost, tokens = result.usage()
+            reached = f"Cap reached: {result.cap}.\n\n" if result.cap else ""
             self.folder.log(
                 "ticket.review.stopped",
                 f"Reviewer session {attempt} stopped: {result.stop_reason.value}",
-                f"Cost {cost} (as reported), tokens {tokens}.",
+                f"{reached}Cost {cost} (as reported), tokens {tokens}.",
             )
             after_session()
             number = self.issue.number
+            if result.stop_reason is StopReason.BUDGET and result.cap:
+                key = (
+                    "agents.reviewer.max_tokens"
+                    if result.cap.startswith("Ariane token cap")
+                    else "agents.reviewer.max_budget_usd"
+                )
+                kind = "token cap" if key.endswith("max_tokens") else "cost cap"
+                raise ReviewFailed(
+                    f"the reviewer session stopped at {result.cap}",
+                    f"raise `{key}` ({kind}) in ariane.toml; the work is kept on branch"
+                    f" ariane/{number}",
+                    ticket.fenced(result.summary),
+                )
             if result.stop_reason is not StopReason.FINISHED:
                 raise ReviewFailed(
                     f"the reviewer session stopped: {result.stop_reason.value}",
