@@ -7,13 +7,14 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 | Name | Kind | What it does |
 | --- | --- | --- |
 | `PASSING_OUTPUT_LINES` | constant | How many output lines a passing check keeps in the report. |
-| `CheckResult` | dataclass | Outcome of one check: `name`, `command`, `blocking`, `passed`, `detail`, `output`, `duration_s`. |
+| `CheckResult` | dataclass | Outcome of one check: `name`, `command`, `blocking`, `passed`, `detail`, `output`, `duration_s`, `not_run_locally` (the globs the check declares, ADR 0042). |
 | `run_checks(checks, cwd, env)` | function | Runs the declared checks in a working tree, in order. |
 | `run_check(check, cwd, env)` | function | Runs one check and returns its `CheckResult`. |
 | `blocking_failures(results)` | function | The blocking checks that did not pass. |
 | `summary_line(results)` | function | One line: how many checks passed and which blocking ones failed. |
 | `summary_table(results)` | function | A Markdown table of the results. |
-| `report(results, commit)` | function | The committed `checks.md` text for a commit; it says each check was replayed in its own clean working tree, after the setup. |
+| `unrun_files(results, changed)` | function | The changed files matching a check's `not_run_locally` globs. |
+| `report(results, commit, changed=())` | function | The committed `checks.md` text for a commit, with the globs a check does not run and the matching changed files; it says each check was replayed in its own clean working tree, after the setup. |
 | `parse_summary_table(text)` | function | Reads a committed report back as (name, blocking, outcome) tuples. |
 
 ## Behaviour and errors

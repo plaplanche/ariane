@@ -51,6 +51,7 @@ class CheckConfig:
     blocking: bool
     timeout_minutes: float
     setup: tuple[str, ...] | None = None  # replaces project.setup in this check's replay tree
+    not_run_locally: tuple[str, ...] = ()  # globs of the files whose tests only CI runs
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,12 @@ class Documentation:
 
 
 NO_DOCUMENTATION = Documentation()
+
+
+def matching_paths(globs: Sequence[str], paths: Sequence[str]) -> list[str]:
+    """The `paths` that match at least one of the `globs`."""
+    regexes = [_glob_regex(g) for g in globs]
+    return [p for p in paths if any(r.fullmatch(p) for r in regexes)]
 
 
 def _glob_regex(glob: str) -> re.Pattern[str]:
@@ -328,7 +335,11 @@ def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:
         where = f"checks[{index}]"
         if not isinstance(item, dict):
             raise ConfigError(f"{CONFIG_FILE}: {where}: expected a table")
-        _only(item, where, {"name", "command", "blocking", "timeout_minutes", "setup"})
+        _only(
+            item,
+            where,
+            {"name", "command", "blocking", "timeout_minutes", "setup", "not_run_locally"},
+        )
         name = _str(item, "name", where + ".")
         if name in names:
             raise ConfigError(f"{CONFIG_FILE}: {where}.name: duplicate check name {name!r}")
@@ -347,9 +358,21 @@ def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:
                 blocking=blocking,
                 timeout_minutes=_positive(item, "timeout_minutes", where + ".", 15),
                 setup=_str_list(item, "setup", where + ".") if "setup" in item else None,
+                not_run_locally=_globs(item, where),
             )
         )
     return tuple(checks)
+
+
+def _globs(item: dict[str, Any], where: str) -> tuple[str, ...]:
+    if "not_run_locally" not in item:
+        return ()
+    value = item["not_run_locally"]
+    if not isinstance(value, list) or not value or not all(isinstance(v, str) and v for v in value):
+        raise ConfigError(
+            f"{CONFIG_FILE}: {where}.not_run_locally: expected a non-empty list of path globs"
+        )
+    return tuple(value)
 
 
 def _definition_of_done(data: dict[str, Any], check_names: set[str]) -> tuple[DoneItem, ...]:

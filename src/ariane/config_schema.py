@@ -218,6 +218,15 @@ SCHEMA: dict[str, Any] = {
                         **_ARGV,
                         "description": "Replaces project.setup in this check's replay tree.",
                     },
+                    "not_run_locally": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": _STR,
+                        "description": (
+                            "Path globs of the files whose tests this check skips when Ariane"
+                            " replays it (only CI runs them)."
+                        ),
+                    },
                 },
             },
         },

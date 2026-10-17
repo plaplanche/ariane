@@ -16,7 +16,7 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 | `validate(data)` | function | The problems of an answer against the schema; empty when valid. |
 | `parse(data)` | function | Turns a valid answer into a `Review`. |
 | `settle(review, items, results)` | function | Applies Ariane's rules to a review and the check results. |
-| `prompt(issue, diff, results, check_configs, items, ...)` | function | The reviewer's instructions with the untrusted data. |
+| `prompt(issue, diff, results, check_configs, items, ...)` | function | The reviewer's instructions with the untrusted data; with `changed`, a block naming the changed files whose tests no replay ran (`not_run_locally`, ADR 0042). |
 | `findings_table(settled)` | function | The findings as a Markdown table. |
 | `record(settled, commit, model, round_)` | function | The text of `work/<n>/review-<round>.md`. |
 | `fix_feedback(settled, failed)` | function | The findings and failed blocking checks given to a fix session. |
