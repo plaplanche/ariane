@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from pathlib import Path
 from typing import Any
 
@@ -180,8 +181,11 @@ def test_c10_review_the_reviewer_table_is_required_and_validated() -> None:
 
 
 def write_config(path: Path, model: str) -> None:
+    """Ariane's own config with the reviewer's model replaced, whatever it is."""
     text = (Path(__file__).resolve().parent.parent / "ariane.toml").read_text(encoding="utf-8")
-    path.write_text(text.replace("claude-opus-5-5", model), encoding="utf-8")
+    head, _, reviewer = text.partition("[agents.reviewer]")
+    reviewer = re.sub(r'(?m)^model = ".*"$', f'model = "{model}"', reviewer, count=1)
+    path.write_text(f"{head}[agents.reviewer]{reviewer}", encoding="utf-8")
 
 
 def test_c22_config_path_arianes_config_names_the_file_to_read(tmp_path: Path) -> None:

@@ -10,16 +10,18 @@ repository = "plaplanche/ariane"
 token_env = "GH_TOKEN"
 ready_label = "ariane"
 
+# Opus implements, Codex reviews on the owner's ChatGPT plan (ADR 0044).
 [agents.implementer]
 runtime = "claude-code"
-model = "claude-sonnet-5-5"
+model = "claude-opus-5-5"
 tools = ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
-max_budget_usd = 5.0
+max_budget_usd = 10.0
 timeout_minutes = 30
 
+# Needs `codex login` on the machine; no api_key_env, so it never bills per token (ADR 0043).
 [agents.reviewer]
-runtime = "claude-code"
-model = "claude-opus-5-5"
+runtime = "codex"
+model = "gpt-6-astra"
 tools = ["Read", "Glob", "Grep"]
 max_budget_usd = 3.0
 timeout_minutes = 20

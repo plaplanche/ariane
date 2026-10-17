@@ -198,7 +198,8 @@ def test_c10_reviewer_isolation_schema_refuses_other_tools_for_claude_code() -> 
 
     schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
     agent = schema["properties"]["agents"]["properties"]["reviewer"]
-    claude = dict(load_toml(ROOT / "ariane.toml")["agents"]["reviewer"])
+    reviewer = load_toml(ROOT / "ariane.toml")["agents"]["reviewer"]
+    claude = {**reviewer, "runtime": "claude-code", "model": "claude-opus-5-5"}
     assert errors(claude, agent) == []
     claude["tools"] = ["Read", "WebFetch"]
     assert errors(claude, agent) != []
