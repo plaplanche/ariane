@@ -18,6 +18,7 @@ from ariane.runtime import Session, SessionResult, StopReason
 from ariane.tracker import InMemoryTracker
 
 from conftest import PY, FakeRuntime, Project, go_answer, make_config
+from test_flow import worktree
 
 HERE = Path(__file__).resolve().parent
 REVIEW = HERE / "fixtures" / "opencode_review.jsonl"
@@ -395,3 +396,52 @@ def test_c10_review_prompt_failed_checks_are_named() -> None:
     assert "all blocking checks green" in ok
     bad = review.prompt(issue, "", [result("lint", True), result("tests", False)], cfgs, ())
     assert "all blocking checks green" not in bad and "FAILED: tests" in bad
+
+
+def capped_review(
+    project: Project, tracker: InMemoryTracker, tmp_path: Path, **caps: Any
+) -> tuple[flow.Outcome, str]:
+    fake = HERE / "fake_opencode.py"
+    reviewer = OpenCodeRuntime((PY, str(fake), str(REVIEW), str(tmp_path / "d.json"), "0", "hang"))
+    routed = runtime.RoutedRuntime({"implementer": FakeRuntime(), "reviewer": reviewer})
+    base = make_config()
+    agent = replace(base.reviewer, runtime="opencode", tools=("read", "glob", "grep"), **caps)
+    outcome = flow.start(
+        7,
+        repo_root=project.root,
+        config=replace(base, reviewer=agent),
+        tracker=tracker,
+        runtime=routed,
+        environ={**os.environ, "OPENAI_API_KEY": "k", "GH_TOKEN": "t"},
+    )
+    journal = (worktree(project) / "work/7/journal.md").read_text(encoding="utf-8")
+    return outcome, journal
+
+
+def test_c5_reviewer_cap_token_cap_is_in_the_journal_and_the_stop_names_the_key(
+    project: Project, tracker: InMemoryTracker, tmp_path: Path
+) -> None:
+    outcome, journal = capped_review(project, tracker, tmp_path, max_tokens=4000)
+    assert outcome.exit_code != 0
+    assert "Cap reached: Ariane token cap (4000 tokens)" in journal
+    assert "agents.reviewer.max_tokens" in outcome.line
+    assert "stopped at Ariane token cap (4000 tokens)" in outcome.line
+
+
+def test_c5_reviewer_cap_cost_cap_names_the_budget_key(
+    project: Project, tracker: InMemoryTracker, tmp_path: Path
+) -> None:
+    outcome, journal = capped_review(
+        project, tracker, tmp_path, max_tokens=10_000_000, max_budget_usd=0.003
+    )
+    assert "Cap reached: runtime cost cap (0.003 USD)" in journal
+    assert "agents.reviewer.max_budget_usd" in outcome.line
+
+
+def test_c5_reviewer_cap_the_example_file_validates_with_a_cap_that_fits_a_review() -> None:
+    path = HERE.parent / "docs" / "ariane.opencode-reviewer.example.toml"
+    assert "max_tokens = 1500000" in path.read_text(encoding="utf-8")
+    import tomllib
+
+    cfg = config.parse(tomllib.loads(path.read_text(encoding="utf-8")))
+    assert cfg.reviewer.max_tokens == 1_500_000

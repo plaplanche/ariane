@@ -54,7 +54,10 @@ example `OPENAI_API_KEY`). The implementer stays on Claude Code. `ARIANE_CONFIG`
 configuration file to read instead of `ariane.toml` for one run (it does not reach the agents or
 the checks);
 [`docs/ariane.opencode-reviewer.example.toml`](docs/ariane.opencode-reviewer.example.toml) is Ariane's
-own configuration with the reviewer on opencode (ADR 0029).
+own configuration with the reviewer on opencode (ADR 0029). Its `max_tokens` is large (1,500,000)
+because opencode reports cache reads again at every step and Ariane counts them, so a normal review
+counts over a million tokens; a reviewer stopped at a cap names the key to raise
+(`agents.reviewer.max_tokens` or `agents.reviewer.max_budget_usd`).
 
 PowerShell:
 

@@ -44,3 +44,12 @@ A review on a second vendor needs no change to Ariane's own `ariane.toml`. The r
 
 - The reviewer reads a separate tree without instruction files and `.claude/`, and receives the
   base branch's `CLAUDE.md` in its prompt; see ADR 0031.
+## Amendment (2026-10-17, #139)
+
+- The example configuration's `max_tokens` is `1500000`, not `400000`. The count includes cache
+  reads, which opencode reports again at every step, so it grows much faster than the context: a
+  normal review on a reference project stopped at 400,000 and finished under 1,500,000. The cap
+  stays a hard stop and the count is unchanged (tokens as reported, cache included).
+- A reviewer stopped at a cap says which one: the `ticket.review.stopped` entry starts with
+  "Cap reached: <cap>.", the stop reason is "the reviewer session stopped at <cap>", and the next
+  action names `agents.reviewer.max_tokens` or `agents.reviewer.max_budget_usd`.
