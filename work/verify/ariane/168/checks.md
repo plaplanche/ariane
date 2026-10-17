@@ -1,15 +1,15 @@
 # Checks
 
-Replayed by Ariane on commit `17b29be6b550b7dc4f98d023840fe3acb17b5e9d`.
+Replayed by Ariane on commit `ea7820c0aa65b4e3cd032eb3188ba2fdbe6b8306`.
 
-Each check was replayed in its own clean working tree at `17b29be6b550b7dc4f98d023840fe3acb17b5e9d`, after the setup.
+Each check was replayed in its own clean working tree at `ea7820c0aa65b4e3cd032eb3188ba2fdbe6b8306`, after the setup.
 
 | Check | Blocking | Result | Duration |
 | --- | --- | --- | --- |
 | lint | yes | pass | 0.1 s |
 | format | yes | pass | 0.1 s |
-| types | yes | pass | 3.5 s |
-| tests | yes | pass | 247.7 s |
+| types | yes | pass | 4.1 s |
+| tests | yes | pass | 226.5 s |
 | file length | yes | pass | 0.1 s |
 | docs: references | yes | pass | 0.4 s |
 
@@ -39,7 +39,7 @@ warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be remo
 
 - Command: `uv run mypy`
 - Blocking: yes
-- Result: passed (exit 0, 3.5 s)
+- Result: passed (exit 0, 4.1 s)
 
 ```text
 warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
@@ -50,20 +50,20 @@ Success: no issues found in 89 source files
 
 - Command: `uv run pytest -q`
 - Blocking: yes
-- Result: passed (exit 0, 247.7 s)
+- Result: passed (exit 0, 226.5 s)
 
 ```text
 warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
 ........................................................................ [ 11%]
 ........................................................................ [ 23%]
-....................s................................................... [ 35%]
+.....................s.................................................. [ 35%]
 ........................................................................ [ 47%]
 ........................................................................ [ 59%]
-........................................................................ [ 71%]
+........................................................................ [ 70%]
 ........................................................................ [ 82%]
-.........................s.............................................. [ 94%]
-................................                                         [100%]
-606 passed, 2 skipped in 247.06s (0:04:07)
+..........................s............................................. [ 94%]
+.................................                                        [100%]
+607 passed, 2 skipped in 225.79s (0:03:45)
 ```
 
 ## file length

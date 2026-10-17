@@ -1,14 +1,14 @@
 # Review 0
 
-- Reviewed commit: `17b29be6b550b7dc4f98d023840fe3acb17b5e9d`
+- Reviewed commit: `ea7820c0aa65b4e3cd032eb3188ba2fdbe6b8306`
 - Reviewer model: gpt-6-astra
-- Verdict: **no-go** (the reviewer answered no-go)
+- Verdict: **go**
 
 ## Findings
 
-- **blocking** (`src/ariane/context.py:149`) Declared proxy credentials escape redaction
+- **minor** (`tests/test_c21_env_allow_list.py:56`) Add coverage of environment propagation through orchestration
 
-  Credential-bearing proxies are classified as declared secrets here, but known_secrets omits their values. Reproduced read-only with HTTPS_PROXY=user:long-proxy-password@proxy:3128 declared in project.env: it passes, the journal names HTTPS_PROXY, known_secrets returns [], and redact preserves the complete credential. The existing URL redactor requires ://, whereas this change explicitly supports scheme-less proxies. The affected sequence is: setup/check receives the declared proxy; its output includes the value; TicketFolder.write redacts using the incomplete secret list and writes checks.md; git.commit records it; delivery pushes it. Verify likewise writes and commits the unmasked report. Include credential-bearing proxy values in known_secrets and add a regression test covering recorded output, including scheme-less values.
+  The environment tests call context.untrusted_environment directly. The flow test verifies the journal entry, but not what setup, checks or agents receive. Removing declared=config.env from flow or verify would therefore escape these assertions. Add integration coverage that observes declared and undeclared variables at those process boundaries.
 
 ## Definition of done
 
@@ -34,16 +34,16 @@
 
 - met: The change is covered by tests that fail without it.
 
-  Twelve test_c21_env_allow_list_* tests cover filtering, declarations, journal entries, extended secret patterns, schema validation and proxies. The new configuration and filtering assertions fail against the previous implementation. Ariane reports the suite passed; independent pytest execution was unavailable because the installed Python lacks pytest. Proxy-output redaction remains uncovered, as reported above.
+  The new tests exercise undeclared-variable exclusion, explicit declarations, extended secret patterns, proxy credentials and schema validation, which the previous implementation lacks. Six pure environment test functions passed when executed directly without writes. Pytest is unavailable in the review interpreter; the supplied Ariane replay reports the full suite passing.
 
 - met: The documentation the change affects is updated (C25).
 
-  README, example configuration, affected module documentation, generated schema and log catalogue are updated. Ariane reports the generated-reference check passed.
+  README, example and project configuration, affected module documentation, schema reference and log catalogue are updated. The supplied docs-reference check passed. Side-effect tracing confirms environments are filtered before subprocess execution. Start runs setup, creates ticket records and metrics, logs ticket.started and the declaration warning, then commits records and starts the agent. Replay and verify pass the filtered environment to setup and checks. Commit resets the index, removes requested entries, stages paths, checks for changes, then commits with identity variables restored.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0024 records the allow list, declaration matching, credential-bearing proxy handling, secret-pattern boundaries, commit identity restoration, warning severity and verify logging behavior.
+  The ADR 0024 amendment records matching rules, platform-specific variables, credential-bearing proxy handling, secret-pattern boundaries, commit identity restoration, warning severity and verify's lack of a persisted declaration journal.
 
 ## Proposed learnings (not decided)
 
-- Proposed: whenever a new path deliberately passes a secret, test its complete journey through captured output, redaction and persisted records.
+- Proposed: Test environment security policies both as pure filtering functions and at each orchestration boundary that passes environments to subprocesses.
