@@ -8,7 +8,7 @@ is opened, no commit status or comment is posted.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from ariane import checks, git, review, ticket
@@ -117,6 +117,7 @@ class ShadowRun(_TicketRun):
         reviewed: int,
         results: list[checks.CheckResult],
         unchanged: int = 0,
+        guard_push: Callable[[], None] | None = None,
     ) -> Outcome:
         draft = settled is not None and not settled.go
         outcome = "needs a human" if draft else "delivered"

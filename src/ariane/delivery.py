@@ -48,6 +48,7 @@ class Delivery:
     checked: str = ""
     settled: review.Settled | None = None
     review_round: int = 0
+    guard: Callable[[], None] = lambda: None
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
@@ -70,6 +71,7 @@ class Delivery:
             )
         self.commit_record(f"#{number}: record the checks and the delivery")
         self._require_replayed()
+        self.guard()
         pushed = git.head(self.worktree)
         way = git.push(
             self.worktree, self.url, pushed, self.branch, token=self.token, environ=self.environ
@@ -104,7 +106,9 @@ class Delivery:
         if not self.checked:
             return
         own = ticket.relative_folder(self.issue.number) + "/"
-        listing = git.out(["diff", "--name-only", self.checked, "HEAD"], self.worktree)
+        listing = git.out(
+            ["diff", *git.NO_DRIVERS, "--name-only", self.checked, "HEAD"], self.worktree
+        )
         outside = [p for p in listing.splitlines() if p and not p.startswith(own)]
         if outside:
             raise PullRequestRefused(

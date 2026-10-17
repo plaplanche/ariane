@@ -108,10 +108,7 @@ class TicketFolder:
     def write(self, name: str, text: str) -> None:
         self._records[name] = redact(text, self._secrets)
         self._ensure_folder()
-        target = self.path / name
-        if target.is_symlink() or target.is_dir():
-            _remove(target)
-        target.write_text(self._records[name], encoding="utf-8", newline="\n")
+        write_file(self.path / name, self._records[name])
 
     def restore(self) -> None:
         """Rewrite the folder exactly as Ariane recorded it, whatever an agent did."""
@@ -124,13 +121,25 @@ class TicketFolder:
 
     def _ensure_folder(self) -> None:
         """Make every folder from the root down a real directory, never a link or a file."""
-        self.root.mkdir(parents=True, exist_ok=True)
-        current = self.root
-        for part in self.path.relative_to(self.root).parts:
-            current = current / part
-            if current.is_symlink() or (current.exists() and not current.is_dir()):
-                _remove(current)
-            current.mkdir(exist_ok=True)
+        ensure_folder(self.root, self.path)
+
+
+def ensure_folder(root: Path, path: Path) -> None:
+    """Make every folder from `root` down to `path` a real directory, never a link or a file."""
+    root.mkdir(parents=True, exist_ok=True)
+    current = root
+    for part in path.relative_to(root).parts:
+        current = current / part
+        if current.is_symlink() or (current.exists() and not current.is_dir()):
+            _remove(current)
+        current.mkdir(exist_ok=True)
+
+
+def write_file(target: Path, text: str) -> None:
+    """Write `text` to `target`; a link or folder in its place is removed, never followed."""
+    if target.is_symlink() or target.is_dir():
+        _remove(target)
+    target.write_text(text, encoding="utf-8", newline="\n")
 
 
 def _remove(path: Path) -> None:

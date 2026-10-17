@@ -20,6 +20,7 @@
 
 ## Behaviour and errors
 
+- The reviewer's base instructions are read once in `_prepare`, right after the fetch and before any agent runs, and kept in memory for every review round (ADR 0017). The snapshot includes `refs/remotes/origin/<base>`, and the delivery runs the guard again right before the push.
 - `start`: the whole flow for one ticket number.
 - `Outcome`: the result reported to the command line.
 - The push guard's remote check (C11, ADR 0017) is `git.remote_changes`, called after the agent session with the ticket's branch.

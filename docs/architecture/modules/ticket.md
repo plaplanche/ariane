@@ -19,6 +19,8 @@ The ticket folder `work/<n>/` (C1, C10, C23): every document of a ticket, readab
 | `now()` | function | The current time as the ISO string the records show. |
 | `fence(text)` | function | A backtick fence longer than any backtick run inside `text`. |
 | `fenced(text, info='text')` | function | `text` in a code block that it cannot close early (quotes untrusted text safely). |
+| `ensure_folder(root, path)` | function | Makes every folder from `root` down to `path` a real directory, removing a link or file in the way. |
+| `write_file(target, text)` | function | Writes `text`; a link or folder in place of `target` is removed, never followed. |
 | `TicketFolder` | class | Ariane's records of one ticket: `create(issue)`, `exists()`, `log(kind, step, detail='')`, `set_status(state, detail, next_action)`, `write(name, text)`, `restore()`. |
 | `brief(issue)` | function | The issue as a document. |
 | `read_status(path)` | function | Parse the `status.md` of a ticket folder into its fields (Last action, At, Detail, Next). |

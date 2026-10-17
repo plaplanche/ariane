@@ -21,6 +21,7 @@ _TIMEOUT_S = 300
 _SAFE_OPTIONS = [
     *("-c", f"core.hooksPath={os.devnull}"),
     *("-c", "core.fsmonitor=false"),
+    *("-c", "protocol.ext.allow=never"),  # the `ext::` transport runs a command
     *("-c", "core.quotepath=off"),  # non-ASCII paths stay readable
     # No background housekeeping: it rewrites files (`info/refs`) in the middle of a ticket.
     *("-c", "gc.auto=0"),
@@ -42,6 +43,8 @@ _AUTH_REFUSALS = (
 # command of Ariane's other than the push (C21, ADR 0017).
 SECRET_NAME = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|PRIVATE_?KEY")
 CREDENTIAL_CHANNELS = ("SSH_AUTH_SOCK", "SSH_ASKPASS", "GIT_ASKPASS", "SUDO_ASKPASS")
+# Every diff Ariane runs: a configured external diff or textconv driver is code.
+NO_DRIVERS = ("--no-ext-diff", "--no-textconv")
 _GENERATED_LISTINGS = frozenset({"info/refs", "info/packs"})
 
 
@@ -205,12 +208,13 @@ def remove_worktree(cwd: Path, path: Path) -> None:
     git(["worktree", "remove", "--force", str(path)], cwd)
 
 
-def config_snapshot(worktree: Path, *, ignore_ref: str) -> dict[str, str]:
+def config_snapshot(worktree: Path, *, ignore_ref: str, base_ref: str = "") -> dict[str, str]:
     """Everything that makes git run code or reroute a push, by part.
 
     Parts: each file of the shared configuration, hooks and info folders and of this working
     tree's own configuration (as a digest), every configuration scope git reads (global
-    included), and the local branches and tags except branch `ignore_ref` (the ticket's own).
+    included), the local branches and tags except branch `ignore_ref` (the ticket's own), and
+    the remote-tracking ref `base_ref` (the base branch the reviewer's instructions come from).
     Ariane compares two snapshots taken before and after untrusted code runs: a difference
     means that code edited git itself, and `snapshot_changes` names what changed.
     """
@@ -240,12 +244,25 @@ def config_snapshot(worktree: Path, *, ignore_ref: str) -> dict[str, str]:
     refs = out(
         ["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags"], worktree
     )
+    if base_ref:
+        found = git(["rev-parse", "--verify", "--quiet", base_ref], worktree, check=False)
+        snapshot[f"ref {base_ref}"] = found.stdout.strip() if found.ok else ""
     own = f"refs/heads/{ignore_ref} "
     for line in refs.splitlines():
         if not line.startswith(own):
             ref, _, sha = line.partition(" ")
             snapshot[f"ref {ref}"] = sha
     return snapshot
+
+
+def url_rewrites(cwd: Path) -> list[str]:
+    """Local `url.*.insteadof` and `url.*.pushinsteadof` keys: they reroute a push."""
+    listing = git(["config", "--local", "--name-only", "--list"], cwd, check=False).stdout
+    return [
+        key
+        for key in listing.splitlines()
+        if key.lower().startswith("url.") and key.lower().endswith("insteadof")
+    ]
 
 
 def snapshot_changes(before: dict[str, str], after: dict[str, str]) -> list[str]:
@@ -309,13 +326,13 @@ def ignored(cwd: Path) -> set[str]:
 
 def changed_paths(cwd: Path, since: str) -> list[str]:
     """Paths that differ from commit `since`: committed, staged, unstaged or untracked."""
-    committed = out(["diff", "--name-only", since, "--"], cwd).splitlines()
+    committed = out(["diff", *NO_DRIVERS, "--name-only", since, "--"], cwd).splitlines()
     return sorted({*committed, *untracked(cwd)} - {""})
 
 
 def diff(cwd: Path, since: str, until: str, exclude: str) -> str:
     """The diff from `since` to `until`, without the paths under `exclude`."""
-    return out(["diff", since, until, "--", ".", f":(exclude){exclude}"], cwd)
+    return out(["diff", *NO_DRIVERS, since, until, "--", ".", f":(exclude){exclude}"], cwd)
 
 
 def status(cwd: Path) -> str:
@@ -325,7 +342,7 @@ def status(cwd: Path) -> str:
 
 def committed_paths(cwd: Path, since: str, pathspec: str) -> list[str]:
     """Paths under `pathspec` changed by commits since `since`."""
-    listing = out(["diff", "--name-only", since, "HEAD", "--", pathspec], cwd)
+    listing = out(["diff", *NO_DRIVERS, "--name-only", since, "HEAD", "--", pathspec], cwd)
     return [line for line in listing.splitlines() if line]
 
 
@@ -424,11 +441,12 @@ def push(
 
 
 def fast_forwarded(cwd: Path, remote: str, branch: str, old: str, new: str) -> bool:
-    """Whether the remote `branch` moved from `old` to `new` by a fast-forward (fetches `new`)."""
+    """Whether the remote `branch` moved from `old` to `new` by a fast-forward (fetches `new`
+    into a private ref: the remote-tracking ref the reviewer's base comes from stays put)."""
     if git(["cat-file", "-e", f"{old}^{{commit}}"], cwd, check=False).ok is False:
         return False
     fetched = git(
-        ["fetch", "--quiet", remote, f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}"],
+        ["fetch", "--quiet", "--refmap=", remote, f"+refs/heads/{branch}:refs/ariane/base-check"],
         cwd,
         check=False,
     )

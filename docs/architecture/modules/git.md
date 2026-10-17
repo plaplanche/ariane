@@ -9,6 +9,8 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `BLOCKED_PUSH_URL` | constant | The push URL agents see, which cannot be pushed to. |
 | `INSTRUCTION_FILES` | constant | Lower-case names of the instruction files left out of the reviewer tree. |
 | `INSTRUCTION_DIRS` | constant | Directories left out of the reviewer tree (`.claude`). |
+| `NO_DRIVERS` | constant | `--no-ext-diff --no-textconv`, given to every diff Ariane runs. |
+| `url_rewrites(cwd)` | function | The local `url.*.insteadof` and `url.*.pushinsteadof` keys. |
 | `GitError` | exception | A git command failed. |
 | `git(args, cwd, env, check)` | function | Runs git with safe options; returns the completed process. |
 | `out(args, cwd, env)` | function | Runs git and returns its stripped output. |
@@ -50,6 +52,10 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `remote_changes(cwd, url, remote, branch, base_branch, refs_before)` | function | The push guard's check of the remote refs. |
 
 ## Behaviour and errors
+
+- Safer reads (ADR 0017): `_SAFE_OPTIONS` has `protocol.ext.allow=never` and every diff has `NO_DRIVERS`, so a configured external diff, textconv driver or `ext::` transport never runs.
+- `config_snapshot(worktree, ignore_ref, base_ref)`: also covers the remote-tracking ref `base_ref`. `fast_forwarded` fetches into the private ref `refs/ariane/base-check`, so Ariane's own check does not move it.
+- `url_rewrites(cwd)`: the local `url.*.insteadof` and `url.*.pushinsteadof` keys; the delivery stops on any.
 
 - `git`, `out`: run git and return output.
 - `add_worktree`, `add_detached_worktree`, `remove_worktree`: ticket and replay trees.

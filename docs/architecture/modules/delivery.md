@@ -13,6 +13,7 @@ Delivers a ticket: one push, the pull request (a draft that can carry failing bl
 
 ## Behaviour and errors
 
+- `Delivery.guard`: called right before `git.push` (ADR 0017); it raises `Stop` when git, the branch or the remote changed, or when a local `url.*.insteadof` or `url.*.pushinsteadof` key exists.
 - `Delivery`: performs the delivery.
 - `Delivered`: the pull request (and whether it is a draft) and the statuses published. When the last review is still `no-go` after the fix rounds the pull request is a draft whose body says "Needs a human", and the ticket status is `needs a human` with next action "finish by hand, then run `ariane verify`". The pull request body carries the review's verdict and definition-of-done results.
 - `PullRequestRefused`: raised when the tracker refuses the pull request.
