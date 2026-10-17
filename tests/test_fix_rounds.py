@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import os
+
 import pytest
 
 from ariane import git
@@ -138,3 +141,66 @@ def test_c10_fix_round_a_go_first_time_runs_no_fix_session(
     assert start(project, tracker, runtime).exit_code == 0
     assert len(implementers(runtime)) == 1
     assert tracker.opened[0]["draft"] is False
+
+
+def leave_alone(session: Session) -> None:
+    if "fix round" not in session.prompt:
+        edit_app(session)
+
+
+def test_c10_unchanged_fix_stops_the_rounds_with_a_draft_after_one_review(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    runtime = FakeRuntime(action=leave_alone, answers=[NO_GO])
+    outcome = start(project, tracker, runtime)
+    assert outcome.exit_code == 1
+    assert "changed nothing" in outcome.line
+    assert len(implementers(runtime)) == 2
+    assert len(reviewers(runtime)) == 1
+    assert tracker.opened[0]["draft"] is True
+    assert "Verdict: **no-go**" in tracker.opened[0]["body"]
+    journal = (worktree(project) / "work/7/journal.md").read_text(encoding="utf-8")
+    assert "Fix round 1 changed nothing" in journal
+    assert "changed app.txt" in journal
+    data = json.loads((worktree(project) / "work/7/metrics.json").read_text(encoding="utf-8"))
+    assert data["unchanged_fix_rounds"] == 1
+    assert data["rounds"] == 1
+    assert data["outcome"] == "needs a human"
+
+
+def test_c10_unchanged_fix_a_session_that_commits_by_itself_is_not_unchanged(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    def commit_alone(session: Session) -> None:
+        if "fix round" not in session.prompt:
+            edit_app(session)
+            return
+        (session.cwd / "app.txt").write_text("version 2\nmine\n", encoding="utf-8")
+        git.commit(session.cwd, ["app.txt"], "fix by the agent", env=dict(os.environ))
+
+    runtime = FakeRuntime(action=commit_alone, answers=[NO_GO, go_answer()])
+    outcome = start(project, tracker, runtime)
+    assert outcome.exit_code == 0, outcome.line
+    assert len(reviewers(runtime)) == 2
+    journal = (worktree(project) / "work/7/journal.md").read_text(encoding="utf-8")
+    assert "changed nothing" not in journal
+
+
+def test_c10_unchanged_fix_after_red_checks_gives_the_draft_without_a_second_replay(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    def action(session: Session) -> None:
+        if "fix round 2" in session.prompt:
+            return
+        broken = "fix round 1" in session.prompt
+        (session.cwd / "app.txt").write_text("broken\n" if broken else "version 2\n")
+
+    runtime = FakeRuntime(action=action, answers=[NO_GO])
+    outcome = start(project, tracker, runtime)
+    assert outcome.exit_code == 1
+    assert "fix round 2 changed nothing" in outcome.line
+    assert len(reviewers(runtime)) == 1
+    assert tracker.opened[0]["draft"] is True
+    assert "1 failed (1 blocking)" in tracker.opened[0]["body"]
+    journal = (worktree(project) / "work/7/journal.md").read_text(encoding="utf-8")
+    assert journal.count("Checks replayed by Ariane") == 2

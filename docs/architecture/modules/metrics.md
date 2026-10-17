@@ -16,7 +16,7 @@ The measurements of one ticket, `work/<n>/metrics.json` (C19, ADR 0034): UTF-8, 
 - `step(name)` appends a named step with its time.
 - `run_session(runtime, session, round_=0)` runs a session on its runtime and records role, round, runtime, model, stop reason, cost, tokens (input, output, cache read, cache write; null when not reported) and `duration_s`. Attempts (C19, ADR 0036): it sums the sessions' `SessionResult.attempts` into `"attempts": {"push", "pull_request", "guard_violations"}`; `guard_violation()` counts a post-session check that stopped the ticket.
 - `delivered_red(count)`: the blocking checks red at delivery, written as `blocking_red_at_delivery` (C19, ADR 0038).
-- `reviewed(go)`, `fix_round(round_)`, `finish(outcome)`: the first review's verdict (`go`, `no-go`, or `not reviewed`), the number of fix rounds, the outcome (`running`, `delivered`, `stopped`, `needs a human`).
+- `unchanged_fix_round()` counts a fix round that changed nothing into `unchanged_fix_rounds` (C10). `reviewed(go)`, `fix_round(round_)`, `finish(outcome)`: the first review's verdict (`go`, `no-go`, or `not reviewed`), the number of fix rounds, the outcome (`running`, `delivered`, `stopped`, `needs a human`).
 
 ## Workflow
 
@@ -40,6 +40,7 @@ class Metrics {
   steps list
   sessions list
   rounds int
+  unchanged_fix_rounds int
   attempts Attempts
   first_pass_verdict str
   outcome str

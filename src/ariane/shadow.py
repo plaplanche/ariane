@@ -116,6 +116,7 @@ class ShadowRun(_TicketRun):
         settled: review.Settled | None,
         reviewed: int,
         results: list[checks.CheckResult],
+        unchanged: int = 0,
     ) -> Outcome:
         draft = settled is not None and not settled.go
         outcome = "needs a human" if draft else "delivered"
