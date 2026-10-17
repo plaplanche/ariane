@@ -86,6 +86,7 @@ flowchart TD
   review --> checks
   review --> config
   review --> context
+  review --> ticket
   review --> tracker
   review_session --> checks
   review_session --> config

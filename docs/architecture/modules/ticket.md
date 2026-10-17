@@ -12,6 +12,7 @@ The ticket folder `work/<n>/` (C1, C10, C23): every document of a ticket, readab
 | `STATUS` | constant | The status file name, `status.md`. |
 | `CHECKS` | constant | The checks file name, `checks.md`. |
 | `RECORDS` | constant | The four records every ticket folder holds. |
+| `section(body, title)` | function | The text under the level-2 heading `## <title>` of an issue body (case and surrounding spaces ignored), up to the next level-2 heading; empty when absent. |
 | `folder_path(root, number)` | function | The folder of ticket `number` under `root`. |
 | `relative_folder(number)` | function | The folder as a path relative to the repository root. |
 | `review_file(round_)` | function | The record of review `round_` (`review-0.md`, then `review-1.md` and `review-2.md` after fix rounds). |
@@ -29,6 +30,7 @@ The ticket folder `work/<n>/` (C1, C10, C23): every document of a ticket, readab
 - `create` raises `FileExistsError` when the ticket folder already exists. `log` raises `ValueError` for an undeclared type (`logs.functional`) and emits `journal.warning` for an entry of level warning.
 - `restore` rewrites the folder exactly as recorded in memory, whatever an agent did (removing other files, links and folders); `exists` tells whether the journal was written.
 - `read_status` reads `status.md` of a folder; `parse_status` accepts the current and the old wording and returns fields missing from the text as absent.
+- `section` never raises: it stops at the next `## ` line, keeps `###` headings inside the section, runs to the end of the body when no heading follows, and returns `""` when absent. It reads lines, not Markdown: a `## ` line inside a fenced code block ends the section.
 - A journal entry of an undeclared type is refused by `logs.functional`.
 
 ## Workflow
@@ -64,6 +66,7 @@ class TicketFolder {
 }
 class ticket {
   <<function>>
+  section(body, title) str
   folder_path(root, number) Path
   relative_folder(number) str
   review_file(round_) str
@@ -96,6 +99,7 @@ flowchart LR
   metrics --> ticket
   replay --> ticket
   report --> ticket
+  review --> ticket
   review_session --> ticket
   shadow --> ticket
   ticket --> logs

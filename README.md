@@ -41,6 +41,8 @@ ariane status 12
 ariane verify my-branch --issue 12
 ```
 
+The reviewer is given the ticket's Out of scope section, and a finding about out-of-scope work is never blocking.
+
 The reviewer loads nothing from the tree under review (no hooks, settings or instruction files; ADR 0031): a Claude Code reviewer's `tools` are a subset of `Read`, `Glob`, `Grep`, and it gets the base branch's `CLAUDE.md` in its prompt as data.
 
 ### Reviewer on opencode

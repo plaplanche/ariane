@@ -242,3 +242,11 @@ def test_c9_own_environment_matches_names_without_case_and_normalises_entries() 
     env = context.untrusted_environment(base, token_env="T", remotes=[], is_root=False)
     assert "virtual_env" not in env and "ariane_x" not in env
     assert env["Path"] == os.pathsep.join([other, other])
+
+
+def test_c10_out_of_scope_implementer_and_fix_prompts_hold_the_rule() -> None:
+    issue = Issue(3, "Title", "Body", "u")
+    rule = "Do not do what the issue lists under Out of scope"
+    assert rule in context.implementer_prompt(issue, "ariane/3", [])
+    fix = context.implementer_prompt(issue, "ariane/3", [], fix_round=1, findings="f")
+    assert rule in fix

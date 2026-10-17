@@ -29,6 +29,8 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 - `settle`: `go` with a blocking finding is `no-go`; a sentence item missing or `met: false` is a blocking finding; check items come from the replay's results.
 - `record`: the text of `work/<n>/review-<round>.md`. `fix_feedback`: the findings (and failed blocking checks) given to a fix session. `pull_request_section`: the verdict, the item results and the findings table (3,000 characters at most, else a summary and a link).
 
+When the issue has an `Out of scope` section (`ticket.section`), the prompt shows it again as its own escaped untrusted block (`kind="out-of-scope"`) and the rules say that a finding about that work is never blocking: minor, with "out of scope" in its title, or left out. This is a framed opinion; `settle` is unchanged.
+
 The reviewer's prompt also states, as a fact from Ariane, the mapped documents the change left untouched (C25). It says "all blocking checks green" only when they are, else it lists the blocking checks that failed.
 The paths of those documents come from the agent, so each goes in its own escaped `<untrusted-ticket kind="paths">` block; only the sentence saying Ariane found them is outside (C21).
 
@@ -101,6 +103,7 @@ flowchart LR
   review --> checks
   review --> config
   review --> context
+  review --> ticket
   review --> tracker
   review_session --> review
   shadow --> review
