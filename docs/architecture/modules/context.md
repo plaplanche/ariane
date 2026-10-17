@@ -13,7 +13,7 @@ Builds what an agent receives from Ariane (C5, C21, C25, C26): its prompt and a 
 
 ## Behaviour and errors
 
-- `implementer_prompt` holds the rules, the checks to replay, the definition of done (C26) and a "Documentation" section with the map of source files to documents (C25). The ticket sits in an escaped untrusted block, or a pointer to `brief.md` when `recorded`. For a fix round (C10) it adds the review's findings in an escaped untrusted block.
+- `implementer_prompt` holds the rules, the checks to replay, the definition of done (C26) and a "Documentation" section with the map of source files to documents (C25). The ticket sits in an escaped untrusted block, or a pointer to `brief.md` when `recorded`. The rules tell the agent not to do what the issue lists under Out of scope, even when a finding asks for it. For a fix round (C10) it adds the review's findings in an escaped untrusted block.
 - `untrusted_environment` withholds the tracker token, credential channels, secret-looking names, the remotes' credentials, every `ARIANE_*` variable and Ariane's own virtual environment: `VIRTUAL_ENV`, `VIRTUAL_ENV_PROMPT` and the `PATH` entries that are its scripts directory or that of the interpreter running Ariane (matched case-insensitively, ADR 0040; these are not secrets, so `known_secrets` ignores them). It keeps only the login variables the runtime declares (exact names, and prefixes ending in `_`, ADR 0024); the checks' environment gets none. As root with a kept login it sets `IS_SANDBOX=1` (Claude Code refuses `bypassPermissions` as root otherwise).
 - `known_secrets` still masks a kept login variable whose name looks like a credential.
 - Reads no file and raises nothing.

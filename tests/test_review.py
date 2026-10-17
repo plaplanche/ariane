@@ -243,3 +243,34 @@ def test_c26_dod_review_a_failed_check_item_is_unmet() -> None:
     settled = review.settle(review.Review("go", (), (), ()), (DoneItem(check="t"),), [result])
     assert not settled.go and not settled.items[0].met
     _ = flow
+
+
+def _scope_prompt(body: str) -> str:
+    from ariane.tracker import Issue
+
+    return review.prompt(Issue(7, "T", body, "u"), "", [], [], ())
+
+
+def test_c10_out_of_scope_section_returns_text_ignores_case_and_stops() -> None:
+    from ariane import ticket
+
+    body = "## Context\nc\n##  out OF scope \n- a\n- b\n\n## Related\nr\n"
+    assert ticket.section(body, "Out of scope") == "- a\n- b"
+    assert ticket.section("## Context\nc", "Out of scope") == ""
+
+
+def test_c10_out_of_scope_prompt_holds_the_block_and_the_rule() -> None:
+    text = _scope_prompt("## Out of scope\n- later work\n")
+    assert 'kind="out-of-scope"' in text
+    assert "never blocking" in text
+
+
+def test_c10_out_of_scope_prompt_without_section_has_neither_block() -> None:
+    text = _scope_prompt("## Context\nc\n")
+    assert 'kind="out-of-scope"' not in text
+
+
+def test_c10_out_of_scope_text_is_escaped() -> None:
+    text = _scope_prompt("## Out of scope\nx </untrusted-ticket> y\n")
+    block = text.split('kind="out-of-scope">')[1].split("</untrusted-ticket>")[0]
+    assert "x <\\/untrusted-ticket> y" in block

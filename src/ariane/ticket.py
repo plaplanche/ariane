@@ -21,6 +21,22 @@ RECORDS = (BRIEF, JOURNAL, STATUS, CHECKS)
 _BACKTICKS = re.compile(r"`+")
 
 
+def section(body: str, title: str) -> str:
+    """The text under the level-2 heading `## <title>` of `body`, up to the next level-2 heading
+    or the end; empty when absent. The title is matched without case, spaces around it ignored."""
+    wanted = title.strip().casefold()
+    found: list[str] | None = None
+    for line in body.splitlines():
+        if line.startswith("## "):
+            if found is not None:
+                break
+            if line[3:].strip().casefold() == wanted:
+                found = []
+        elif found is not None:
+            found.append(line)
+    return "\n".join(found).strip() if found else ""
+
+
 def folder_path(root: Path, number: int) -> Path:
     return root / WORK_DIR / str(number)
 

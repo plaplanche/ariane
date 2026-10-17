@@ -12,6 +12,7 @@ The ticket folder `work/<n>/` (C1, C10, C23): every document of a ticket, readab
 | `STATUS` | constant | The status file name, `status.md`. |
 | `CHECKS` | constant | The checks file name, `checks.md`. |
 | `RECORDS` | constant | The four records every ticket folder holds. |
+| `section(body, title)` | function | The text under the level-2 heading `## <title>` of an issue body (case and surrounding spaces ignored), up to the next level-2 heading; empty when absent. |
 | `folder_path(root, number)` | function | The folder of ticket `number` under `root`. |
 | `relative_folder(number)` | function | The folder as a path relative to the repository root. |
 | `review_file(round_)` | function | The record of review `round_` (`review-0.md`, then `review-1.md` and `review-2.md` after fix rounds). |
@@ -96,6 +97,7 @@ flowchart LR
   metrics --> ticket
   replay --> ticket
   report --> ticket
+  review --> ticket
   review_session --> ticket
   shadow --> ticket
   ticket --> logs
