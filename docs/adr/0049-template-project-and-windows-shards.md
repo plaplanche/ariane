@@ -1,6 +1,7 @@
-# 0049. A template project per worker, and Windows tests in two shards
+# 0049. A template project per worker, and Windows shards only if still above 8 minutes
 
-- Status: accepted
+- Status: accepted for the template project and the set-ups; the shard decision waits for the
+  Windows measurement of this pull request's CI (see "Shards" and "Handover")
 - Date: 2026-10-18
 - Capabilities: C9
 
@@ -58,8 +59,12 @@ The 30 slowest on Linux before the change (`--durations=30`; seconds, test body)
 
 The slowest tests are whole Ariane runs (start, replay, review, fix rounds, delivery) and the
 process-tree tests that wait on purpose; each runs 100 to 190 git processes in its body, nearly
-all from Ariane itself. The implementer's sandbox cannot run Windows: the 30 slowest on Windows
-come from the CI run of `--durations=30` (see "Handover").
+all from Ariane itself.
+
+**Not measured yet: the 30 slowest on Windows.** The implementer's sandbox runs Linux only and
+cannot push a workflow file (CLAUDE.md, "Cloud sessions"), so no CI run has reported
+`--durations=30` yet. The Windows list, before and after, is recorded here from the CI runs of
+"Handover", steps 1 and 2; until then this ADR does not claim any Windows figure beyond #205's.
 
 ## Decision
 - **Measure in CI.** The `Tests` step of `ci.yml` runs `uv run pytest --durations=30` on every
@@ -82,7 +87,12 @@ come from the CI run of `--durations=30` (see "Handover").
   `origin` is its own remote (`tests/test_c9_project_template.py`). The copies share their
   initial commit id within a worker, which no test relies on being different. Serially
   (`-n 0`) there is one template for the session.
-- **The next slowest avoidable set-ups.** No single test body has avoidable git set-up of the
+- **The next slowest avoidable set-ups.** Chosen from the Linux count of git processes per
+  test above, not from the Windows list, which does not exist yet: a set-up that starts git
+  processes costs more on Windows than on Linux, never less, so the set-ups with the most of
+  them are the first candidates on both. If the Windows list of "Handover", step 2, shows a
+  slow test whose set-up starts avoidable git processes and is not below, it is changed in a
+  follow-up ticket. No single test body has avoidable git set-up of the
   size of the fixtures (the bodies' git calls are what they test), so the five changed are the
   set-ups that commit on a branch through a temporary worktree (four or five processes each).
   They now call `commit_on_branch` in `conftest.py`, one `git fast-import` that adds a commit to
@@ -98,27 +108,40 @@ come from the CI run of `--durations=30` (see "Handover").
   No assertion changed. With them, the suite starts 18,924 git processes instead of 20,638, 47
   of them in set-up instead of 1,796, and the summed set-up phase on Linux falls from 17.0 s to
   4.7 s (same machine, back to back).
-- **Shards on Windows, two.** The set-up phase is about 3 % of the summed test time; even if
-  Windows saved twice that share, its tests step would stay far above 8 minutes, so the
-  Windows job is split. A `shard` matrix dimension exists on `windows-latest` only, with 2
-  shards; Linux and macOS keep one job each. Each shard runs one group of `pytest-split`
+- **Shards on Windows, only if the measurement asks for it.** Not decided by this ADR's
+  author: the order is measure, then shard. The Windows tests step of the run of commit 1
+  below (template and set-ups, no shards) decides. If it is at most 480 s (8 minutes), nothing
+  is sharded, and this ADR records the figure and says so. If it is above, the Windows job is
+  split into two shards, and into three only if a shard's tests step is then above 570 s, as
+  few as reach the target. The sandbox's Linux figures do not decide it: they say nothing of
+  Windows' cost per process, which is what #205's 949 s measures.
+- **How Windows would be sharded.** A `shard` matrix dimension on `windows-latest` only; Linux
+  and macOS keep one job each. Each shard runs one group of `pytest-split`
   (`--splits 2 --group N --splitting-algorithm least_duration`), a dev dependency, from the
-  stored durations in `.test_durations` at the repository root. `pytest-split` was chosen over a
-  hand-written split by test file because the work is concentrated in a few files
-  (`test_flow.py`, `test_flow_guards.py`, `test_c23_restart.py`, ...), so a per-file split
-  balances poorly, while per-test durations balance well and the plugin is small, deterministic
-  (the same groups for the same collected tests and durations file) and works under xdist (each
-  worker deselects the same tests). A test not in `.test_durations` counts with the average
-  duration, so new tests still land in exactly one group
-  (`test_c9_shards_two_groups_split_the_whole_suite_from_the_stored_durations`). Two shards
-  should take each Windows tests step to about half of its unsharded time, under the 570 s
-  target; if the measured shard steps stay above 570 s, a third shard is added (`--splits 3`,
-  a third `include` entry, a third required check), as few as reach the target.
+  stored durations in `.test_durations` at the repository root. Both are in this pull request,
+  so that commit 2 is a workflow change only; they change nothing for `uv run pytest`, which
+  runs the whole suite as before. `pytest-split` was chosen over a hand-written split by test
+  file because the work is concentrated in a few files (`test_flow.py`, `test_flow_guards.py`,
+  `test_c23_restart.py`, ...), so a per-file split balances poorly, while per-test durations
+  balance well and the plugin is small, deterministic (the same groups for the same collected
+  tests and durations file) and works under xdist (each worker deselects the same tests). A
+  test not in `.test_durations` counts with the average duration, so new tests still land in
+  exactly one group (`test_c9_shards_two_groups_split_the_whole_suite_from_the_stored_durations`).
+  If the measurement says no shards, the dependency, the durations file and that test are
+  removed in a follow-up ticket.
+- **The suite also runs serially in CI.** A `serial` job runs `uv run pytest -n 0` with Python
+  3.13 on Linux, macOS and Windows, so that a test that passes only under xdist (or only
+  serially, `-n 0` being how one test is debugged) is caught on all three systems. It is a job
+  of its own, beside the `checks` jobs, so the measured tests step stays the parallel one and
+  the required jobs do not wait for a serial Windows run. It is not a required check: a pull
+  request may merge while it runs, but the owner merges none whose `serial` jobs are red. It
+  does not shard: it is not on the critical path.
 
 The workflow files cannot be pushed from a cloud session (CLAUDE.md, "Cloud sessions"). The
 owner applies the change from their machine, in two commits so that each step is measured.
 
-**Commit 1, measure without shards.** In `.github/workflows/ci.yml`, the `Tests` step becomes:
+**Commit 1, measure, without shards, with the serial job.** In `.github/workflows/ci.yml`, the
+`Tests` step of the `checks` job becomes:
 
 ```yaml
       - name: Tests
@@ -126,8 +149,48 @@ owner applies the change from their machine, in two commits so that each step is
         run: uv run pytest --durations=30
 ```
 
-**Commit 2, Windows in two shards.** In `.github/workflows/ci.yml`, the job's `name` and
-`strategy`, and the `Tests` step, become:
+and a second job is added under `jobs:`, after `checks`:
+
+```yaml
+  serial:
+    name: ${{ matrix.os }} / serial
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Detect documentation-only pull request
+        id: docs
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            git diff --name-only --no-renames "$BASE" "$HEAD" | uv run --no-project python scripts/docs_only.py >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install
+        if: steps.docs.outputs.docs_only != 'true'
+        run: uv sync --locked
+      - name: Tests, serial
+        if: steps.docs.outputs.docs_only != 'true'
+        run: uv run pytest -n 0 --durations=30
+```
+
+**Commit 2, only if commit 1's Windows tests step is above 480 s: Windows in two shards.** In
+`.github/workflows/ci.yml`, the `checks` job's `name` and `strategy`, and its `Tests` step,
+become:
 
 ```yaml
   checks:
@@ -157,25 +220,37 @@ owner applies the change from their machine, in two commits so that each step is
 
 The other steps (install, lint, format, types, file length, the two PowerShell smoke tests) run
 in both Windows shards unchanged: they take seconds, and each Windows job stays a complete
-check of the system apart from the half of the tests it skips.
+check of the system apart from the half of the tests it skips. The `serial` job is unchanged.
+In the same commit, the last sentence of README's "Develop Ariane" section says that Windows
+CI runs the tests in two shards, `uv run pytest --splits 2 --group 1` (or `2`) with
+`--splitting-algorithm least_duration`, balanced from `.test_durations`.
 
 ## Durations
 
-| Where | Before | After template and set-ups | After 2 Windows shards |
+"Pending" is a figure no run has produced yet; the owner fills it in from the runs of
+"Handover", with each run's URL. Until every pending cell of the first two columns is filled,
+the acceptance criteria on CI durations and on the serial suite are not shown.
+
+| Where | Before | After template and set-ups (commit 1) | After Windows shards (commit 2, if any) |
 | --- | --- | --- | --- |
 | Linux sandbox, 4 CPUs, git processes | 20,638 | 18,924 | (unchanged) |
 | Linux sandbox, summed set-up phase | 17.0 s | 4.7 s | (unchanged) |
-| Linux CI, tests step (3.13 / 3.11) | 123 s / 124 s (#205) | owner, commit 1 run | owner, commit 2 run |
-| macOS CI, tests step | 242 s (#205) | owner, commit 1 run | owner, commit 2 run |
-| Windows CI, tests step | 949 s (#205) | owner, commit 1 run | owner, commit 2 run (per shard) |
-| Windows CI, job | 16.3 min (#205) | owner, commit 1 run | owner, commit 2 run (per shard) |
+| Linux sandbox, `uv run pytest -n 0` | (not run) | 720 passed, 2 skipped, 400 s | (unchanged) |
+| Linux CI, tests step (3.13 / 3.11) | 123 s / 124 s (#205) | pending | pending |
+| macOS CI, tests step | 242 s (#205) | pending | pending |
+| Windows CI, tests step | 949 s (#205) | pending | pending (per shard) |
+| Windows CI, job | 16.3 min (#205) | pending | pending (per shard) |
+| Serial job, Linux / macOS / Windows | (no such job) | pending: pass or fail, step duration | (unchanged) |
+| Run URL | #205 | pending | pending |
 
 Wall time in the implementer's sandbox is not a usable measure: the same suite took 100 to
 150 s from run to run, with the change or without it, because of the sandbox's load. The CI
 figures are the reference.
 
 ## Required checks
-ADR 0048 has the ruleset require four CI job names. With commit 2, CI reports five:
+ADR 0048 has the ruleset require four CI job names. Commit 1 changes none of them: the `serial`
+jobs (`ubuntu-latest / serial`, `macos-latest / serial`, `windows-latest / serial`) are reported
+but not required. Only if commit 2 is applied, CI reports five required jobs:
 
 - `ubuntu-latest / Python 3.11`
 - `ubuntu-latest / Python 3.13`
@@ -183,37 +258,44 @@ ADR 0048 has the ruleset require four CI job names. With commit 2, CI reports fi
 - `windows-latest / Python 3.13 / shard 1`
 - `windows-latest / Python 3.13 / shard 2`
 
-`windows-latest / Python 3.13` is no longer reported: if the ruleset still requires it, every
-pull request waits for it forever. The ruleset changes together with commit 2 and requires
-exactly these five names; the `ariane/<check>` statuses of `check-statuses.yml` stay as they
-are.
+`windows-latest / Python 3.13` is then no longer reported: if the ruleset still requires it,
+every pull request waits for it forever. The ruleset changes together with commit 2 and
+requires exactly these five names; the `ariane/<check>` statuses of `check-statuses.yml` stay as
+they are. Without commit 2, the ruleset does not change.
 
 ## Handover
-The owner, from their machine, on this pull request's branch:
+This ticket is not done until the owner has run these steps and recorded their figures here:
+an implementer can neither run Windows nor push a workflow file. The owner, from their machine,
+on this pull request's branch:
 
-1. Before anything else, takes the Windows "before" list: the 30 slowest tests on Windows from
-   a CI run of `main` with `--durations=30` (for example a throwaway branch from `main` with
-   only commit 1's change), and adds them here with the Linux list above.
+1. Takes the Windows "before" list: the 30 slowest tests on Windows from a CI run of `main` with
+   `--durations=30` (for example a throwaway branch from `main` with only the `Tests` step of
+   commit 1), and adds it under "Measurements before the change", beside the Linux list.
 2. Applies commit 1, pushes, waits for the run, and records in the Durations table the tests
-   step and job duration of each job, with the 30 slowest Windows tests after the change.
+   step and job duration of each `checks` job, the result and step duration of each `serial`
+   job, the run's URL, and the 30 slowest Windows tests after the change. The three `serial`
+   jobs pass; if one fails, the pull request goes back to a fix round.
 3. If the Windows tests step of that run is at most 480 s (8 minutes), stops here: it writes in
-   this ADR that the target is met without shards, and the `pytest-split` dev dependency, the
+   "Decision" that the target is met without shards, and the `pytest-split` dev dependency, the
    `.test_durations` file and the shard test are removed in a follow-up ticket. Otherwise:
 4. Opens the repository's ruleset for `main` (Settings, Rules, Rulesets), replaces
    `windows-latest / Python 3.13` by the two shard names listed under "Required checks", then
-   applies commit 2 and pushes.
-5. Waits for that run: the five jobs pass, no required check stays "expected", and each Windows
+   applies commit 2 (with its README sentence) and pushes.
+5. Waits for that run: every job passes, no required check stays "expected", and each Windows
    shard's tests step is under 570 s; records the steps and the run's URL in the Durations
-   table. If a shard is above 570 s, applies the third shard described above.
+   table. If a shard is above 570 s, applies a third shard (`--splits 3`, a third `include`
+   entry, a third required check).
 
 ## Consequences
 Each test that uses `project` starts no git process to get it, on every system, in CI, in
 Ariane's replay and on the owner's machine; most of the gain is on Windows. A new fixture that
 needs a commit on another branch uses `commit_on_branch` rather than a temporary worktree. The
 template is shared within a worker: a test must never write to `project_template`, only copy
-it. With shards, CI reports five jobs and the longest Windows job is about half as long; the
-durations file grows stale as tests are added, which only unbalances the shards (new tests count
-with the average), and is refreshed with `uv run pytest --store-durations`. Ariane's own replay
+it. CI also runs the whole suite serially on the three systems, in jobs nobody waits for. With
+shards, if the measurement asks for them, CI reports five required jobs and the longest Windows
+job is about half as long; the durations file grows stale as tests are added, which only
+unbalances the shards (new tests count with the average), and is refreshed with
+`uv run pytest --store-durations`. Ariane's own replay
 does not shard: it runs `uv run pytest` as before.
 
 ## Alternatives considered
