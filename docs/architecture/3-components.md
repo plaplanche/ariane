@@ -163,11 +163,11 @@ sequenceDiagram
   CLI->>F: start
   F->>T: read the issue
   F->>L: hold repo.ariane/locks/n.lock until the end (refused if another process holds it)
-  F->>N: register the run in repo.ariane/runs/n (refused if a live run has it)
+  F->>N: register the run in repo.ariane/runs/n, with --restart the kept branch name (refused if a live run has it)
   F->>L: prepare
   L->>G: fetch; refuse if ariane/n is on the remote
   opt --restart
-    L->>G: remove the trees n, n-review, n-replay*; rename ariane/n to ariane-restarted/n-time
+    L->>G: remove the trees n, n-review, n-replay* (unknown folders as folders); rename ariane/n to ariane-restarted/n-time
   end
   L->>G: refuse leftovers (next: --restart), add the ticket working tree
   F->>F: journal ticket.restarted first when it started over

@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
+import shutil
+import stat
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -100,10 +103,16 @@ class Restarted:
         return found | ({"stopped_at": self.stopped_at} if self.stopped_at else {})
 
 
+def kept_name(number: int) -> str:
+    """`ariane-restarted/<n>-<UTC time as YYYYMMDDTHHMMSSZ>`, where a restart keeps the branch."""
+    return f"{KEPT_PREFIX}/{number}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+
+
 def prepare(
-    repo_root: Path, base_branch: str, branch: str, worktree: Path, restarting: bool
+    repo_root: Path, base_branch: str, branch: str, worktree: Path, kept: str
 ) -> tuple[str, dict[str, str], str, Restarted | None]:
-    """Refuse a ticket already pushed, clear a previous run with `restarting` or refuse its
+    """Refuse a ticket already pushed, clear a previous run when restarting (`kept` is then
+    the name for its branch, `kept_name`, registered by the caller first) or refuse its
     leftovers, then create the ticket's branch and working tree (C11).
 
     Also returns the base branch's instructions, read once from the fetched ref: the reviewers
@@ -118,7 +127,7 @@ def prepare(
             f"branch {branch} already exists on {REMOTE}",
             "close its pull request and delete the branch, then start again",
         )
-    restarted = clear(repo_root, worktree, number, branch) if restarting else None
+    restarted = clear(repo_root, worktree, number, branch, kept) if kept else None
     if left := leftovers(worktree, number):
         raise Stop(f"its working tree already exists at {left[0]}", f"run {command(number)}")
     if git.local_branch_exists(repo_root, branch):
@@ -134,20 +143,20 @@ def leftovers(worktree: Path, number: int) -> list[Path]:
     return [p for p in [*named, *replays] if p.exists()]
 
 
-def clear(repo_root: Path, worktree: Path, number: int, branch: str) -> Restarted | None:
-    """Remove the ticket's working trees and rename its local branch to
-    `ariane-restarted/<n>-<UTC time>`; None when there was nothing to clear (a plain start)."""
+def clear(repo_root: Path, worktree: Path, number: int, branch: str, kept: str) -> Restarted | None:
+    """Remove the ticket's working trees and rename its local branch to `kept`; None when
+    there was nothing to clear (a plain start)."""
     removed = leftovers(worktree, number)
     has_branch = git.local_branch_exists(repo_root, branch)
     if not removed and not has_branch:
         return None
+    git.git(["worktree", "prune"], repo_root)  # a tree whose folder is gone is not registered
+    registered = _worktree_paths(repo_root)
     for tree in removed:
-        git.remove_worktree(repo_root, tree)
+        _remove_tree(repo_root, tree, registered)
     git.git(["worktree", "prune"], repo_root)
     if not has_branch:
         return Restarted(tuple(removed), "", "", "", None)
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    kept = f"{KEPT_PREFIX}/{number}-{stamp}"
     git.git(["branch", "-m", branch, kept], repo_root)
     head = git.out(["rev-parse", f"refs/heads/{kept}"], repo_root)
     folder = ticket.relative_folder(number)
@@ -158,6 +167,33 @@ def clear(repo_root: Path, worktree: Path, number: int, branch: str) -> Restarte
         _last_action(_show(repo_root, kept, f"{folder}/{ticket.STATUS}")),
         _stopped_at(_show(repo_root, kept, f"{folder}/{METRICS}")),
     )
+
+
+def _worktree_paths(repo_root: Path) -> set[Path]:
+    """The resolved paths of the repository's registered working trees."""
+    lines = git.out(["worktree", "list", "--porcelain"], repo_root).splitlines()
+    return {Path(n.removeprefix("worktree ")).resolve() for n in lines if n.startswith("worktree ")}
+
+
+def _remove_tree(repo_root: Path, tree: Path, registered: set[Path]) -> None:
+    """Remove a working tree of the repository with git; a folder at the ticket's tree path
+    that git does not know (a killed run left it before registering it, or after its entry
+    went) is Ariane's own and removed as a folder, a link in its place unlinked, never followed."""
+    if tree.resolve() in registered:
+        git.remove_worktree(repo_root, tree)
+    elif tree.is_dir() and not tree.is_symlink():
+        if sys.version_info >= (3, 12):
+            shutil.rmtree(tree, onexc=_writable_then_retry)
+        else:
+            shutil.rmtree(tree, onerror=_writable_then_retry)
+    else:
+        tree.unlink()
+
+
+def _writable_then_retry(function: Callable[[str], object], path: str, _: object) -> None:
+    """On Windows git's read-only object files refuse deletion: clear the flag and retry."""
+    os.chmod(path, stat.S_IWRITE)
+    function(path)
 
 
 def _show(repo_root: Path, branch: str, path: str) -> str:

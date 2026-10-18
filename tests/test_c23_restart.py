@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from ariane import flow, git, report, restart
+from ariane import flow, git, report, restart, runs
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
 
-from conftest import PY, FakeRuntime, Project, make_config, sh
+from conftest import PY, FakeRuntime, Project, edit_app, make_config, sh
 from test_flow import environ, worktree
 
 HOLD = """
@@ -220,6 +220,54 @@ def test_c23_restart_a_tree_left_during_the_run_names_restart_once(
     outcome = start(project, tracker, FakeRuntime(action=leave_replay))
     assert "the replay working tree already exists" in outcome.line
     assert outcome.line.count("--restart") == 1
+
+    # The folder is not a registered working tree: the recommended restart still clears it.
+    done = start(project, tracker, FakeRuntime(), restarting=True)
+    assert done.exit_code == 0, done.line
+    assert not worktree(project).with_name("7-replay-1").exists()
+    assert "7-replay-1`" in project.show("ariane/7", "work/7/journal.md")
+
+
+def test_c23_restart_another_ticket_restarting_meanwhile_does_not_stop_this_one(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ticket 8 restarts during ticket 7's session: its kept branch is its own bookkeeping."""
+    monkeypatch.setattr(runs, "_started_as", lambda pid, number: True)  # runs in this process
+    monkeypatch.setattr(runs, "WATCH_SECONDS", 0.01)
+    tracker.add_issue(8, "Bump the app version again", "Set app.txt to version 2 as well.")
+    tree = flow.worktree_path(project.root, 8)
+    git.add_worktree(project.root, tree, "ariane/8", "origin/main")  # ticket 8's stopped run
+    inner: list[flow.Outcome] = []
+
+    def restart_ticket_8(session: Session) -> None:
+        edit_app(session)
+        inner.append(
+            flow.start(
+                8,
+                repo_root=project.root,
+                config=make_config(),
+                tracker=tracker,
+                runtime=FakeRuntime(),
+                environ=environ(),
+                restarting=True,
+            )
+        )
+
+    outcome = start(project, tracker, FakeRuntime(action=restart_ticket_8))
+    assert inner and inner[0].exit_code == 0, inner[0].line
+    assert [b for b in kept_branches(project) if b.startswith("ariane-restarted/8-")]
+    assert outcome.exit_code == 0, (outcome.line, outcome.detail)
+
+
+def test_c23_restart_a_kept_branch_counts_only_when_its_run_registered_it(
+    project: Project,
+) -> None:
+    before = git.config_snapshot(project.root, ignore_ref="refs/heads/ariane/7")
+    sh(["git", "branch", "ariane-restarted/8-20261018T000000Z"], project.root)
+    after = git.config_snapshot(project.root, ignore_ref="refs/heads/ariane/7")
+    assert runs.foreign_changes(before, after, {8}, {"ariane-restarted/8-20261018T000000Z"}) == []
+    assert runs.foreign_changes(before, after, {8}), "unregistered: still a change"
+    assert runs.foreign_changes(before, after, {8}, {"ariane-restarted/8-20261018T000001Z"})
 
 
 def test_c23_restart_report_counts_the_time_from_the_previous_stop(tmp_path: Path) -> None:

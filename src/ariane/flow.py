@@ -13,7 +13,7 @@ from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
-from ariane.restart import Restarted, lock_path, locked, prepare, with_restart
+from ariane.restart import Restarted, kept_name, lock_path, locked, prepare, with_restart
 from ariane.runtime import AgentRuntime, SessionResult, StopReason, for_role, session_for
 from ariane.stop import Stop, describe
 from ariane.tracker import Issue, Tracker, TrackerError
@@ -71,10 +71,11 @@ def start(
     with contextlib.ExitStack() as registry:  # the entry goes however the run ends (C11)
         try:
             registry.enter_context(locked(lock_path(repo_root, number), number))
-            registry.enter_context(runs.registered(runs.folder(repo_root), number, branch))
+            kept = kept_name(number) if restarting else ""  # registered before the rename
+            registry.enter_context(runs.registered(runs.folder(repo_root), number, branch, kept))
             witnessed = registry.enter_context(runs.watching(runs.folder(repo_root)))
             url, refs_before, instructions, restarted = prepare(
-                repo_root, config.base_branch, branch, worktree, restarting
+                repo_root, config.base_branch, branch, worktree, kept
             )
             run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url)
             run.base_instructions = instructions
@@ -331,11 +332,13 @@ class _TicketRun:
 
     def _unchanged(self, after: str, guard: dict[str, str]) -> Stop | None:
         """The stop when git or the reviewer's instruction files differ from `guard`, apart from
-        another Ariane run's own branch and its two branch keys (C11, ADR 0017). Git is read
+        another Ariane run's own branch, its two branch keys and the branch its restart kept
+        (C11, ADR 0017, ADR 0047). Git is read
         first: a run registers before its git writes, so any it shows is in `during`."""
         now = self.snapshot()
         others = runs.during(self.registry, self.guard_since, self.witnessed) - {self.number}
-        changes = runs.foreign_changes(guard, now, others)
+        kept = {self.witnessed[m].kept for m in others if m in self.witnessed}
+        changes = runs.foreign_changes(guard, now, others, kept)
         written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
         if written:
             return Stop(

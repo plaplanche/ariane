@@ -25,7 +25,8 @@ removes.
   nothing.
 - **`--restart`.** With the lock held and no `ariane/<n>` on the remote (a pushed ticket is never
   restarted), Ariane removes the ticket's trees that exist (`git worktree remove --force` each,
-  then `git worktree prune`), renames the local branch to
+  then `git worktree prune`; a folder at a tree path that git does not know, left by a run killed
+  before it registered it, is Ariane's own and removed as a folder, a link unlinked), renames the local branch to
   `ariane-restarted/<n>-<UTC time as YYYYMMDDTHHMMSSZ>`, and starts the ticket as a new run.
   Nothing to remove: a plain start. `--restart --shadow` is refused before the configuration is
   read; a shadow ticket starts over by removing its clone.
@@ -44,6 +45,10 @@ removes.
   replay and review round, say "run `ariane start <n> --restart`"; every stop of a ticket that
   was not pushed ends with "to start over, run `ariane start <n> --restart`". A stop after the
   push (the delivery calls `on_pushed`) and a shadow run's stops do not name it.
+- **Concurrent tickets.** The kept name is chosen before the run registers and stored in its
+  registry entry (`runs.Run.kept`); another ticket's push guard tolerates exactly that branch for
+  a run it can vouch for, as it tolerates `ariane/<m>` (ADR 0017). Any other branch is still a
+  change that stops it.
 - The lock and the preparation live in a new module, `restart`, so that ticket #142 can reuse the lock
   helper and `flow` stays within the file length limit.
 
@@ -63,6 +68,6 @@ removes.
   operating-system lock is released by the system and cannot go stale.
 - **Use the run registry as the lock.** Its entries outlive a crash until reclaimed and are read
   under a shared lock for the guard; a per-ticket lock held for the whole run is simpler to reason
-  about and does not touch the guard.
+  about; the registry only carries the kept name for the guard.
 - **Read the records from the removed trees.** More recent for a killed run, but those files may
   be an agent's; the branch's are Ariane's.
