@@ -22,7 +22,7 @@
 
 ## Behaviour and errors
 
-- The lock is an operating-system lock on the whole run of `ariane start <n>`: `fcntl.flock` (exclusive, non-blocking) on POSIX, `msvcrt.locking` (`LK_NBLCK`, one byte) on Windows. Closing the file releases it, and so does the system when the process dies, so a killed run never leaves it held. The file stays; it holds nothing.
+- The lock is an operating-system lock on the whole run of `ariane start <n>`, taken by `slots.try_lock`: `fcntl.flock` (exclusive, non-blocking) on POSIX, `msvcrt.locking` (`LK_NBLCK`, one byte) on Windows. Closing the file releases it, and so does the system when the process dies, so a killed run never leaves it held. The file stays; it holds nothing.
 - `prepare` checks the remote first: a branch `ariane/<n>` on `origin` refuses, with or without `--restart` ("close its pull request and delete the branch, then start again"). Then, when `restarting`, `clear`; then any leftover tree or local branch refuses with the next action "run `ariane start <n> --restart`".
 - `clear` never deletes a branch: the kept branch's name has the UTC time, to the second, of the restart. The previous run's last action is read from `work/<n>/status.md` at the branch's previous head (Last action, Detail, At), and `stopped_at` is the time of the last step of `work/<n>/metrics.json` there, `earlier_s` its `restarted_from.earlier_s` plus its own `started - restarted_from.stopped_at` (`_earlier`); either is empty when unreadable. They are read from what Ariane committed, never from the saved work, which an agent may have written.
 - Before removing anything, `clear` saves the files left uncommitted in the registered tree `<n>`, modified or untracked but not ignored: `git add --all` into a temporary index (`GIT_INDEX_FILE`), `write-tree`, and `commit-tree` with Ariane's identity, its parents the branch's head and, when not on the branch, the tree's own HEAD. A copy of the tree's index is written as a tree too: staged content that differs from both the HEAD and the files is a commit of its own just below the files' one. Nothing to save (the files and the index are the tree's HEAD, and that HEAD is on the branch): no commit. The tree is not touched, so a failure stops the restart with every tree in place. The journal names the saved commit, which is the kept head.
@@ -84,6 +84,7 @@ flowchart LR
   replay --> restart
   restart --> git
   restart --> metrics
+  restart --> slots
   restart --> stop
   restart --> ticket
   runs --> restart

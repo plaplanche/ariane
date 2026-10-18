@@ -23,6 +23,7 @@ _CLOSING_TAG = re.compile(rf"<\s*/\s*{UNTRUSTED_TAG}", re.IGNORECASE)
 _SECRET_NAME = git.SECRET_NAME  # one credential filter, defined where git needs it too
 _CREDENTIAL_CHANNELS = git.CREDENTIAL_CHANNELS
 _OWN_PREFIX = "ARIANE_"
+SLOT_VARIABLE = "ARIANE_SLOT"  # the one `ARIANE_*` variable Ariane sets for the project
 _VENV_VARIABLES = ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT")
 # What untrusted code receives without being declared (ADR 0024): system variables, and the proxy
 # and certificate settings checks behind a proxy need. An entry ending in `_` is a prefix.
@@ -121,6 +122,12 @@ def _documentation_section(documentation: Documentation) -> str:
     )
 
 
+def token_value(environ: Mapping[str, str], token_env: str) -> str:
+    """The tracker token's value in `environ`, whatever the case of its name; empty if unset."""
+    name = token_env.upper()
+    return next((v for k, v in environ.items() if k.upper() == name and v), "")
+
+
 def known_secrets(environ: Mapping[str, str], token_env: str) -> list[str]:
     """The tracker token, the credential channels, every variable named like a secret, and a
     proxy URL with credentials (its whole value and its `user:password` part, ADR 0024)."""
@@ -168,6 +175,7 @@ def untrusted_environment(
     login_variables: Sequence[str] = (),
     declared: Sequence[str] = (),
     is_root: bool | None = None,
+    slot: int | None = None,
 ) -> dict[str, str]:
     """The environment of an agent session or of checks running code an agent wrote.
 
@@ -175,7 +183,8 @@ def untrusted_environment(
     the project `declared` in `[project] env`, and with `login_variables`, the runtime's own login
     variables (an agent session needs them; checks get none). An entry ending in `_` is a prefix,
     any other is an exact name. The tracker token, `ARIANE_*` and Ariane's virtual environment
-    (nor its scripts directory on `PATH`, ADR 0040) never pass, and git cannot push.
+    (nor its scripts directory on `PATH`, ADR 0040) never pass, and git cannot push. The run's
+    `slot`, when given, is then set as `ARIANE_SLOT` (ADR 0050).
     """
     keep_agent_login = bool(login_variables)
     allowed = _entries(BASE_VARIABLES)
@@ -197,6 +206,8 @@ def untrusted_environment(
         elif _matches(upper, allowed) or _matches(upper, login):
             env[name] = value
     env["GIT_SSH_COMMAND"] = "ariane-ssh-is-disabled-for-agents"
+    if slot is not None:
+        env[SLOT_VARIABLE] = str(slot)
     if is_root is None:
         is_root = _running_as_root()
     if is_root and keep_agent_login:  # Claude Code refuses bypassPermissions as root otherwise

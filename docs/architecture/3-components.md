@@ -58,6 +58,7 @@ flowchart TD
   flow --> review_session
   flow --> runs
   flow --> runtime
+  flow --> slots
   flow --> stop
   flow --> ticket
   flow --> tracker
@@ -92,6 +93,7 @@ flowchart TD
   report --> tracker
   restart --> git
   restart --> metrics
+  restart --> slots
   restart --> stop
   restart --> ticket
   review --> checks
@@ -120,9 +122,11 @@ flowchart TD
   shadow --> metrics
   shadow --> review
   shadow --> runtime
+  shadow --> slots
   shadow --> stop
   shadow --> ticket
   shadow --> tracker
+  slots --> stop
   ticket --> logs
   ticket --> redact
   ticket --> tracker
@@ -138,6 +142,8 @@ flowchart TD
   verify --> review
   verify --> review_session
   verify --> runtime
+  verify --> slots
+  verify --> stop
   verify --> ticket
   verify --> tracker
 ```

@@ -75,6 +75,7 @@ flowchart LR
 - [`runs`](modules/runs.md)
 - [`runtime`](modules/runtime.md)
 - [`shadow`](modules/shadow.md)
+- [`slots`](modules/slots.md)
 - [`stop`](modules/stop.md)
 - [`ticket`](modules/ticket.md)
 - [`tracker`](modules/tracker.md)

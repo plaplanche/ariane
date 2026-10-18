@@ -7,11 +7,12 @@ is opened, no commit status or comment is posted.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from ariane import checks, git, review, ticket
+from ariane import checks, git, review, slots, ticket
 from ariane.config import Config
 from ariane.flow import (
     _FAILURES,
@@ -52,15 +53,18 @@ def start(
     except KeyboardInterrupt:
         return _interrupted_before_start(number)
     clone = clone_path(repo_root, number)
-    try:
-        _prepare(repo_root, config, branch_name(number), clone)
-        run = ShadowRun(issue, config, tracker, runtime, environ, clone)
-    except KeyboardInterrupt:
-        return _interrupted_before_start(number)
-    except (Stop, *_FAILURES) as exc:
-        reason, next_action = describe(exc)
-        return Outcome(1, f"Did not start shadow ticket #{number}: {reason}. Next: {next_action}.")
-    return run.execute({})
+    with contextlib.ExitStack() as held:  # the slot is held to the run's end (ADR 0050)
+        try:
+            slot = held.enter_context(slots.held())
+            _prepare(repo_root, config, branch_name(number), clone)
+            run = ShadowRun(issue, config, tracker, runtime, environ, clone, slot)
+        except KeyboardInterrupt:
+            return _interrupted_before_start(number)
+        except (Stop, *_FAILURES) as exc:
+            reason, next_action = describe(exc)
+            line = f"Did not start shadow ticket #{number}: {reason}. Next: {next_action}."
+            return Outcome(1, line)
+        return run.execute({})
 
 
 def _prepare(repo_root: Path, config: Config, branch: str, clone: Path) -> None:
@@ -101,9 +105,10 @@ class ShadowRun(_TicketRun):
         runtime: AgentRuntime,
         environ: Mapping[str, str],
         clone: Path,
+        slot: int,
     ) -> None:
         super().__init__(
-            issue, config, tracker, runtime, environ, clone, branch_name(issue.number), ""
+            issue, config, tracker, runtime, environ, clone, branch_name(issue.number), "", slot
         )
         self.metrics.mode = "shadow"
         self.base_instructions = git.base_instructions(clone, BASE_REF_REMOTE, config.base_branch)
