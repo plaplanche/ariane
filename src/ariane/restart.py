@@ -181,6 +181,11 @@ def clear(repo_root: Path, worktree: Path, number: int, branch: str, kept: str) 
         return None
     git.git(["worktree", "prune"], repo_root)  # a tree whose folder is gone is not registered
     registered = _worktree_paths(repo_root)
+    if _unknown_with_files(worktree, registered):  # its files cannot be saved from git's view
+        raise Stop(
+            f"its working tree {worktree} is not registered with git and holds files",
+            f"save what you need from it and delete it, then run {command(number)}",
+        )
     previous = git.out(["rev-parse", f"refs/heads/{branch}"], repo_root) if has_branch else ""
     saved = _save(worktree, previous) if worktree.resolve() in registered else ""
     if saved or previous:  # created, never overwritten: an existing `kept` stops the restart
@@ -240,6 +245,14 @@ def _save(tree: Path, branch_head: str) -> str:
         parents = [commit(staged, parents, f"{staged_message} (ariane --restart)")]
     message = "Work left uncommitted in the working tree when the run stopped (ariane --restart)"
     return commit(snapshot, parents, message)
+
+
+def _unknown_with_files(tree: Path, registered: set[Path]) -> bool:
+    """Whether the ticket's tree is a folder git does not know that is not empty: a restart
+    neither saves nor deletes it (ADR 0047)."""
+    if tree.is_symlink() or not tree.is_dir() or tree.resolve() in registered:
+        return False
+    return any(tree.iterdir())
 
 
 def _worktree_paths(repo_root: Path) -> set[Path]:

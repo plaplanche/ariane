@@ -437,3 +437,20 @@ def test_c23_restart_an_existing_kept_name_stops_before_removing_anything(
     assert sh(["git", "rev-parse", kept], project.root) == sh(
         ["git", "rev-parse", "main"], project.root
     )
+
+
+def test_c23_restart_refuses_an_unregistered_ticket_folder_that_holds_files(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    """A folder at the ticket's tree path that git does not know holds files: a restart can
+    neither save them nor delete them, so it stops and leaves the folder as it is."""
+    tree = worktree(project)
+    tree.mkdir(parents=True)
+    (tree / "app.txt").write_text("work git does not know\n", encoding="utf-8")
+
+    outcome = start(project, tracker, FakeRuntime(), restarting=True)
+    assert outcome.exit_code == 1
+    assert "is not registered with git and holds files" in outcome.line
+    assert "--restart" in outcome.line
+    assert (tree / "app.txt").read_text(encoding="utf-8") == "work git does not know\n"
+    assert kept_branches(project) == []

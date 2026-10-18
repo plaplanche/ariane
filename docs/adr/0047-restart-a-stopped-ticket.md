@@ -26,7 +26,9 @@ removes.
 - **`--restart`.** With the lock held and no `ariane/<n>` on the remote (a pushed ticket is never
   restarted), Ariane removes the ticket's trees that exist (`git worktree remove --force` each,
   then `git worktree prune`; a folder at a tree path that git does not know, left by a run killed
-  before it registered it, is Ariane's own and removed as a folder, a link unlinked), keeps the local branch as
+  before it registered it, is Ariane's own and removed as a folder, a link unlinked; but the
+  ticket's own tree `<n>` unknown to git and holding files is neither saved nor removed: the
+  restart stops and asks the person to save and delete it), keeps the local branch as
   `ariane-restarted/<n>-<UTC time as YYYYMMDDTHHMMSSZ>`, and starts the ticket as a new run.
   Nothing to remove: a plain start. `--restart --shadow` is refused before the configuration is
   read; a shadow ticket starts over by removing its clone.
@@ -75,6 +77,12 @@ removes.
   than the moment it died: the restart time is then overestimated, never lost.
 - The preparation now reads the remote before it looks for leftovers, so a ticket both pushed and
   left over is refused for the remote first.
+
+- **Residual, accepted by the owner until an operating-system sandbox (slice 7).** The lock proves
+  that the previous Ariane process has ended, not that its agents have: an agent that survives a
+  killed or crashed Ariane process (SIGKILL bypasses the cleanup of C10's process groups) can
+  still write in the ticket's tree while a restart saves and removes it, and those writes are
+  lost. Only a sandbox that ends every process of a run with it closes this.
 
 ## Alternatives considered
 - **Delete the branch.** Loses the previous run's commits; refused by the requirement that an
