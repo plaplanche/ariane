@@ -71,15 +71,15 @@ In `.github/workflows/check-statuses.yml`, the `setup-uv` step becomes:
 | Where | Before (serial) | After (`-n auto`) |
 | --- | --- | --- |
 | Linux, 4 CPUs (implementer's sandbox, 691 tests) | 385 s | 102 s |
-| Linux CI job, tests step | about 4 min | to measure on this pull request's CI |
-| Windows CI job, tests step | 1,375 to 1,611 s (about 26 min for the job) | to measure on this pull request's CI |
-| macOS CI job, tests step | not measured | to measure on this pull request's CI |
-| Longest CI job of a pull request | about 30 min | target: under 12 min; to measure on this pull request's CI |
-| CI run of this pull request | | URL to record |
+| Linux CI job, tests step | about 4 min | 123 s (3.13), 124 s (3.11); jobs 2.3 and 2.2 min |
+| Windows CI job, tests step | 1,375 to 1,611 s (about 26 min for the job) | 949 s; job 16.3 min |
+| macOS CI job, tests step | not measured (jobs 8 to 10 min) | 242 s; job 4.3 min |
+| Longest CI job of a pull request | about 30 min | 16.3 min (Windows); the target was under 12 min |
+| CI run of this pull request | | https://github.com/plaplanche/ariane/actions/runs/39128466926 |
 
-The "after" CI cells cannot be measured by the implementer: the workflow changes are applied by
-the owner (below), and only then does this pull request's CI run with them. They stay open until
-that run, and the pull request is not merged before they are filled in (handover step 5).
+Measured on this pull request's CI, with the four jobs and the uv cache (2026-10-18). The
+Windows job stays above the 12-minute target: the owner accepted 16 minutes for now, the
+Windows tests to be made faster later (2026-10-18), rather than revisiting this decision.
 
 ## Required checks
 ADR 0005 has the repository ruleset require the six CI job names. The job name is
