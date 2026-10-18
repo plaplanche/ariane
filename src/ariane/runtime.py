@@ -32,6 +32,41 @@ def timeout_summary(seconds: float) -> str:
     return f"killed after {seconds:g} s (time limit)"
 
 
+def idle_summary(seconds: float, stdout: str) -> str:
+    """The summary of a session killed at its idle limit, naming the last event it sent."""
+    return f"no activity for {seconds / 60:g} min (idle limit); last event: {last_event(stdout)}"
+
+
+def last_event(stdout: str) -> str:
+    """The last line's event type, and its tool's name when it was a tool call."""
+    line = stdout.rstrip("\n").rpartition("\n")[2]
+    if not line.strip():
+        return "none"
+    event = json_object(line)
+    if event is None:
+        return "not a JSON event"
+    kind = str(event.get("type", "unknown"))
+    tool = _tool_name(event)
+    return f"{kind} (tool {tool})" if tool else kind
+
+
+def _tool_name(event: dict[str, Any]) -> str | None:
+    """The tool of a Claude Code `tool_use` block, an opencode `tool_use` part or a Codex item."""
+    message, part, item = event.get("message"), event.get("part"), event.get("item")
+    if isinstance(message, dict) and isinstance(message.get("content"), list):
+        names = [
+            str(block.get("name"))
+            for block in message["content"]
+            if isinstance(block, dict) and block.get("type") == "tool_use"
+        ]
+        return names[-1] if names else None
+    if isinstance(part, dict) and part.get("tool"):
+        return str(part["tool"])
+    if isinstance(item, dict) and item.get("type") not in (None, "agent_message", "reasoning"):
+        return str(item.get("tool") or item["type"])
+    return None
+
+
 def json_object(line: str) -> dict[str, Any] | None:
     """The JSON object a line holds, or None for anything else."""
     try:
@@ -71,6 +106,7 @@ class Session:
     env: Mapping[str, str]  # the complete environment of the agent process
     json_schema: Mapping[str, Any] | None = None  # shape of the structured answer, if any
     add_dirs: tuple[Path, ...] = ()  # read-only reviewer: the trees it may read, cwd is empty
+    idle_timeout_s: float | None = None  # killed when no event arrives for this long (C5)
 
 
 @dataclass(frozen=True)
@@ -97,6 +133,12 @@ class SessionResult:
 
     def with_next(self, next_step: str) -> SessionResult:
         return replace(self, next_step=next_step)
+
+    def stop_text(self) -> str:
+        """The stop reason for a stop line; a timeout says which limit and what it was doing."""
+        if self.stop_reason is StopReason.TIMEOUT:
+            return f"{self.stop_reason.value} ({self.summary})"
+        return self.stop_reason.value
 
     def usage_text(self) -> str:
         """The cap line, then the cost and the tokens, as the journal words them."""
@@ -176,6 +218,7 @@ def session_for(
         max_budget_usd=agent.max_budget_usd,
         max_tokens=agent.max_tokens,
         timeout_s=agent.timeout_minutes * 60,
+        idle_timeout_s=None if agent.idle_minutes is None else agent.idle_minutes * 60,
         cwd=cwd,
         prompt=prompt,
         env=env,

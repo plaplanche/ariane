@@ -19,6 +19,7 @@ Claude Code as an agent runtime: it starts the `claude` CLI for one session and 
 - A `reviewer` session (ADR 0031) starts with `--restricted` and one `--add-dir` per `Session.add_dirs`, from an empty working directory, with no `--permission-mode bypassPermissions` and no `--setting-sources`; every other role keeps `bypassPermissions` and `--setting-sources project,local`.
 - Attempts (C19, ADR 0036): `TokenTally` also reads the `tool_use` blocks of the assistant messages and counts, once per block id, the `Bash` commands that push or open a pull request (`attempts` module); `run` puts the counts on `SessionResult.attempts`, whatever the stop reason.
 - Errors become a `SessionResult` with stop reason `error` (or `timeout`); none is raised.
+- Time limits (C5): `Session.timeout_s` and `Session.idle_timeout_s` go to `process.stream`; a kill at the total limit is `timeout` with `timeout_summary`, a kill at the idle limit (no event for that long, ADR 0045) is `timeout` with `idle_summary`, naming the last event and its tool.
 
 ## Workflow
 

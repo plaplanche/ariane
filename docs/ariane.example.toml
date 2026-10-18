@@ -35,6 +35,9 @@ max_budget_usd = 5.0
 # max_tokens = 2000000
 # Time limit of one session, in minutes.
 timeout_minutes = 30
+# Optional: stop the session when it sends no event for this many minutes (below
+# timeout_minutes). Default 10, or none when timeout_minutes is 10 or less.
+# idle_minutes = 10
 
 # The reviewer reads the result after the checks pass (C10). Its model must differ from the
 # implementer's; give it read-only tools.

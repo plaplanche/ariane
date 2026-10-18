@@ -24,6 +24,7 @@ Codex as an agent runtime, for the reviewer role (ADR 0043): it starts the offic
 - Without `api_key_env`, `codex login status` runs first; "Not logged in" ends the session as `error` with the next step `LOGIN_NEXT`, and `codex exec` is never started.
 - `turn.completed` usage is summed (cached tokens, which Codex counts inside `input_tokens`, are recorded as cache read); the session stops (`budget`) when `max_tokens` is reached. A `turn.failed` or `error` event naming a usage limit stops the session as `quota`, with the next step "restart the ticket after <time>" when Codex gives the time. Any other failure or a non-zero exit is `error`.
 - Without `api_key_env`, a login that is not ChatGPT (an API-key login) ends the session as `error` with `API_LOGIN` and the next step `API_LOGIN_NEXT`; `codex exec` is never started, since `max_tokens` cannot bound a per-token turn.
+- Time limits (C5): `Session.timeout_s` and `Session.idle_timeout_s` go to `process.stream`; a kill at the total limit is `timeout` with `timeout_summary`, a kill at the idle limit (no event for that long, ADR 0045) is `timeout` with `idle_summary`, naming the last event and its item type.
 - Billing: a ChatGPT login records `cost_usd` 0 and `billing` `plan`; `api_key_env` records `api` and no cost.
 
 ## Workflow

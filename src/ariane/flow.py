@@ -453,7 +453,7 @@ class _TicketRun:
         self._flag_untouched_docs(changed)
         if result.stop_reason is not StopReason.FINISHED:
             raise Stop(
-                f"the implementer session stopped: {result.stop_reason.value}",
+                f"the implementer session stopped: {result.stop_text()}",
                 f"read work/{self.number}/journal.md; its work is kept on the branch",
             )
         if not changed:

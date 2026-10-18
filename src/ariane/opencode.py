@@ -18,6 +18,7 @@ from ariane.runtime import (
     as_int,
     as_number,
     cost_cap,
+    idle_summary,
     json_object,
     timeout_summary,
     token_cap,
@@ -118,6 +119,7 @@ class OpenCodeRuntime:
                 cwd=session.cwd,
                 on_line=events.add_line,
                 timeout_s=session.timeout_s,
+                idle_timeout_s=session.idle_timeout_s,
                 env=self.environment(session),
                 input_text=_message(session),
             )
@@ -125,6 +127,9 @@ class OpenCodeRuntime:
             return SessionResult.failed(StopReason.ERROR, str(exc))
         if completed.stopped:
             return events.result(StopReason.BUDGET, events.stop_text, cap=events.cap)
+        if completed.idle and session.idle_timeout_s is not None:
+            summary = idle_summary(session.idle_timeout_s, completed.stdout)
+            return events.result(StopReason.TIMEOUT, summary)
         if completed.timed_out:
             return events.result(StopReason.TIMEOUT, timeout_summary(session.timeout_s))
         if events.error is not None:

@@ -33,6 +33,11 @@ _AGENT: dict[str, Any] = {
             " required when runtime is opencode.",
         },
         "timeout_minutes": _POSITIVE,
+        "idle_minutes": {
+            **_POSITIVE,
+            "description": "Stop the session when no event arrives for this many minutes; below"
+            " timeout_minutes. Default 10, or none when timeout_minutes is 10 or less.",
+        },
         "api_key_env": {
             **_STR,
             "description": "Codex reviewer only: variable holding an API key, passed to the"

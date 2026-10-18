@@ -17,6 +17,7 @@ from ariane.runtime import (
     as_int,
     as_number,
     cost_cap,
+    idle_summary,
     json_object,
     timeout_summary,
     token_cap,
@@ -102,6 +103,7 @@ class ClaudeCodeRuntime:
                 cwd=session.cwd,
                 on_line=tally.add_line,
                 timeout_s=session.timeout_s,
+                idle_timeout_s=session.idle_timeout_s,
                 env={**session.env, "ARIANE_ROLE": session.role},
                 input_text=session.prompt,
             )
@@ -109,6 +111,9 @@ class ClaudeCodeRuntime:
             return SessionResult.failed(StopReason.ERROR, str(exc))
         if completed.stopped:
             return tally.stopped_result()
+        if completed.idle and session.idle_timeout_s is not None:
+            summary = idle_summary(session.idle_timeout_s, completed.stdout)
+            return SessionResult.failed(StopReason.TIMEOUT, summary)
         if completed.timed_out:
             return SessionResult.failed(StopReason.TIMEOUT, timeout_summary(session.timeout_s))
         result = parse_result(completed.stdout, completed.stderr, completed.returncode)
