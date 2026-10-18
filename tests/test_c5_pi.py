@@ -276,7 +276,21 @@ def test_c5_pi_the_reviewer_config_loads_and_builds_the_runtime() -> None:
     assert (cfg.reviewer.runtime, cfg.reviewer.api_key_env) == ("pi", "MY_KEY")
     built = cli._runtime(cfg).for_role("reviewer")
     assert isinstance(built, PiRuntime) and built.api_key_env == "MY_KEY"
-    assert "Ariane stops at 50000 tokens" in cap_text(cfg.reviewer)
+    assert cap_text(cfg.reviewer) == (
+        "runtime cost cap none (billed per token); Ariane stops at 1 USD of reported cost"
+        " or 50000 tokens"
+    )
+
+
+def test_c5_pi_the_journal_shows_the_small_review_caps(
+    project: Project, tracker: InMemoryTracker, tmp_path: Path
+) -> None:
+    small = config.SmallReview(max_lines=1000, max_budget_usd=0.25, max_tokens=7000)
+    outcome = _pi_ticket(project, tracker, tmp_path, _go_stream(tmp_path), small=small)
+    assert outcome.exit_code == 0, outcome.line
+    shadow = project.root.parent / f"{project.root.name}.ariane" / "worktrees" / "7"
+    journal = (shadow / "work/7/journal.md").read_text(encoding="utf-8")
+    assert "Ariane stops at 0.25 USD of reported cost or 7000 tokens" in journal
 
 
 def test_c5_pi_the_implementer_role_is_refused() -> None:
@@ -332,6 +346,20 @@ def test_c5_pi_the_guard_watches_pi_settings(tmp_path: Path) -> None:
     assert f"instructions {(own / 'SYSTEM.md').as_posix()}" in moved
 
 
+def test_c5_pi_a_relative_agent_dir_is_one_absolute_path_for_guard_and_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    env = {**os.environ, "PI_CODING_AGENT_DIR": "pi-config"}
+    watched = git.instruction_snapshot([tmp_path / "trees"], "pi", env)
+    models = (tmp_path / "pi-config" / "models.json").absolute()
+    assert f"instructions {models.as_posix()}" in watched
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    _, seen = run(tree, env=env)
+    assert Path(seen["env"]["PI_CODING_AGENT_DIR"]) == tmp_path.absolute() / "pi-config"
+
+
 def _pi_ticket(
     project: Project,
     tracker: InMemoryTracker,
@@ -339,9 +367,15 @@ def _pi_ticket(
     events: Path,
     mode: str = "end",
     env: dict[str, str] | None = None,
+    small: config.SmallReview | None = None,
 ) -> flow.Outcome:
     reviewer = dataclasses.replace(
-        make_config().reviewer, runtime="pi", model=MODEL, tools=("read", "grep"), max_tokens=10**6
+        make_config().reviewer,
+        runtime="pi",
+        model=MODEL,
+        tools=("read", "grep"),
+        max_tokens=10**6,
+        small=small,
     )
     folder = fake_pi(tmp_path / "bin", events, tmp_path / "d.json", mode)
     routed = RoutedRuntime({"implementer": FakeRuntime(), "reviewer": PiRuntime()})
@@ -414,3 +448,15 @@ def test_c5_pi_a_change_to_pi_settings_during_the_session_is_a_guard_violation(
     assert (agent_dir / "settings.json").as_posix() in outcome.detail
     assert tracker.opened == []
     assert _metrics(project)["attempts"]["guard_violations"] == 1
+
+
+def test_c5_pi_a_relative_agent_dir_changed_during_the_session_is_a_guard_violation(
+    project: Project, tracker: InMemoryTracker, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    env = {**os.environ, "PI_CODING_AGENT_DIR": "pi-config"}
+    outcome = _pi_ticket(project, tracker, tmp_path, _go_stream(tmp_path), "plant", env)
+    assert outcome.exit_code == 1
+    assert "changed instruction files the reviewer can load" in outcome.line
+    assert (tmp_path.absolute() / "pi-config" / "settings.json").as_posix() in outcome.detail
+    assert tracker.opened == []

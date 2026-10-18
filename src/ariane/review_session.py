@@ -280,7 +280,8 @@ def cap_text(agent: AgentConfig) -> str:
         )
     if agent.runtime == "pi":
         return (
-            f"runtime cost cap none (billed per token), Ariane stops at {agent.max_tokens} tokens"
+            "runtime cost cap none (billed per token); Ariane stops at"
+            f" {agent.max_budget_usd:g} USD of reported cost or {agent.max_tokens} tokens"
         )
     if agent.runtime == "codex":
         cap = f", Ariane stops at {agent.max_tokens} tokens" if agent.max_tokens else ""

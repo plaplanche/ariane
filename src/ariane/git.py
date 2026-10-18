@@ -11,7 +11,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from ariane import logs, process
+from ariane import logs, pi, process
 from ariane.redact import redact
 
 # The push URL an agent's git sees: any plain `git push` from its environment fails.
@@ -246,7 +246,7 @@ def instruction_snapshot(
         codex = Path(env.get("CODEX_HOME") or home / ".codex")
         paths += [codex / name for name in ("AGENTS.md", "AGENTS.override.md", "config.toml")]
     elif runtime == "pi":
-        paths += [Path(env.get("PI_CODING_AGENT_DIR") or home / ".pi/agent") / n for n in PI_FILES]
+        paths += [pi.agent_dir(env, home) / name for name in PI_FILES]
     return {f"instructions {path.as_posix()}": _digest(path) for path in dict.fromkeys(paths)}
 
 

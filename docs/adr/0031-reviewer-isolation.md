@@ -170,3 +170,6 @@ watches pi's global folder (`$PI_CODING_AGENT_DIR`, else `~/.pi/agent`, from the
 environment): `settings.json`, `models.json` (it can point a provider elsewhere), `AGENTS.md`,
 `SYSTEM.md` and `APPEND_SYSTEM.md`, present or absent, as for opencode and Codex. pi's
 `auth.json` is not watched: it changes when pi refreshes a login token, and Ariane never reads it.
+A relative `PI_CODING_AGENT_DIR` is made absolute from Ariane's working directory once, and
+that one path is both what the guard watches and what the pi process gets: pi runs in the review
+tree, where the relative value would name a folder the implementer can commit.

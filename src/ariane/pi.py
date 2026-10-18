@@ -49,6 +49,12 @@ def provider(model: str) -> str:
     return model.partition("/")[0].lower()
 
 
+def agent_dir(env: Mapping[str, str], home: Path) -> Path:
+    """pi's folder (`$PI_CODING_AGENT_DIR`, else `~/.pi/agent`), absolute: pi runs in the review
+    tree, so a relative value is resolved once here, for the guard and the process (ADR 0031)."""
+    return Path(env.get(AGENT_DIR) or home / ".pi" / "agent").absolute()
+
+
 def no_credentials(name: str) -> str:
     return f"pi has no credentials for {name}"
 
@@ -78,6 +84,8 @@ class PiRuntime:
     def environment(self, session: Session) -> dict[str, str]:
         """No provider key, except the configured one under the provider's own variable."""
         env = _environment(session.env, self.api_key_env, provider(session.model))
+        if env.get(AGENT_DIR):
+            env[AGENT_DIR] = str(agent_dir(env, Path.home()))
         env["PI_TELEMETRY"] = "0"
         return env
 

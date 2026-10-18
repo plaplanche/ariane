@@ -9,6 +9,7 @@ pi as an agent runtime, for the reviewer role (ADR 0051): it starts the official
 | `ISOLATION` | constant | The isolation flags of every session: no session file, extension, skill, prompt template, theme, context file or startup network operation. |
 | `LOGIN_NEXT` | constant | "run pi and /login, or set agents.reviewer.api_key_env", the next step of a session without credentials. |
 | `AGENT_DIR` | constant | `PI_CODING_AGENT_DIR`, the variable naming pi's own folder (default `~/.pi/agent`). |
+| `agent_dir(env, home)` | function | pi's folder, absolute: `$PI_CODING_AGENT_DIR` (a relative value resolved from Ariane's working directory), else `<home>/.pi/agent`; the guard watches it and the process gets it (ADR 0031). |
 | `provider(model)` | function | The provider part of `<provider>/<id>`, lower case. |
 | `no_credentials(name)` | function | "pi has no credentials for <provider>", the summary of that session. |
 | `PiRuntime` | class | `PiRuntime(executable=("pi",), api_key_env=None)` implements `AgentRuntime`; its login variables are `PI_CODING_AGENT_DIR` and `api_key_env`; `command`, `environment`, `describe` (`pi --version`) and `run(session)`. |
@@ -17,7 +18,7 @@ pi as an agent runtime, for the reviewer role (ADR 0051): it starts the official
 ## Behaviour and errors
 
 - The prompt goes on standard input (pi merges piped input into the prompt in print mode; checked on pi 0.73.1); the schema of the answer is appended to it, and the answer is the last fenced `json` block of the last assistant message of `agent_end` (else of the last `message_end`).
-- `--tools` is the reviewer's `tools`, a subset of `read`, `grep`, `find`, `ls` (the config loader refuses `bash`, `edit`, `write` and any other name). `PI_TELEMETRY=0` is set for the process.
+- `--tools` is the reviewer's `tools`, a subset of `read`, `grep`, `find`, `ls` (the config loader refuses `bash`, `edit`, `write` and any other name). `PI_TELEMETRY=0` is set for the process, and a set `PI_CODING_AGENT_DIR` is passed as `agent_dir`, absolute, since pi runs in the review tree.
 - The process environment holds no provider key of Ariane's own: the variables of pi's documented provider list (`config_schema.PI_PROVIDER_KEYS`), any `*_API_KEY`, `AWS_*` and `GOOGLE_APPLICATION_CREDENTIALS` are removed, as is `api_key_env` itself (matched case-insensitively; a name ending in `_` is a prefix, ADR 0024). With `api_key_env`, its value is passed under the model provider's own variable (`anthropic` gets `ANTHROPIC_API_KEY`) to this process only; without it pi uses its own `auth.json`.
 - An `api_key_env` naming an unset variable ends the session as `error` before pi starts.
 - "No API key found for <provider>" on pi's output, with no assistant message, ends the session as `error` with `no_credentials(provider)` and the next step `LOGIN_NEXT`: the session is not a review.
@@ -77,6 +78,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 ```mermaid
 flowchart LR
   cli --> pi
+  git --> pi
   pi --> config_schema
   pi --> process
   pi --> runtime

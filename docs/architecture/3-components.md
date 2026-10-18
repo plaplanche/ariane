@@ -64,6 +64,7 @@ flowchart TD
   flow --> ticket
   flow --> tracker
   git --> logs
+  git --> pi
   git --> process
   git --> redact
   github --> logs
