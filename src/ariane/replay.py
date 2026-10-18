@@ -147,6 +147,7 @@ def review_round(
             run.base_instructions,
             metrics=run.metrics,
             round=round_,
+            small_env=run.agent_envs["reviewer.small"],
             changed_lines=git.changed_lines(run.worktree, start_commit, checked, ticket.WORK_DIR),
         )
         try:

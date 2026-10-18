@@ -32,6 +32,10 @@ C19 measures the cost.
 - Idle limit (ADR 0045): the reviewer's `idle_minutes` is kept, except when it is at or above the
   small `timeout_minutes`, where it is dropped: such an idle limit could never stop the session
   before the time limit, so dropping it changes nothing and needs no new key or error.
+- Login (ADR 0024): each reviewer session receives only the login variables of the model it runs.
+  A runtime whose login depends on the model (opencode: the model's provider) gives them through
+  `login_for(model)`; when `small.model` is on another provider than the reviewer's model, a small
+  round's sessions get that provider's keys and not the reviewer's, and a larger round the reverse.
 - A cap stop in a small round names the key that set the cap: `agents.reviewer.small.<key>` when
   the small table gave it, else `agents.reviewer.<key>`.
 - Records: the journal entry `ticket.review.started` ends with "small change (N changed lines, at

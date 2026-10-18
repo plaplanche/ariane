@@ -19,6 +19,7 @@ from ariane.runtime import (
     describe,
     for_role,
     is_token_cap,
+    login_for,
     session_for,
 )
 from ariane.tracker import Issue
@@ -39,6 +40,20 @@ def instruction_dirs(tree: Path) -> list[Path]:
     the system temporary folder (where its empty working directory is made) and the tree's
     parent (ADR 0031)."""
     return [Path(tempfile.gettempdir()), tree.parent]
+
+
+def agent_logins(
+    runtime: AgentRuntime, implementer: AgentConfig, reviewer: AgentConfig
+) -> dict[str, tuple[str, ...]]:
+    """The login variables of each kind of agent session: the implementer's, the reviewer's and,
+    under `reviewer.small`, the small reviewer's, whose model may need another provider's key
+    (ADR 0046). Each session receives only its own model's login (ADR 0024)."""
+    small = reviewer.small.model if reviewer.small and reviewer.small.model else reviewer.model
+    return {
+        "implementer": login_for(runtime, "implementer", implementer.model),
+        "reviewer": login_for(runtime, "reviewer", reviewer.model),
+        "reviewer.small": login_for(runtime, "reviewer", small),
+    }
 
 
 def read_answer(result: SessionResult) -> tuple[review.Review | None, str]:
@@ -70,6 +85,7 @@ class ReviewSession:
     metrics: Metrics | None = None  # where the sessions' usage is recorded (C19)
     round: int = 0  # the review round, for the metrics
     changed_lines: int | None = None  # added plus deleted lines of the reviewed diff (ADR 0046)
+    small_env: Mapping[str, str] | None = None  # the small reviewer's environment (its login)
 
     @property
     def small(self) -> bool:
@@ -190,7 +206,7 @@ class ReviewSession:
                     name_status=diff[1],
                     small_lines=self.changed_lines if self.small else None,
                 ),
-                env=self.env,
+                env=self.small_env if self.small and self.small_env is not None else self.env,
                 json_schema=review.SCHEMA,
                 add_dirs=(replay,) if claude else (),
             )

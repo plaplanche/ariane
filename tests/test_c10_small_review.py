@@ -13,9 +13,11 @@ from test_config import VALID, with_change
 from test_docs_reference import errors
 from test_verify import BRANCH, branch, pushes  # noqa: F401 (fixtures)
 
-from ariane import config, git, review, verify
+from ariane import config, git, opencode, review, review_session, verify
+from ariane.claude_code import ClaudeCodeRuntime
 from ariane.config import Config, SmallReview
-from ariane.runtime import Session, SessionResult, StopReason
+from ariane.opencode import OpenCodeRuntime
+from ariane.runtime import RoutedRuntime, Session, SessionResult, StopReason
 from ariane.tracker import InMemoryTracker, Issue
 
 from conftest import FakeRuntime, Project, make_config, sh
@@ -31,7 +33,9 @@ def small_config(max_lines: int = 10, **changes: Any) -> Config:
     """The test configuration with `[agents.reviewer.small]`; the fake implementer's change to
     app.txt is 2 changed lines (one deleted, one added)."""
     base = make_config()
-    small = SmallReview(max_lines, "small-reviewer", 0.25, None, 0.5, **changes)
+    small = dataclasses.replace(
+        SmallReview(max_lines, "small-reviewer", 0.25, None, 0.5), **changes
+    )
     return dataclasses.replace(base, reviewer=dataclasses.replace(base.reviewer, small=small))
 
 
@@ -217,3 +221,78 @@ def test_c10_small_review_verify_applies_the_same_rule(
         assert f"Reviewer model: {model}" in shown
         metrics = sh(["git", "show", f"{BRANCH}:work/verify/{BRANCH}/metrics.json"], project.root)
         assert json.loads(metrics)["sessions"][0]["changed_lines"] == 2
+
+
+@dataclasses.dataclass
+class ProviderRuntime(FakeRuntime):
+    """A fake runtime whose login depends on the model's provider, as opencode's does."""
+
+    login_variables: tuple[str, ...] = ("ANTHROPIC_API_KEY",)
+
+    def login_for(self, model: str) -> tuple[str, ...]:
+        return opencode.login_variables(model)
+
+
+KEYS = {"ANTHROPIC_API_KEY": "anthropic-key", "OPENAI_API_KEY": "openai-key"}
+
+
+def cross_provider(max_lines: int = 10) -> Config:
+    """A reviewer on one provider and a small reviewer on another."""
+    cfg = small_config(max_lines, model="openai/small")
+    return dataclasses.replace(
+        cfg, reviewer=dataclasses.replace(cfg.reviewer, model="anthropic/large")
+    )
+
+
+def logins(session: Session) -> set[str]:
+    return {name for name in KEYS if name in session.env}
+
+
+def test_c10_small_review_small_model_gets_its_own_provider_login(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name, value in KEYS.items():
+        monkeypatch.setenv(name, value)
+    for max_lines, expected in ((10, {"OPENAI_API_KEY"}), (1, {"ANTHROPIC_API_KEY"})):
+        runtime = ProviderRuntime()
+        number = 7 if max_lines == 10 else 8
+        if number == 8:
+            tracker.add_issue(8, "Another change", "Body.")
+        assert start(project, tracker, runtime, cross_provider(max_lines), number).exit_code == 0
+        [session] = reviewers(runtime)
+        assert logins(session) == expected
+
+
+def test_c10_small_review_verify_gives_the_small_model_its_own_provider_login(
+    project: Project,
+    branch: str,  # noqa: F811
+    pushes: list[str],  # noqa: F811
+) -> None:
+    for max_lines, expected in ((10, {"OPENAI_API_KEY"}), (1, {"ANTHROPIC_API_KEY"})):
+        runtime = ProviderRuntime()
+        outcome = verify.verify(
+            branch,
+            repo_root=project.root,
+            config=cross_provider(max_lines),
+            runtime=runtime,
+            environ={**environ(), **KEYS},
+        )
+        assert outcome.exit_code == 0, outcome.line
+        [session] = reviewers(runtime)
+        assert logins(session) == expected
+
+
+def test_c10_small_review_opencode_logins_follow_each_model() -> None:
+    cfg = cross_provider()
+    runtime = RoutedRuntime(
+        {"implementer": ClaudeCodeRuntime(), "reviewer": OpenCodeRuntime(model="anthropic/large")}
+    )
+    assert review_session.agent_logins(runtime, cfg.implementer, cfg.reviewer) == {
+        "implementer": ("ANTHROPIC_", "CLAUDE_"),
+        "reviewer": ("ANTHROPIC_API_KEY",),
+        "reviewer.small": ("OPENAI_API_KEY",),
+    }
+    plain = small_config()
+    assert review_session.agent_logins(runtime, plain.implementer, plain.reviewer)[
+        "reviewer.small"
+    ] == ("SMALL_REVIEWER_API_KEY",)
