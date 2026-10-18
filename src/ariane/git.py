@@ -282,9 +282,11 @@ def config_snapshot(
     """Everything that makes git run code or reroute a push, by part.
 
     Parts: each file of the shared configuration, hooks and info folders and of this working
-    tree's own configuration (as a digest), every configuration scope git reads (global
-    included), the local branches and tags except branch `ignore_ref` (the ticket's own), and
-    the refs in `watch_refs` (the remote-tracking ref of the base branch).
+    tree's own configuration (as a digest), the shared `config`'s keys (`keys <path>`: its
+    `git config --file --list --null`, so that `runs.foreign_changes` compares it by key), every
+    configuration scope git reads (global included), the local branches and tags except branch
+    `ignore_ref` (the ticket's own), and the refs in `watch_refs` (the remote-tracking ref of the
+    base branch).
     Ariane compares two snapshots taken before and after untrusted code runs: a difference
     means that code edited git itself, and `snapshot_changes` names what changed.
     """
@@ -308,6 +310,9 @@ def config_snapshot(
         else:
             continue
         snapshot[f"file {path.as_posix()}"] = hashlib.sha256(content).hexdigest()[:16]
+    shared = common / "config"
+    listing = git(["config", "--file", str(shared), "--list", "--null"], worktree, check=False)
+    snapshot[f"keys {shared.as_posix()}"] = listing.stdout if listing.ok else "unreadable"
     scopes = out(["config", "--list", "--show-origin", "--show-scope"], worktree)
     for line in scopes.splitlines():
         snapshot[f"setting {line}"] = ""

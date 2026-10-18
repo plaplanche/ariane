@@ -30,7 +30,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `ANCESTOR_INSTRUCTIONS` | constant | The instruction files looked for in the ancestors of the reviewer's folders (`CLAUDE.md`, `CLAUDE.local.md`). |
 | `instruction_snapshot(dirs, runtime, env)` | function | The digests of the instruction files a reviewer runtime can load from outside the reviewer tree, by part (`instructions <path>`); an absent file is a part too (ADR 0031). |
 | `remove_worktree(cwd, path)` | function | Removes a working tree. |
-| `config_snapshot(worktree, ignore_ref, watch_refs=())` | function | A snapshot of the git configuration files, hooks, local refs and the watched refs (the base's remote-tracking ref), to detect tampering. |
+| `config_snapshot(worktree, ignore_ref, watch_refs=())` | function | A snapshot of the git configuration files, hooks, local refs and the watched refs (the base's remote-tracking ref), to detect tampering; it also keeps the shared `config`'s parsed keys (`keys <path>`), so that `runs.foreign_changes` compares that file by key. |
 | `push_rewrites(cwd, url)` | function | The `url.*.insteadof` and `url.*.pushinsteadof` settings (any scope; read with `--null`, from the push's environment) whose prefix is a prefix of `url`. |
 | `snapshot_changes(before, after)` | function | The entries that differ between two snapshots. |
 | `blocked_push_env(base, remote_names)` | function | An environment in which every remote's push URL is blocked. |
@@ -62,7 +62,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 - `add_reviewer_worktree`: a detached tree without `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `.claude/`, `.codex/` and `.agents/` at any depth, and without symlinks that leave the tree; a tree that cannot be built is removed (ADR 0031). `base_instructions`: the base branch's `CLAUDE.md` read with git, or empty.
 - `worktree_of`, `merge_base`, `commit_messages`: where a branch is checked out, and what `ariane verify` reads of a branch (ADR 0028).
 - `instruction_snapshot`: what a reviewer runtime can load from outside its tree (ADR 0031): `CLAUDE.md` and `CLAUDE.local.md` in each given folder and every ancestor (as given and resolved), the user-level Claude file (`$CLAUDE_CONFIG_DIR/CLAUDE.md`, else `~/.claude/CLAUDE.md`, with `HOME` from `env`), and for opencode `AGENTS.md`, `opencode.json`, `opencode.jsonc` and `config.json` of its global folder (`$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`) and `$OPENCODE_CONFIG`; for Codex `AGENTS.md`, `AGENTS.override.md` and `config.toml` of `$CODEX_HOME` (else `~/.codex`). Each part is a digest of the content, the link target of a symlink, `absent`, `not a file` or `unreadable`; the flow merges it into the guard snapshot.
-- `config_snapshot`, `snapshot_changes`: detect configuration tampering; the snapshot also holds the refs in `watch_refs` (`refs/remotes/<remote>/<base>`). `push_rewrites`: the URL-rewriting keys that apply to the push URL and would reroute it (ADR 0017).
+- `config_snapshot`, `snapshot_changes`: detect configuration tampering; the snapshot also holds the refs in `watch_refs` (`refs/remotes/<remote>/<base>`) and, next to the shared `config`'s digest, its keys as `git config --file <path> --list --null` lists them (part `keys <path>`; `unreadable` if git cannot read it). [runs](runs.md) uses those keys to tolerate another Ariane run's own branch keys (C11, ADR 0017). `push_rewrites`: the URL-rewriting keys that apply to the push URL and would reroute it (ADR 0017).
 - Every git command runs with `protocol.ext.allow=never`; every diff with `--no-ext-diff --no-textconv`, so that no configured driver runs (ADR 0017). `fast_forwarded` fetches from the URL, so the base's tracking ref (part of the snapshot) stays where `fetch` left it.
 - `blocked_push_env`, `push_env`, `push`: push only from Ariane.
 - `commit`: commits only the given paths; returns False when they hold no change, raises `GitError` when `git add` fails (for example an ignored `work/`), except with `tolerate_ignored=True` (used by `ariane verify`), which returns False so that it can say nothing was recorded. The `unstage` paths are removed from the index (`git rm --cached`) before the add, so that a link committed earlier becomes a regular file (`100644`) on every platform.
@@ -154,6 +154,7 @@ flowchart LR
   git --> redact
   replay --> git
   review_session --> git
+  runs --> git
   shadow --> git
   verify --> git
 ```

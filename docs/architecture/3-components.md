@@ -55,6 +55,7 @@ flowchart TD
   flow --> replay
   flow --> review
   flow --> review_session
+  flow --> runs
   flow --> runtime
   flow --> stop
   flow --> ticket
@@ -100,6 +101,8 @@ flowchart TD
   review_session --> runtime
   review_session --> ticket
   review_session --> tracker
+  runs --> git
+  runs --> stop
   runtime --> attempts
   runtime --> config
   shadow --> checks
@@ -140,6 +143,7 @@ sequenceDiagram
   participant CLI as cli
   participant F as flow
   participant T as tracker (github)
+  participant N as runs
   participant G as git
   participant R as runtime (claude_code, opencode or codex)
   participant P as replay
@@ -150,12 +154,14 @@ sequenceDiagram
   U->>CLI: ariane start n
   CLI->>F: start
   F->>T: read the issue
+  F->>N: register the run in repo.ariane/runs/n (refused if a live run has it)
   F->>G: add the ticket working tree
   F->>F: setup command, ticket folder brief
   F->>R: run the implementer session
   R-->>F: SessionResult
   F->>M: write metrics.json
   F->>G: guard checks (configuration, branch, untracked files)
+  F->>N: drop the changes that are another registered run's own branch and keys
   F->>G: commit
   F->>P: replay and review
   loop for each check
@@ -182,6 +188,7 @@ sequenceDiagram
   D->>G: one push
   D->>T: open the pull request (a draft, needs a human, if still no-go)
   D->>T: publish statuses
+  F->>N: remove the entry, append it to ended.jsonl (however the run ends)
   F-->>CLI: Outcome
   CLI-->>U: one line
 ```

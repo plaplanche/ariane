@@ -104,3 +104,47 @@ in any scope (a global or system key reroutes a push as well as a local one), wh
 are ignored. Stopping on every key was too broad: a cloud container injects command-scope keys
 (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_n`) that rewrite `git@github.com:` to `https://github.com/`,
 which never apply to an `https://` remote. The message and the `Next:` line are unchanged.
+
+## Amendment (2026-10-18): two tickets at once, another run's own branch is tolerated
+
+Two `ariane start` on one repository, each in its own working tree, stopped each other: the
+second run's `git worktree add -b ariane/<m>` creates a local branch and writes
+`branch.ariane/<m>.remote` and `branch.ariane/<m>.merge` to the shared `config`, and the first
+run's guard cannot tell that from an agent editing git (#159). Running tickets in parallel is the
+first step of the orchestration the benchmark points to.
+
+- **Run registry.** `ariane start <n>` records its run in `<repo>.ariane/runs/<n>` (ticket number,
+  branch, process id, start time, as JSON) before it prepares the branch, and removes the entry
+  when the run ends, however it ends (delivered, stopped, Ctrl-C or an exception); the ended run
+  is appended to `<repo>.ariane/runs/ended.jsonl` with its end time. An entry whose process no
+  longer exists is ignored and deleted. The entry is written whole, then linked into place
+  (`os.link` never replaces a file): a second `ariane start <n>` while a live run of `n` is
+  registered does not start ("ticket #n is already running"). The per-ticket lock of #140 reuses
+  this entry.
+- **What the guard tolerates, and nothing more.** For a ticket `m` other than its own that was
+  registered at any time since the guard's first snapshot (registered now, or in `ended.jsonl`
+  with an end at or after that snapshot), the guard ignores: the local branch `ariane/<m>`
+  created, moved or deleted; and, in the shared `config`, the entries `branch.ariane/<m>.remote`
+  with value `origin` and `branch.ariane/<m>.merge` with value `refs/heads/ariane/<m>` or
+  `refs/heads/<base>` added or removed. The shared config is compared by key: the snapshot keeps
+  its `git config --file <path> --list --null` next to its digest, and the file's change is
+  ignored only when every entry that moved is one of those. Anything else still stops the ticket:
+  another key of that section (`pushRemote`, `rebase`), the same keys for a ticket not
+  registered, a hook, another branch, another scope, a change of the file that moves no key.
+- **The stop names what is not another run's own.** The detail lists only the remaining
+  changes, and the sentence ending the `Next:` line says that only Ariane runs git commands in
+  the repository or pushes to it while a ticket runs.
+
+Why these keys: they are what Ariane's own preparation writes, nothing in them runs code or
+reroutes a push (`remote` and `merge` only set what `git pull` and `git status` compare the
+branch with; the push is to an explicit URL and ref), and both values are fixed. A key such as
+`pushRemote` or `rebase` is not written by Ariane and is therefore an agent's or a person's: it
+stops. Why `refs/heads/<base>` as well as `refs/heads/ariane/<m>`: `git worktree add -b
+ariane/<m> <path> origin/<base>` sets the new branch to track the start point, so git writes
+`merge = refs/heads/<base>`. Why `ended.jsonl`: a run that starts and ends within another run's
+session (a quick stop) leaves its branch behind but no entry; without its end time the other run
+would stop on it. The file grows by one line per run.
+
+Not covered: the base branch's remote-tracking ref, part of the snapshot, moves when another run
+fetches a base branch that advanced; that still stops the ticket. `ariane verify` and shadow runs
+do not use the registry.

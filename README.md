@@ -254,9 +254,13 @@ value); its value is masked in what Ariane writes. The tracker token, any `ARIAN
 Ariane's own virtual environment (`VIRTUAL_ENV` and its scripts directory on `PATH`) never pass,
 even if declared.
 
-Nobody runs git commands in the repository while a ticket runs. Ariane checks that the agent
-changed nothing outside the ticket branch (git configuration, hooks, local branches, the
-remote). A merge on the base branch (a fast-forward) does not stop the ticket; any other remote
+Only Ariane runs git commands in the repository while a ticket runs. Several tickets may run at
+once on one repository (one `ariane start` each): each run is registered in
+`<repo>.ariane/runs/<n>` while it lasts. Ariane checks that the agent changed nothing outside the
+ticket branch (git configuration, hooks, local branches, the remote); the only change it
+tolerates is another registered run's own bookkeeping: its branch `ariane/<m>` and that
+branch's `remote` and `merge` keys. Anything else, even another key of that branch, stops the
+ticket. A merge on the base branch (a fast-forward) does not stop the ticket; any other remote
 change does: a created, deleted or rewritten branch or tag, a base branch that did not
 fast-forward, or any change to the ticket's branch. The stop line names the refs (ADR 0017).
 
