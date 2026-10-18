@@ -1,22 +1,22 @@
 # Review 0
 
-- Reviewed commit: `a56f07501612d7efff84f1fe2b16c3ed9c75b4d8`
+- Reviewed commit: `68a4e2dbec0ddf8226abde55ca5a0714fcd61614`
 - Reviewer model: gpt-6-astra
 - Verdict: **no-go** (the reviewer answered no-go)
 
 ## Findings
 
-- **blocking** (`src/ariane/restart.py:185`) Unregistered ticket folders are deleted without preserving their work
+- **blocking** (`src/ariane/restart.py:190`) A surviving agent can write after preservation and lose its work
 
-  Saving is conditional on the ticket tree being registered with git, but removal is unconditional. If registration is missing or damaged and worktrees/7 contains uncommitted files, clear skips _save and _remove_tree recursively deletes those files. With no local branch, it creates no backup at all. A read-only mocked probe confirmed the order: prune, remove the folder, prune; _save was never called and kept_branch was empty. Preserve an unregistered primary ticket folder before deleting it, or refuse and leave it intact. Add coverage for a nonempty unregistered primary folder; the existing unknown-folder test covers only an empty replay folder.
+  The ticket lock proves the old orchestrator exited, not that its agent exited. After SIGKILL, an agent can survive while the replacement process acquires the lock. Restart writes in this order: lock file, registry entry, fetch metadata, prune registrations, temporary indexes and Git objects, preservation commits, kept ref, forced tree removals, another prune, deletion of the original branch, and creation of the new branch/tree; Git commands also emit technical logs. The breaking interleaving is: _save captures the files; the surviving agent writes more work; _remove_tree deletes that work. No check or termination of the previous run's writers guards removal. ADR 0047 acknowledges this loss, but it contradicts the ticket's lossless interruption requirement. Quiesce those writers or refuse destructive cleanup when their termination cannot be established, with a subprocess regression test.
 
-- **blocking** (`src/ariane/restart.py:188`) A dead runner can leave an agent writing during restart
+- **blocking** (`src/ariane/flow.py:84`) Preparation interruptions still recommend the refused plain start
 
-  The lock establishes that the previous Ariane parent exited, not that its agent processes exited. process._execute starts subprocesses in separate sessions and kills them in a Python finally block; SIGKILL or a parent crash bypasses that cleanup. The breaking interleaving is: the parent dies and releases the lock; restart acquires it, snapshots the old tree and creates the kept ref; the surviving agent writes additional work; restart force-removes the tree, losing those writes. The orphan can also continue touching shared git state during the new run. Before snapshotting or removing trees, establish that the previous run's writers have terminated, using crash-safe process ownership or equivalent isolation. Test a killed runner with a surviving writer, rather than only a child holding the lock.
+  The preparation exception handler calls describe directly rather than adding the restart action. For example, git worktree add can create the branch and working-tree files before Ctrl-C interrupts preparation. The handler then says 'check the working tree, then start the ticket again'; following that instruction with plain start refuses the leftovers. Errors during restart cleanup similarly return only 'read the error above and retry'. This retains the precise recovery-instruction defect the ticket requires fixing for every unpushed stop. Add preparation-failure coverage and recommend --restart when preparation has left recoverable ticket state, while retaining the lock-held and remote-branch refusals.
 
-- **minor** (`src/ariane/flow.py:84`) Preparation interruptions still recommend a plain start
+- **blocking** (`src/ariane/measures.py:45`) A second restart drops the first restart's human time
 
-  Only _TicketRun._stopped adds --restart. An interruption during prepare, including after creating a branch or while removing restart trees, takes this exception handler and retains 'check the working tree, then start the ticket again'. That plain start can immediately refuse the leftovers. Apply restart guidance to preparation failures that leave an unpushed ticket behind, while preserving the distinct lock-held and remote-branch refusals. The existing interrupt test exercises an implementer interruption, not preparation.
+  For run A stopping at 09:00, run B restarting at 10:00 and stopping at 11:00, and run C restarting at 12:00, C records only B's stopped_at. restart_seconds therefore reports one hour instead of two. B's earlier restarted_from remains only on its kept branch; report.build reads working-tree metrics files and does not traverse kept branches. Each new run replaces the measurement history rather than accumulating restart intervals. Preserve prior intervals or their accumulated duration and test two stopped runs followed by a successful restart.
 
 ## Definition of done
 
@@ -42,18 +42,18 @@
 
 - met: The change is covered by tests that fail without it.
 
-  The new test file contains 19 test functions, with the lock refusal parametrized for both modes. Assertions cover the new option, branch preservation, dirty and staged work, restart records, remote/shadow refusals, and reporting, and would fail without this implementation. Ariane reports passing checks; I did not rerun filesystem-writing tests under the read-only restriction. The blocking cases above remain uncovered. Write-order review: CLI configures logging; start creates/opens the ticket lock, writes the registry entry, fetches git state, and checks the remote; restart prunes registrations, writes temporary indexes and git objects, creates the kept ref exclusively, removes trees, prunes again, and deletes the old branch; preparation creates the new branch/tree; execution runs setup before creating the ticket records and logging ticket.restarted. Registry exit appends the ended record before removing the live entry. Each git invocation also emits a technical log. Existing-name failure precedes tree removal, but the preservation gaps identified above remain.
+  The new tests exercise restart delivery, branch and dirty-work preservation, subprocess lock contention, remote and shadow refusals, journal ordering, and reporting. These depend on functionality absent before the change. Ariane reports passing checks; filesystem-writing tests were not rerun during this read-only review. The failure cases identified above remain uncovered.
 
 - met: The documentation the change affects is updated (C25).
 
-  README includes PowerShell and bash restart examples. The component sequence, affected module documents, new restart module document, CLI reference, and log catalogue are updated. Documentation describes preservation and concurrency guarantees that need the blocking fixes above.
+  README includes PowerShell and bash commands; affected module pages, the new restart module page, component sequence, CLI reference, and log catalogue are updated. Documenting the surviving-agent limitation does not resolve the preservation defect.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0047 records the lock implementation, kept naming, staged and uncommitted snapshots, exclusive ref creation, cleanup ordering, unknown-folder handling, record provenance, and concurrent-run guard exemptions. Recording these choices does not resolve the identified preservation failures.
+  ADR 0047 records locking, retained names, preservation commits, staged content, unknown directories, record sources, concurrency exemptions, and module placement.
 
 ## Proposed learnings (not decided)
 
-- Proposed: treat an absent runner lock as evidence only about the runner, not about surviving subprocesses.
-- Proposed: require a verified backup or an explicit refusal before deleting any primary ticket folder, including one git no longer recognizes.
-- Proposed: test interruption boundaries during preparation and cleanup as well as during agent execution.
+- Proposed: recovery must establish that all previous writers have stopped before snapshotting and deleting their workspace.
+- Proposed: test interruptions during preparation and cleanup, not only inside agent sessions.
+- Proposed: test restart measurements across multiple failed attempts so a fresh run cannot erase accumulated human time.

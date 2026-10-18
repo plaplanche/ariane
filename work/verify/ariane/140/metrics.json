@@ -12,28 +12,28 @@
   "sessions": [
     {
       "billing": "plan",
-      "cache_read_tokens": 383488,
+      "cache_read_tokens": 254848,
       "cache_write_tokens": 0,
-      "changed_lines": 1189,
+      "changed_lines": 1227,
       "cost_usd": 0.0,
-      "duration_s": 84.107,
-      "input_tokens": 59553,
+      "duration_s": 86.062,
+      "input_tokens": 59302,
       "model": "gpt-6-astra",
-      "output_tokens": 2684,
+      "output_tokens": 2419,
       "role": "reviewer",
       "round": 0,
       "runtime": "codex",
       "stop_reason": "finished"
     }
   ],
-  "started": "2026-10-18T12:03:32Z",
+  "started": "2026-10-18T12:48:07Z",
   "steps": [
     {
-      "at": "2026-10-18T12:11:48Z",
+      "at": "2026-10-18T12:56:08Z",
       "name": "reviewer session 1 stopped"
     },
     {
-      "at": "2026-10-18T12:11:49Z",
+      "at": "2026-10-18T12:56:09Z",
       "name": "outcome: stopped"
     }
   ],
