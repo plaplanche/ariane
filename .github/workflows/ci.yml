@@ -10,16 +10,22 @@ permissions:
 
 jobs:
   checks:
-    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}${{ matrix.shard && format(' / shard {0}', matrix.shard) || '' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         python: ["3.13"]
         include:
           - os: ubuntu-latest
             python: "3.11"
+          - os: windows-latest
+            python: "3.13"
+            shard: 1
+          - os: windows-latest
+            python: "3.13"
+            shard: 2
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,7 +61,7 @@ jobs:
         run: uv run mypy
       - name: Tests
         if: steps.docs.outputs.docs_only != 'true'
-        run: uv run pytest --durations=30
+        run: uv run pytest --durations=30 ${{ matrix.shard && format('--splits 2 --group {0} --splitting-algorithm least_duration', matrix.shard) || '' }}
       - name: File length
         if: steps.docs.outputs.docs_only != 'true'
         run: uv run python scripts/check_file_length.py
@@ -93,38 +99,3 @@ jobs:
           if ($code -ne 2) { exit 1 }
           if (-not ($out | Select-Object -Last 1).StartsWith("Refused configuration:")) { exit 1 }
           exit 0
-
-  serial:
-    name: ${{ matrix.os }} / serial
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: "3.13"
-          enable-cache: true
-      - name: Detect documentation-only pull request
-        id: docs
-        shell: bash
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ "$EVENT" = "pull_request" ]; then
-            git diff --name-only --no-renames "$BASE" "$HEAD" | uv run --no-project python scripts/docs_only.py >> "$GITHUB_OUTPUT"
-          else
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Install
-        if: steps.docs.outputs.docs_only != 'true'
-        run: uv sync --locked
-      - name: Tests, serial
-        if: steps.docs.outputs.docs_only != 'true'
-        run: uv run pytest -n 0 --durations=30
