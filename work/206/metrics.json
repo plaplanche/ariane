@@ -1,0 +1,27 @@
+{
+  "attempts": {
+    "guard_violations": 0,
+    "pull_request": 0,
+    "push": 0
+  },
+  "blocking_red_at_delivery": 0,
+  "first_pass_verdict": "not reviewed",
+  "mode": "delivered",
+  "outcome": "running",
+  "restarted_from": {
+    "branch": "ariane-restarted/206-20261018T150727Z",
+    "stopped_at": "2026-10-18T15:04:43Z"
+  },
+  "rounds": 0,
+  "sessions": [],
+  "started": "2026-10-18T15:07:28Z",
+  "steps": [
+    {
+      "at": "2026-10-18T15:07:29Z",
+      "name": "folder opened"
+    }
+  ],
+  "surviving_processes": 0,
+  "ticket": 206,
+  "unchanged_fix_rounds": 0
+}
