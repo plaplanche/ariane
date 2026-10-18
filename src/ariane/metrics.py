@@ -38,6 +38,7 @@ class Metrics:
         self.blocking_red = 0
         self.first_pass_verdict = NOT_REVIEWED
         self.outcome = "running"
+        self.restarted_from: dict[str, str] | None = None  # the run this one started over
 
     def step(self, name: str) -> None:
         self.steps.append({"name": name, "at": ticket.now().replace(" ", "T")})
@@ -131,4 +132,6 @@ class Metrics:
             "first_pass_verdict": self.first_pass_verdict,
             "outcome": self.outcome,
         }
+        if self.restarted_from is not None:
+            data["restarted_from"] = self.restarted_from
         return json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n"

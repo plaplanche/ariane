@@ -40,6 +40,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 flowchart LR
   flow --> stop
   replay --> stop
+  restart --> stop
   runs --> stop
   shadow --> stop
 ```

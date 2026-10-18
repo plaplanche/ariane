@@ -13,6 +13,7 @@ from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
+from ariane.restart import Restarted, lock_path, locked, prepare, with_restart
 from ariane.runtime import AgentRuntime, SessionResult, StopReason, for_role, session_for
 from ariane.stop import Stop, describe
 from ariane.tracker import Issue, Tracker, TrackerError
@@ -57,6 +58,7 @@ def start(
     tracker: Tracker,
     runtime: AgentRuntime,
     environ: Mapping[str, str],
+    restarting: bool = False,
 ) -> Outcome:
     try:
         issue = tracker.read_issue(number)
@@ -68,11 +70,15 @@ def start(
     worktree = worktree_path(repo_root, number)
     with contextlib.ExitStack() as registry:  # the entry goes however the run ends (C11)
         try:
+            registry.enter_context(locked(lock_path(repo_root, number), number))
             registry.enter_context(runs.registered(runs.folder(repo_root), number, branch))
             witnessed = registry.enter_context(runs.watching(runs.folder(repo_root)))
-            url, refs_before, instructions = _prepare(repo_root, config, branch, worktree)
+            url, refs_before, instructions, restarted = prepare(
+                repo_root, config.base_branch, branch, worktree, restarting
+            )
             run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url)
             run.base_instructions = instructions
+            run.restarted = restarted
             run.witnessed = witnessed
         except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
             reason, next_action = describe(exc)
@@ -88,30 +94,6 @@ def _interrupted_before_start(number: int) -> Outcome:
     return Outcome(EXIT_INTERRUPTED, line)
 
 
-def _prepare(
-    repo_root: Path, config: Config, branch: str, worktree: Path
-) -> tuple[str, dict[str, str], str]:
-    """Refuse a ticket already started, then create its branch and working tree.
-
-    Also returns the base branch's instructions, read once from the fetched ref: the reviewers
-    use these, whatever an agent does to the ref later (C11, ADR 0028)."""
-    if worktree.exists():
-        raise Stop(f"its working tree already exists at {worktree}", "remove it to start over")
-    if git.local_branch_exists(repo_root, branch):
-        raise Stop(f"branch {branch} already exists locally", "delete it to start over")
-    url = git.push_url(repo_root, REMOTE)
-    git.fetch(repo_root, REMOTE, config.base_branch)
-    instructions = git.base_instructions(repo_root, REMOTE, config.base_branch)
-    refs = git.remote_refs(repo_root, url)
-    if f"refs/heads/{branch}" in refs:
-        raise Stop(
-            f"branch {branch} already exists on {REMOTE}",
-            "close its pull request and delete the branch, then start again",
-        )
-    git.add_worktree(repo_root, worktree, branch, f"{REMOTE}/{config.base_branch}")
-    return url, refs, instructions
-
-
 def _token(environ: Mapping[str, str], token_env: str) -> str:
     name = token_env.upper()
     return next((v for k, v in environ.items() if k.upper() == name and v), "")
@@ -119,6 +101,7 @@ def _token(environ: Mapping[str, str], token_env: str) -> str:
 
 class _TicketRun:
     remote = REMOTE
+    restartable = True  # a stop names `--restart` unless the branch was pushed (ADR 0047)
 
     def __init__(
         self,
@@ -141,6 +124,8 @@ class _TicketRun:
         self.url = url
         self.number = issue.number
         self.base_instructions = ""
+        self.restarted: Restarted | None = None
+        self.pushed = False  # the branch is on the remote: it is never restarted (ADR 0047)
         self.not_updated: list[str] = []
         self.changed: list[str] = []
         self.truncated: list[str] = []  # the files whose hunks the last reviewed diff lacked
@@ -165,11 +150,16 @@ class _TicketRun:
     def execute(self, refs_before: dict[str, str]) -> Outcome:
         try:
             self.processes_before = set(process.descendants(exited=True))
+            if self.restarted is not None:
+                self.metrics.restarted_from = self.restarted.metrics()
             # Taken before the setup: instruction files it writes are not part of the baseline.
             self.guard_since = runs.now()  # other runs active since may touch their branches
             guard = self.snapshot()
             setup_error = self.setup(self.worktree, self.config.setup, guard)
             self.folder.create(self.issue)
+            if self.restarted is not None:  # the journal opens with it (ADR 0047)
+                text = self.restarted.journal(self.number)
+                self.folder.log("ticket.restarted", "Ticket started over", text)
             self.metrics.step("folder opened")
             self.folder.log(
                 "ticket.started",
@@ -542,6 +532,7 @@ class _TicketRun:
             reviewed,
             last_guard,
             self.truncated,
+            lambda: setattr(self, "pushed", True),
         )
         self.metrics.delivered_red(len(checks.blocking_failures(results)))
         self.metrics.finish("needs a human" if delivery.draft else "delivered")
@@ -576,6 +567,8 @@ class _TicketRun:
 
     def _stopped(self, exc: BaseException) -> Outcome:
         reason, next_action = describe(exc)
+        if self.restartable and not self.pushed:
+            next_action = with_restart(next_action, self.number)
         detail = exc.detail if isinstance(exc, Stop) else str(exc)
         logs.emit("run.stopped", f"ticket #{self.number}: {reason}")
         # Ctrl-C or an error can end a command before its survivors were counted.

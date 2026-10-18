@@ -69,6 +69,7 @@ flowchart LR
 - [`redact`](modules/redact.md)
 - [`replay`](modules/replay.md)
 - [`report`](modules/report.md)
+- [`restart`](modules/restart.md)
 - [`review`](modules/review.md)
 - [`review_session`](modules/review_session.md)
 - [`runs`](modules/runs.md)

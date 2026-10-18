@@ -8,6 +8,7 @@ Entries of a ticket's journal.
 
 | Identifier | Level | Meaning |
 | --- | --- | --- |
+| `ticket.restarted` | info | The ticket started over: trees removed, previous branch kept, its last action. |
 | `ticket.started` | info | The ticket folder was opened for an issue. |
 | `ticket.setup` | info | The setup command ran, or there was none. |
 | `ticket.env.declared_secret` | warning | Variables named like secrets pass because `[project] env` declares them (names only). |

@@ -13,7 +13,7 @@ The `ariane` command line (C23). It parses arguments, wires the configuration, t
 
 ## Behaviour and errors
 
-- Commands: `start [--shadow]` (`--shadow`: the ticket runs in a separate clone through `shadow`, C19, ADR 0036), `status`, `judge <n> accept|reject --minutes N [--note TEXT]` (records the human's verdict and time on a shadow ticket through `shadow.judge`, C19, ADR 0037), `report [--since YYYY-MM-DD]` (from `report`, C19, ADR 0038) and `verify <branch> [--issue N]` (checks and reviews a local branch finished by hand, C23, ADR 0028).
+- Commands: `start [--shadow] [--restart]` (`--shadow`: the ticket runs in a separate clone through `shadow`, C19, ADR 0036; `--restart`: a stopped or interrupted ticket starts over through `flow.start(restarting=True)`, its trees removed and its branch kept, ADR 0047; both together exit 2 before the configuration is read: "--restart does not apply to shadow tickets", next action: remove the clone), `status`, `judge <n> accept|reject --minutes N [--note TEXT]` (records the human's verdict and time on a shadow ticket through `shadow.judge`, C19, ADR 0037), `report [--since YYYY-MM-DD]` (from `report`, C19, ADR 0038) and `verify <branch> [--issue N]` (checks and reviews a local branch finished by hand, C23, ADR 0028).
 - Reads `ariane.toml` (or the file `ARIANE_CONFIG` names) through `config.load`, the token variable the configuration names, `ARIANE_LOG_LEVEL`; writes the log file `<repo>.ariane/logs/<name>.log` through `logs`.
 - Token scope (C21, ADR 0017): once read, the token variable is removed from `os.environ` (`_take_token`); the run gets a copy of the environment that carries it, and the process is made undumpable on Linux (`process.make_undumpable`). It also becomes the subreaper of its orphaned descendants on Linux (`process.set_child_subreaper`), so a process an agent starts in a new session can be found and killed; if Linux refuses, `start` and `verify` do nothing and say why (C10, ADR 0031).
 - `start` and `verify --issue` build the `GitHubTracker` with `[tracker].ready_label`, so both apply the issue gate (C21, ADR 0032). `report` builds it only when the configuration and the token exist (else waiting time is "not available").
@@ -37,9 +37,10 @@ flowchart TD
   F -- verify --> V[config.load, tracker if --issue, verify.verify]
   F -- status --> S[read status.md, else remote base branch]
   F -- start --> T[config.load, check token, build tracker and runtime]
+  F -- "start --shadow --restart" --> X2[say Did not start, return EXIT_USAGE]
   T --> G{shadow?}
   G -- yes --> H[shadow.start]
-  G -- no --> I[flow.start]
+  G -- no --> I[flow.start, restarting with --restart]
   V --> Z
   R --> Z
   J --> Z
@@ -106,4 +107,4 @@ See the generated [command-line reference](../../reference/cli.md), generated fr
 
 ## Serves
 
-C23; ADR 0002. See [the component view](../3-components.md).
+C23; ADR 0002, ADR 0047. See [the component view](../3-components.md).

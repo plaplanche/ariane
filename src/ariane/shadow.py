@@ -91,6 +91,7 @@ class ShadowRun(_TicketRun):
     """A ticket run whose delivery is a local record and whose remote does not exist."""
 
     remote = BASE_REF_REMOTE
+    restartable = False  # `--restart` does not apply to a shadow clone (ADR 0047)
 
     def __init__(
         self,

@@ -27,7 +27,7 @@ options:
 ## `ariane start`
 
 ```text
-usage: ariane start [-h] [--log-level LEVEL] [--shadow] issue
+usage: ariane start [-h] [--log-level LEVEL] [--shadow] [--restart] issue
 
 positional arguments:
   issue              issue number
@@ -38,6 +38,9 @@ options:
                      (default: ARIANE_LOG_LEVEL, else warning)
   --shadow           run the ticket in a separate clone, without push or pull
                      request
+  --restart          start a stopped or interrupted ticket over: remove its
+                     working trees and keep its branch as ariane-
+                     restarted/<issue>-<time>
 ```
 
 ## `ariane status`
