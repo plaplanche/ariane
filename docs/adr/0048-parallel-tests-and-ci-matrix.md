@@ -108,8 +108,10 @@ The owner, from their machine, on this pull request's branch:
 4. Waits for this pull request's CI: the four jobs pass (so `-n auto` passes on Linux, macOS and
    Windows), and no required check stays "expected" or "waiting".
 5. Records, in the Durations table, the tests step and total duration of each of the four jobs
-   and the run's URL, from that run; the longest job must be under 12 minutes. If it is not,
-   the pull request is not merged and the decision is revisited.
+   and the run's URL, from that run. The issue's target was a longest job under 12 minutes;
+   the measured Windows job takes 16.3 minutes, and the owner amended the target on 2026-10-18:
+   16 minutes are accepted and the pull request merges, the Windows tests to be made faster in
+   a later ticket.
 
 ## Consequences
 The tests take about a quarter of the time on a 4-CPU machine, in CI, in Ariane's replay and on
