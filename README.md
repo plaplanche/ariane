@@ -293,6 +293,14 @@ In a cloud sandbox whose proxy supplies its own credentials, an agent's push is 
 the session, not prevented (ADR 0017). To check what your proxy does, run `git push --dry-run`
 or a push of a throwaway branch from a session without the token and see whether it is accepted.
 
+## Develop Ariane
+
+From a clone, `uv sync` installs the development tools; the checks are listed in
+[`CLAUDE.md`](CLAUDE.md) ("Checks"). `uv run pytest` runs the tests in parallel, one worker per
+CPU (`pytest-xdist`, `-n auto`); `uv run pytest -n 0` runs them serially, for example to debug
+one test with `pdb`. CI runs the checks with Python 3.13 on Windows, macOS and Linux, and with
+Python 3.11, the minimum, on Linux only ([ADR 0048](docs/adr/0048-parallel-tests-and-ci-matrix.md)).
+
 ## License
 
 Ariane is free software under the [GNU Affero General Public License v3.0 only](LICENSE)
