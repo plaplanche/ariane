@@ -43,6 +43,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `diff(cwd, since, until, exclude)` | function | The diff between two revisions, without the excluded pathspec and without external diff or textconv drivers. |
 | `changed_between(cwd, since, until)` | function | Paths that differ between two commits. |
 | `name_status(cwd, since, until, exclude)` | function | `git diff --name-status` between two revisions, without the excluded pathspec. |
+| `changed_lines(cwd, since, until, exclude)` | function | Added plus deleted lines between two revisions (`git diff --numstat`), without the excluded pathspec; a binary file counts 0. Sizes the review (ADR 0046). |
 | `status(cwd)` | function | The short status of the tree. |
 | `committed_paths(cwd, since, pathspec)` | function | Paths committed since a revision under a pathspec. |
 | `commit(cwd, pathspec, message, env, tolerate_ignored, unstage)` | function | Commits only the given paths; False when they hold no change; the `unstage` paths leave the index first; the `git commit` adds Ariane's own git identity variables (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `EMAIL`) to `env`, which the allow list withholds from untrusted code (ADR 0024). |
@@ -116,6 +117,7 @@ class git {
   ignored(cwd) set
   changed_paths(cwd, since) list
   diff(cwd, since, until, exclude) str
+  changed_lines(cwd, since, until, exclude) int
   status(cwd) str
   committed_paths(cwd, since, pathspec) list
   fast_forwarded(cwd, url, branch, old, new) bool

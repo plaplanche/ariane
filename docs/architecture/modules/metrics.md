@@ -14,7 +14,7 @@ The measurements of one ticket, `work/<n>/metrics.json` (C19, ADR 0034): UTF-8, 
 
 - `Metrics` hands the whole text to its `write` callback after each step; it touches no file itself. `ariane verify` renders the same format with mode `verify` into `work/verify/<branch>/metrics.json`; its outcome is `delivered` when green and `stopped` otherwise.
 - `step(name)` appends a named step with its time.
-- `run_session(runtime, session, round_=0)` runs a session on its runtime and records role, round, runtime, model, stop reason, cost, tokens (input, output, cache read, cache write; null when not reported), `duration_s` and, when the runtime says so, `billing` (`plan`: covered by a subscription, cost recorded as 0; `api`). Attempts (C19, ADR 0036): it sums the sessions' `SessionResult.attempts` into `"attempts": {"push", "pull_request", "guard_violations"}`; `guard_violation()` counts a post-session check that stopped the ticket.
+- `run_session(runtime, session, round_=0, changed_lines=None)` runs a session on its runtime and records role, round, runtime, model, stop reason, cost, tokens (input, output, cache read, cache write; null when not reported), `duration_s` and, when the runtime says so, `billing` (`plan`: covered by a subscription, cost recorded as 0; `api`), and for a reviewer session `changed_lines`, the size of the diff it reviewed (ADR 0046). Attempts (C19, ADR 0036): it sums the sessions' `SessionResult.attempts` into `"attempts": {"push", "pull_request", "guard_violations"}`; `guard_violation()` counts a post-session check that stopped the ticket.
 - `surviving_processes(count)`: the processes that outlived a setup, an agent session or a check and were killed, summed as `surviving_processes` (C10, ADR 0031); written with the next step.
 - `delivered_red(count)`: the blocking checks red at delivery, written as `blocking_red_at_delivery` (C19, ADR 0038).
 - `unchanged_fix_round()` counts a fix round that changed nothing into `unchanged_fix_rounds` (C10). `reviewed(go)`, `fix_round(round_)`, `finish(outcome)`: the first review's verdict (`go`, `no-go`, or `not reviewed`), the number of fix rounds, the outcome (`running`, `delivered`, `stopped`, `needs a human`).
@@ -46,7 +46,7 @@ class Metrics {
   first_pass_verdict str
   outcome str
   step(name)
-  run_session(runtime, session, round_)
+  run_session(runtime, session, round_, changed_lines)
   reviewed(go)
   fix_round(round_)
   guard_violation()

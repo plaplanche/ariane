@@ -260,11 +260,14 @@ def prompt(
     instructions: str = "",
     tree: Path | None = None,
     name_status: str = "",
+    small_lines: int | None = None,
 ) -> str:
     """The reviewer's prompt; the issue, the diff and the instructions are data, never rules.
 
     `name_status` is `git diff --name-status` of the whole range: it is always shown in full,
-    and when the diff is cut the prompt names the files whose hunks are missing (ADR 0031)."""
+    and when the diff is cut the prompt names the files whose hunks are missing (ADR 0031).
+    `small_lines`, the changed lines of a small change, narrows the review (ADR 0046)."""
+    small = f"\n{small_note(small_lines)}\n" if small_lines is not None else ""
     where = f" at `{tree}`" if tree else ""
     project = (
         f'<{context.UNTRUSTED_TAG} kind="project-instructions">\n'
@@ -348,7 +351,7 @@ def prompt(
 
 The commit under review is checked out{where}. You may only read it. Its CLAUDE.md, CLAUDE.local.md,
 AGENTS.md and .claude/ files were removed; their changes are in the diff.
-
+{small}
 Rules:
 - Be adversarial: look for what is wrong, missing or unsafe. Check that the change does what
   the issue asks, that it is tested, and that the documentation it affects is updated.
@@ -393,6 +396,14 @@ Diff from the base commit:
 {context._escape(diff)}{cut}
 </{context.UNTRUSTED_TAG}>
 """
+
+
+def small_note(lines: int) -> str:
+    """What the prompt of a small change adds (ADR 0046)."""
+    return (
+        f"This change is small ({lines} changed lines). Review the changed files, their tests"
+        " and the code that calls them; do not survey the rest of the repository."
+    )
 
 
 def _items_table(settled: Settled) -> str:

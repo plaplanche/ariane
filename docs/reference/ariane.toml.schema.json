@@ -196,6 +196,36 @@
               "type": "string",
               "minLength": 1,
               "description": "Codex reviewer only: variable holding an API key, passed to the session as CODEX_API_KEY; without it the CLI's own login (ChatGPT plan) is used."
+            },
+            "small": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "max_lines"
+              ],
+              "description": "Settings replacing the reviewer's for a change of at most max_lines changed lines (added plus deleted, without work/; a binary file counts 0); the prompt asks for a narrower review. The model, when given, differs from the implementer's (C10).",
+              "properties": {
+                "max_lines": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "max_budget_usd": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "max_tokens": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "timeout_minutes": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              }
             }
           },
           "allOf": [

@@ -280,6 +280,7 @@ class _Verification:
             self.config.definition_of_done,
             self.base_instructions,
             metrics=self.metrics,
+            changed_lines=git.changed_lines(self.repo_root, self.base, self.head, ticket.WORK_DIR),
         )
         try:
             answer = sessions.run(
@@ -296,7 +297,7 @@ class _Verification:
             raise Refused(exc.reason, "read the error, then run verify again") from None
         settled = review.settle(answer, self.config.definition_of_done, results)
         self.metrics.reviewed(settled.go)
-        model = self.config.reviewer.model
+        model = sessions.reviewer.model
         texts = {
             REVIEW: review.record(settled, self.head, model) + _truncation_section(self.truncation),
             ticket.CHECKS: checks.report(results, self.head, changed),

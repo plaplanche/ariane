@@ -16,7 +16,8 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 | `validate(data)` | function | The problems of an answer against the schema; empty when valid. |
 | `parse(data)` | function | Turns a valid answer into a `Review`. |
 | `settle(review, items, results)` | function | Applies Ariane's rules to a review and the check results. |
-| `prompt(issue, diff, results, check_configs, items, ...)` | function | The reviewer's instructions with the untrusted data; with `changed`, a block naming the changed files whose tests no replay ran (`not_run_locally`, ADR 0042); with `name_status`, the full list of changed files. |
+| `prompt(issue, diff, results, check_configs, items, ...)` | function | The reviewer's instructions with the untrusted data; with `changed`, a block naming the changed files whose tests no replay ran (`not_run_locally`, ADR 0042); with `name_status`, the full list of changed files; with `small_lines`, the narrower review of a small change (ADR 0046). |
+| `small_note(lines)` | function | The sentence a small change's prompt adds (ADR 0046). |
 | `truncated_paths(diff, limit=MAX_DIFF_CHARS)` | function | The files whose hunks are missing or incomplete when the diff is cut at `limit` characters; empty when it is not cut. |
 | `findings_table(settled)` | function | The findings as a Markdown table. |
 | `record(settled, commit, model, round_)` | function | The text of `work/<n>/review-<round>.md`. |
@@ -32,6 +33,8 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 - `record`: the text of `work/<n>/review-<round>.md`. `fix_feedback`: the findings (and failed blocking checks) given to a fix session. `pull_request_section`: the verdict, the item results and the findings table (3,000 characters at most, else a summary and a link).
 
 When the issue has an `Out of scope` section (`ticket.section`), the prompt shows it again as its own escaped untrusted block (`kind="out-of-scope"`) and the rules say that a finding about that work is never blocking: minor, with "out of scope" in its title, or left out. This is a framed opinion; `settle` is unchanged.
+
+With `small_lines` (a small change, ADR 0046), the prompt adds, between the paragraph on the removed instruction files and the rules, `small_note(small_lines)`: "This change is small (N changed lines). Review the changed files, their tests and the code that calls them; do not survey the rest of the repository." Without it the prompt is unchanged.
 
 Right after the "Be adversarial" rule, the prompt asks the reviewer to check the order of side effects: where the issue, the spec or the code relies on an order, atomicity, idempotent retries or concurrent requests, it follows each request path step by step and lists every write in order. A write before the check that should guard it, a decision split across statements that a concurrent request can interleave, or a retry that can write twice is a blocking finding that names the two steps and the interleaving.
 

@@ -402,6 +402,14 @@ def name_status(cwd: Path, since: str, until: str, exclude: str) -> str:
     )
 
 
+def changed_lines(cwd: Path, since: str, until: str, exclude: str) -> int:
+    """Added plus deleted lines from `since` to `until`, without the paths under `exclude`; a
+    binary file counts 0 (ADR 0046)."""
+    listing = out([*_PLAIN_DIFF, "--numstat", since, until, "--", ".", f":(exclude){exclude}"], cwd)
+    counts = (line.split("\t", 2)[:2] for line in listing.splitlines() if line)
+    return sum(int(n) for pair in counts for n in pair if n.isdigit())
+
+
 def status(cwd: Path) -> str:
     """What git reports as changed or untracked (ignored files left out)."""
     return out(["status", "--porcelain", "--untracked-files=all"], cwd)

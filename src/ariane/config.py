@@ -45,6 +45,19 @@ class AgentConfig:
     max_tokens: int | None = None
     api_key_env: str | None = None  # codex: variable holding the API key, if not a plan login
     idle_minutes: float | None = None  # no event for this long stops the session; None: no limit
+    small: SmallReview | None = None  # reviewer only: settings for a small change (ADR 0046)
+
+
+@dataclass(frozen=True)
+class SmallReview:
+    """`[agents.reviewer.small]`: what replaces the reviewer's values for a change of at most
+    `max_lines` changed lines; None keeps the reviewer's (ADR 0046)."""
+
+    max_lines: int
+    model: str | None = None
+    max_budget_usd: float | None = None
+    max_tokens: int | None = None
+    timeout_minutes: float | None = None
 
 
 @dataclass(frozen=True)
@@ -208,6 +221,12 @@ def parse(data: dict[str, Any]) -> Config:
             f"{CONFIG_FILE}: agents.reviewer.model: must differ from agents.implementer.model"
             f" ({reviewer.model!r}); the review is by a different model (C10)"
         )
+    if reviewer.small is not None and reviewer.small.model == implementer.model:
+        raise ConfigError(
+            f"{CONFIG_FILE}: agents.reviewer.small.model: must differ from"
+            f" agents.implementer.model ({implementer.model!r}); the review is by a different"
+            " model (C10)"
+        )
     raw_checks = data.get("checks")
     if not isinstance(raw_checks, list) or not raw_checks:
         raise ConfigError(f"{CONFIG_FILE}: checks: at least one [[checks]] table is required")
@@ -281,6 +300,7 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
             "idle_minutes",
             "max_tokens",
             "api_key_env",
+            *(("small",) if role == "reviewer" else ()),
         },
     )
     prefix = f"{where}."
@@ -326,7 +346,31 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
         max_tokens=_max_tokens(table, where),
         api_key_env=api_key_env,
         idle_minutes=_idle_minutes(table, where, timeout_minutes),
+        small=_small(table, where, runtime) if "small" in table else None,
     )
+
+
+def _small(table: dict[str, Any], where: str, runtime: str) -> SmallReview:
+    """`[agents.reviewer.small]`: same runtime and tools as the reviewer (ADR 0046)."""
+    small = _table(table, "small", f"{where}.")
+    prefix = f"{where}.small."
+    _only(
+        small,
+        prefix[:-1],
+        {"max_lines", "model", "max_budget_usd", "max_tokens", "timeout_minutes"},
+    )
+    lines = small.get("max_lines")
+    if lines is None:
+        raise ConfigError(f"{CONFIG_FILE}: {prefix}max_lines: missing key")
+    if isinstance(lines, bool) or not isinstance(lines, int) or lines <= 0:
+        raise ConfigError(f"{CONFIG_FILE}: {prefix}max_lines: expected a positive integer")
+    model = _str(small, "model", prefix) if "model" in small else None
+    if model is not None and runtime == OPENCODE and "" in model.partition("/")[::2]:
+        raise ConfigError(f"{CONFIG_FILE}: {prefix}model: opencode wants <provider>/<model>")
+    numbers = {
+        k: _positive(small, k, prefix) for k in ("max_budget_usd", "timeout_minutes") if k in small
+    }
+    return SmallReview(lines, model, max_tokens=_max_tokens(small, prefix[:-1]), **numbers)
 
 
 def _idle_minutes(table: dict[str, Any], where: str, timeout_minutes: float) -> float | None:

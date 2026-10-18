@@ -6,7 +6,7 @@ import json
 import shutil
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ariane import checks, git, review, ticket
@@ -69,6 +69,47 @@ class ReviewSession:
     instructions: str = ""  # the base branch's CLAUDE.md, shown to the reviewer as data
     metrics: Metrics | None = None  # where the sessions' usage is recorded (C19)
     round: int = 0  # the review round, for the metrics
+    changed_lines: int | None = None  # added plus deleted lines of the reviewed diff (ADR 0046)
+
+    @property
+    def small(self) -> bool:
+        """The change is at most `[agents.reviewer.small]`'s `max_lines` (ADR 0046)."""
+        small = self.agent.small
+        lines = self.changed_lines
+        return small is not None and lines is not None and lines <= small.max_lines
+
+    @property
+    def reviewer(self) -> AgentConfig:
+        """The reviewer's settings for this change: the small ones replace the reviewer's own
+        for a small change; runtime and tools stay the reviewer's (ADR 0046)."""
+        small = self.agent.small
+        if small is None or not self.small:
+            return self.agent
+        agent = self.agent
+        timeout = small.timeout_minutes or agent.timeout_minutes
+        idle = agent.idle_minutes
+        return replace(
+            agent,
+            model=small.model or agent.model,
+            max_budget_usd=small.max_budget_usd or agent.max_budget_usd,
+            max_tokens=small.max_tokens or agent.max_tokens,
+            timeout_minutes=timeout,
+            # An idle limit at or above the time limit never fires first: none.
+            idle_minutes=idle if idle is not None and idle < timeout else None,
+            small=None,
+        )
+
+    def size_text(self) -> str:
+        """The size of the change, for the journal."""
+        small = self.agent.small
+        if self.changed_lines is None:
+            return "changed lines not counted"
+        if small is None or not self.small:
+            return f"{self.changed_lines} changed lines"
+        return (
+            f"small change ({self.changed_lines} changed lines, at most {small.max_lines}):"
+            " small reviewer settings"
+        )
 
     def run(
         self,
@@ -126,7 +167,7 @@ class ReviewSession:
         changed: Sequence[str],
         after_session: Callable[[], None],
     ) -> review.Review:
-        agent = self.agent
+        agent = self.reviewer
         claude = agent.runtime == "claude-code"
         runtime = for_role(self.runtime, "reviewer")
         error = ""
@@ -147,6 +188,7 @@ class ReviewSession:
                     instructions=self.instructions,
                     tree=replay,
                     name_status=diff[1],
+                    small_lines=self.changed_lines if self.small else None,
                 ),
                 env=self.env,
                 json_schema=review.SCHEMA,
@@ -157,10 +199,11 @@ class ReviewSession:
                 f"Reviewer session {attempt} started",
                 f"Runtime {describe(runtime)}, model {agent.model}, tools"
                 f" {', '.join(agent.tools)}, {cap_text(agent)},"
-                f" time limit {agent.timeout_minutes:g} min, in `{replay}` at `{checked}`.",
+                f" time limit {agent.timeout_minutes:g} min, in `{replay}` at `{checked}`;"
+                f" {self.size_text()}.",
             )
             result = (
-                self.metrics.run_session(runtime, session, self.round)
+                self.metrics.run_session(runtime, session, self.round, self.changed_lines)
                 if self.metrics
                 else runtime.run(session)
             )
@@ -173,11 +216,8 @@ class ReviewSession:
             after_session()
             number = self.issue.number
             if result.stop_reason is StopReason.BUDGET and result.cap:
-                key = (
-                    "agents.reviewer.max_tokens"
-                    if is_token_cap(result.cap)
-                    else "agents.reviewer.max_budget_usd"
-                )
+                name = "max_tokens" if is_token_cap(result.cap) else "max_budget_usd"
+                key = f"agents.reviewer.{self._section(name)}{name}"
                 kind = "token cap" if key.endswith("max_tokens") else "cost cap"
                 raise ReviewFailed(
                     f"the reviewer session stopped at {result.cap}",
@@ -208,6 +248,11 @@ class ReviewSession:
             f"read work/{self.issue.number}/journal.md; Ariane pushed nothing",
             error,
         )
+
+    def _section(self, key: str) -> str:
+        """`small.` when this round's value of `key` comes from `[agents.reviewer.small]`."""
+        small = self.agent.small
+        return "small." if self.small and getattr(small, key) is not None else ""
 
 
 def cap_text(agent: AgentConfig) -> str:

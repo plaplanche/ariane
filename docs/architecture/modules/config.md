@@ -11,7 +11,8 @@ Loads and validates `ariane.toml` (C22). Every error names the faulty key.
 | `DEFAULT_IDLE_MINUTES` | constant | 10: the idle limit of a session when `idle_minutes` is absent and `timeout_minutes` is above 10 (ADR 0045). |
 | `ConfigError` | exception | The configuration is missing or invalid; the message names the faulty key. |
 | `TrackerConfig` | dataclass | `[tracker]`: `kind`, `repository`, `token_env`, `api_url`, `ready_label` (default `ariane`, C21, ADR 0032). |
-| `AgentConfig` | dataclass | `[agents.<role>]`: `runtime`, `model`, `tools`, `max_budget_usd`, `timeout_minutes`, optional `max_tokens`, `idle_minutes` (resolved: the configured value, else 10, or `None` when `timeout_minutes` is 10 or less, ADR 0045). |
+| `AgentConfig` | dataclass | `[agents.<role>]`: `runtime`, `model`, `tools`, `max_budget_usd`, `timeout_minutes`, optional `max_tokens`, `idle_minutes` (resolved: the configured value, else 10, or `None` when `timeout_minutes` is 10 or less, ADR 0045), and for the reviewer `small`. |
+| `SmallReview` | dataclass | `[agents.reviewer.small]` (ADR 0046): `max_lines`, and optional `model`, `max_budget_usd`, `max_tokens`, `timeout_minutes` replacing the reviewer's for a small change (`None` keeps the reviewer's). |
 | `CheckConfig` | dataclass | One `[[checks]]` entry: `name`, `command`, `blocking`, `timeout_minutes`, optional `setup` (replaces `project.setup` in that check's replay tree, ADR 0041), optional `not_run_locally` (path globs of the files whose tests only CI runs, ADR 0042). |
 | `DoneItem` | dataclass | One item of the definition of done (C26): a declared check or a sentence; `label()` is its text. |
 | `DocMapEntry` | dataclass | Source files (a glob) and the documents that cover them; `documents_for(path)` expands them. |
@@ -28,6 +29,7 @@ Loads and validates `ariane.toml` (C22). Every error names the faulty key.
 
 - `load` reads `ariane.toml` at the repository root, or the file `ARIANE_CONFIG` names (relative to the repository root; errors then name `ARIANE_CONFIG (<file>)`). It raises `ConfigError` when the file is missing, unreadable or not valid TOML, then whatever `parse` raises.
 - `Config.reviewer` is the required `[agents.reviewer]` table (same keys as the implementer's); `parse` refuses a reviewer model equal to the implementer's, naming `agents.reviewer.model` (C10).
+- `[agents.reviewer.small]` (optional, reviewer only, ADR 0046) becomes `AgentConfig.small`: `max_lines` is required and a positive integer, `model` a non-empty string (`<provider>/<model>` on opencode), `max_budget_usd` and `timeout_minutes` positive numbers, `max_tokens` a positive integer; any other key (`runtime` and `tools` included) is refused naming `agents.reviewer.small.<key>`, as is the table under `agents.implementer`. A `small.model` equal to the implementer's is refused naming `agents.reviewer.small.model`, with the same wording as for the reviewer (C10).
 - `Config.definition_of_done` is `DEFAULT_DEFINITION_OF_DONE` when the table is absent (C26). A `[[checks]]` name starting with `docs: ` is refused (`checks[i].name`); `{ check = "docs: <name>" }` is accepted when `<name>` is a `[documentation.generated]` entry.
 - Globs (`documentation.map[].source`): `**/` matches zero or more whole folders (`src/**/*.py` matches `src/a.py`); other `**` crosses segments (ADR 0026). In `docs`, `{stem}` expands and `*` stays in a folder.
 - `Documentation.not_updated` lists mapped documents a change left untouched; `Documentation.checks` turns generated entries into blocking checks `docs: <name>`.
@@ -87,6 +89,15 @@ class AgentConfig {
   timeout_minutes float
   max_tokens int
   idle_minutes float
+  small SmallReview
+}
+class SmallReview {
+  <<dataclass>>
+  max_lines int
+  model str
+  max_budget_usd float
+  max_tokens int
+  timeout_minutes float
 }
 class CheckConfig {
   <<dataclass>>
@@ -134,6 +145,7 @@ class parse {
 }
 Config *-- TrackerConfig
 Config *-- AgentConfig
+AgentConfig *-- SmallReview
 Config *-- CheckConfig
 Config *-- DoneItem
 Config *-- Documentation

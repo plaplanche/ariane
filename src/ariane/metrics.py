@@ -44,9 +44,14 @@ class Metrics:
         self._write(self.render())
 
     def run_session(
-        self, runtime: AgentRuntime, session: Session, round_: int = 0
+        self,
+        runtime: AgentRuntime,
+        session: Session,
+        round_: int = 0,
+        changed_lines: int | None = None,
     ) -> SessionResult:
-        """Run `session` and record its usage and duration."""
+        """Run `session` and record its usage and duration; a reviewer session also records the
+        changed lines of the diff it reviewed (ADR 0046)."""
         began = time.monotonic()
         result = runtime.run(session)
         self.sessions.append(
@@ -64,6 +69,7 @@ class Metrics:
                 "duration_s": round(time.monotonic() - began, 3),
             }
             | ({"billing": result.billing} if result.billing else {})
+            | ({"changed_lines": changed_lines} if changed_lines is not None else {})
         )
         self.attempts += result.attempts
         self.step(f"{session.role} session {len(self.sessions)} stopped")
