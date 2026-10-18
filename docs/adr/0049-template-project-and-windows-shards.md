@@ -73,7 +73,8 @@ review, fix rounds, delivery), the same family as the Linux list, about 7 times 
 fixture set-up of avoidable git processes outside the five of "Decision", so the set-ups chosen
 from the Linux list stand. The "before" list on Windows was not taken (step 1 of "Handover"):
 the after list shows where the time goes, and it is in Ariane's own git and process work during
-a run, not in the tests' set-up. Making those runs cheaper in tests is a separate ticket.
+a run, not in the tests' set-up. The owner accepted this gap on 18 October 2026 rather than run a
+throwaway workflow on `main` for it. Making those runs cheaper is #214.
 
 ## Decision
 - **Measure in CI.** The `Tests` step of `ci.yml` runs `uv run pytest --durations=30` on every
