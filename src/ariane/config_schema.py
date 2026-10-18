@@ -90,6 +90,13 @@ SCHEMA: dict[str, Any] = {
                     **_ARGV,
                     "description": "Command run once in the working tree (list of arguments).",
                 },
+                "env": {
+                    "type": "array",
+                    "items": _STR,
+                    "default": [],
+                    "description": "Variables agents, checks and setup commands receive beyond"
+                    " the base set (ADR 0024); an entry ending in _ is a prefix.",
+                },
             },
         },
         "tracker": {

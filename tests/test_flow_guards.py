@@ -17,6 +17,9 @@ from ariane.tracker import InMemoryTracker, TrackerError
 from conftest import PY, FakeRuntime, Project, edit_app, make_config, sh
 from test_flow import TOKEN, journal, start, worktree
 
+# Checks get no GIT_AUTHOR_* or GIT_COMMITTER_* (ADR 0024): a check that commits names itself.
+IDENTITY = ("-c", "user.name=Sneak", "-c", "user.email=sneak@example.invalid")
+
 
 def test_c21_checks_run_without_the_token_or_a_working_credential(
     project: Project, tracker: InMemoryTracker
@@ -80,7 +83,7 @@ def test_c11_a_check_that_moves_the_branch_is_stopped(
     sneak = (
         PY,
         "-c",
-        "import subprocess; subprocess.run(['git', 'commit', '-q', "
+        f"import subprocess; subprocess.run(['git', *{IDENTITY!r}, 'commit', '-q', "
         "'--allow-empty', '-m', 'unchecked'], check=True)",
     )
     checks = (CheckConfig("sneaky", sneak, True, 1),)
@@ -96,8 +99,9 @@ def test_c11_a_check_that_moves_the_ticket_branch_is_stopped(
     sneak = (
         PY,
         "-c",
-        f"import subprocess; subprocess.run(['git', '-C', {str(worktree(project))!r}, 'commit',"
-        " '-q', '--allow-empty', '-m', 'unchecked'], check=True)",
+        f"import subprocess; subprocess.run(['git', *{IDENTITY!r}, '-C',"
+        f" {str(worktree(project))!r}, 'commit', '-q', '--allow-empty', '-m', 'unchecked'],"
+        " check=True)",
     )
     checks = (CheckConfig("sneaky", sneak, True, 1),)
     outcome = start(project, tracker, FakeRuntime(), make_config(checks=checks))

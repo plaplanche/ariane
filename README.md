@@ -228,7 +228,23 @@ merged pull request and the count of steps skipped or gates bypassed; Ariane's c
 
 ## While a ticket runs
 
-The project's setup, checks and agents do not receive Ariane's own virtual environment (`VIRTUAL_ENV` and its scripts directory on `PATH`) or any `ARIANE_*` variable.
+The project's setup, checks and agents receive an allow list of environment variables (ADR 0024):
+system variables (`PATH`, `HOME`, `USER`, `LANG`, `LC_*`, `TZ`, `TERM`, the temporary folders, and
+the Windows system variables), proxy and certificate settings (`HTTP_PROXY`, `HTTPS_PROXY`,
+`NO_PROXY`, `ALL_PROXY`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, ...), and, for agents, the login
+variables of their runtime. A proxy URL with credentials (`http://user:pass@host`) is left out
+unless declared. Any other variable reaches them only when the project declares it in
+`ariane.toml`:
+
+```toml
+[project]
+env = ["DATABASE_URL", "MYAPP_"]  # an entry ending in "_" is a prefix
+```
+
+A declared name that looks like a secret still passes, and the ticket's journal names it (never its
+value); its value is masked in what Ariane writes. The tracker token, any `ARIANE_*` variable and
+Ariane's own virtual environment (`VIRTUAL_ENV` and its scripts directory on `PATH`) never pass,
+even if declared.
 
 Nobody runs git commands in the repository while a ticket runs. Ariane checks that the agent
 changed nothing outside the ticket branch (git configuration, hooks, local branches, the

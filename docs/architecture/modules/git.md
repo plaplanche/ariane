@@ -45,9 +45,9 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `name_status(cwd, since, until, exclude)` | function | `git diff --name-status` between two revisions, without the excluded pathspec. |
 | `status(cwd)` | function | The short status of the tree. |
 | `committed_paths(cwd, since, pathspec)` | function | Paths committed since a revision under a pathspec. |
-| `commit(cwd, pathspec, message, env, tolerate_ignored, unstage)` | function | Commits only the given paths; False when they hold no change; the `unstage` paths leave the index first. |
+| `commit(cwd, pathspec, message, env, tolerate_ignored, unstage)` | function | Commits only the given paths; False when they hold no change; the `unstage` paths leave the index first; the `git commit` adds Ariane's own git identity variables (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `EMAIL`) to `env`, which the allow list withholds from untrusted code (ADR 0024). |
 | `token_free_environment(base=None)` | function | The environment without any variable the credential filter withholds; the default of `git` and `out` (C21). |
-| `SECRET_NAME` | constant | The pattern of credential variable names, shared with `context`. |
+| `SECRET_NAME` | constant | The pattern of credential variable names, shared with `context`; it includes `PAT` and `_AUTH` as whole name parts, `_KEY` at the end, `DSN`, `DATABASE_URL`, `KUBECONFIG`, `DOCKER_AUTH_CONFIG` (ADR 0024). |
 | `CREDENTIAL_CHANNELS` | constant | The credential channels (SSH agent, askpass) the filter withholds. |
 | `push_env(base, token)` | function | An environment carrying the push credential. |
 | `push(cwd, url, sha, branch, token, environ)` | function | The single authenticated push; returns the pushed commit. |

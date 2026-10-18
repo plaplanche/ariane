@@ -46,7 +46,12 @@ CLAUDE = ("ANTHROPIC_", "CLAUDE_")
 
 def test_c21_an_agent_gets_no_credential_but_keeps_its_own_login() -> None:
     env = context.untrusted_environment(
-        BASE, token_env="MY_TRACKER", remotes=["origin"], login_variables=CLAUDE, is_root=True
+        BASE,
+        token_env="MY_TRACKER",
+        remotes=["origin"],
+        login_variables=CLAUDE,
+        declared=("KEEP",),
+        is_root=True,
     )
     gone = {
         "GH_TOKEN",
@@ -83,7 +88,12 @@ def test_c22_untrusted_environment_drops_ariane_config_in_any_case() -> None:
     base = {"ARIANE_CONFIG": "x.toml", "ariane_config": "y.toml", "KEEP_ME": "1"}
     for login in ((), ("ANTHROPIC_API_KEY",)):
         env = context.untrusted_environment(
-            base, token_env="T", remotes=[], login_variables=login, is_root=False
+            base,
+            token_env="T",
+            remotes=[],
+            login_variables=login,
+            declared=("KEEP_ME", "ARIANE_CONFIG"),
+            is_root=False,
         )
         assert "ARIANE_CONFIG" not in env and "ariane_config" not in env
         assert env["KEEP_ME"] == "1"
@@ -92,11 +102,15 @@ def test_c22_untrusted_environment_drops_ariane_config_in_any_case() -> None:
 
 def test_c21_existing_or_broken_git_config_variables_are_handled() -> None:
     base = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.proxy", "GIT_CONFIG_VALUE_0": "p"}
-    env = context.untrusted_environment(base, token_env="X", remotes=[], is_root=False)
+    env = context.untrusted_environment(
+        base, token_env="X", remotes=[], declared=("GIT_CONFIG_",), is_root=False
+    )
     assert env["GIT_CONFIG_COUNT"] == "2"
     assert env["GIT_CONFIG_KEY_0"] == "http.proxy"
     assert env["GIT_CONFIG_KEY_1"] == "credential.helper"
-    broken = context.untrusted_environment({"GIT_CONFIG_COUNT": "x"}, token_env="X", remotes=[])
+    broken = context.untrusted_environment(
+        {"GIT_CONFIG_COUNT": "x"}, token_env="X", remotes=[], declared=("GIT_CONFIG_COUNT",)
+    )
     assert broken["GIT_CONFIG_COUNT"] == "1"
 
 
@@ -198,7 +212,9 @@ def _venv_base(venv: str, other: str) -> dict[str, str]:
 def test_c9_own_environment_is_withheld_from_the_checks() -> None:
     other = os.path.join(os.sep, "usr", "bin")
     base = _venv_base(os.path.join(os.sep, "opt", "ariane-venv"), other)
-    env = context.untrusted_environment(base, token_env="T", remotes=[], is_root=False)
+    env = context.untrusted_environment(
+        base, token_env="T", remotes=[], declared=("KEEP",), is_root=False
+    )
     assert "VIRTUAL_ENV" not in env and "VIRTUAL_ENV_PROMPT" not in env
     assert not [n for n in env if n.upper().startswith("ARIANE_")]
     assert env["PATH"] == other and env["KEEP"] == "1"

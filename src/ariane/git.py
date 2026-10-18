@@ -44,8 +44,15 @@ _AUTH_REFUSALS = (
 )
 # Variables that can carry a credential; never given to an agent, to code it wrote, or to a git
 # command of Ariane's other than the push (C21, ADR 0017).
-SECRET_NAME = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|PRIVATE_?KEY")
+# `PAT` and `_AUTH` are whole name parts, so that `PATH` and `GIT_AUTHOR_NAME` stay (ADR 0024).
+SECRET_NAME = re.compile(
+    r"TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|PRIVATE_?KEY|(?:^|_)PAT(?:_|$)|_KEY$"
+    r"|DSN|DATABASE_URL|_AUTH(?:_|$)|KUBECONFIG|DOCKER_AUTH_CONFIG"
+)
 CREDENTIAL_CHANNELS = ("SSH_AUTH_SOCK", "SSH_ASKPASS", "GIT_ASKPASS", "SUDO_ASKPASS")
+_IDENTITY_VARIABLES = frozenset(
+    f"GIT_{who}_{what}" for who in ("AUTHOR", "COMMITTER") for what in ("NAME", "EMAIL", "DATE")
+) | {"EMAIL"}
 _GENERATED_LISTINGS = frozenset({"info/refs", "info/packs"})
 
 
@@ -439,8 +446,14 @@ def commit(
         raise GitError(redact(f"git add failed:\n{added.output.strip()}"))
     if git([*_PLAIN_DIFF, "--cached", "--quiet"], cwd, env=env, check=False).ok:
         return False
-    git(["commit", "--quiet", "-m", message], cwd, env=env)
+    git(["commit", "--quiet", "-m", message], cwd, env={**env, **_identity(os.environ)})
     return True
+
+
+def _identity(environ: Mapping[str, str]) -> dict[str, str]:
+    """Ariane's git identity variables: its commits carry them, untrusted code does not get
+    them (the environment of agents and checks is an allow list, ADR 0024)."""
+    return {k: v for k, v in environ.items() if k.upper() in _IDENTITY_VARIABLES}
 
 
 def _with_config(base: Mapping[str, str], pairs: list[tuple[str, str]]) -> dict[str, str]:

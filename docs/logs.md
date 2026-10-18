@@ -10,6 +10,7 @@ Entries of a ticket's journal.
 | --- | --- | --- |
 | `ticket.started` | info | The ticket folder was opened for an issue. |
 | `ticket.setup` | info | The setup command ran, or there was none. |
+| `ticket.env.declared_secret` | warning | Variables named like secrets pass because `[project] env` declares them (names only). |
 | `ticket.session.started` | info | The implementer session started, with its context. |
 | `ticket.session.stopped` | info | The implementer session ended, with cost and summary. |
 | `ticket.guard.verified` | info | Nothing escaped the ticket branch after untrusted code. |

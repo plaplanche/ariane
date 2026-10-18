@@ -1,0 +1,65 @@
+# Product brief: Security hardening, behaviour change: an allow list of environment variables for agents and checks, plus [project] env (C21)
+
+- Source: issue #168 (https://github.com/plaplanche/ariane/issues/168)
+
+## Issue
+
+Prefilled from the issue title and body (never its comments).
+
+## Context
+
+Hardening from an internal security review (17 October 2026). The environment Ariane gives agents, checks and setup commands is built with a deny list: every variable passes unless its name looks like a secret. Credential variables with other names pass. The owner decided (17 October 2026) to switch to an allow list: only a small set of system variables, plus what the project declares, reaches untrusted code. Spec: C21; ADR 0024 (environment of agents and checks), ADR 0040.
+
+## Current state
+
+- `src/ariane/context.py:24`: `_SECRET_NAME = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|PRIVATE_?KEY")`.
+- `src/ariane/context.py:122-163` `untrusted_environment`: drops the tracker token, `ARIANE_*`, Ariane's virtual environment, the credential channels and `_SECRET_NAME` matches, keeps the runtime's login variables, and passes every other variable.
+- `src/ariane/context.py:109-119` `known_secrets`: the values given to redaction are the token, the credential channels and the `_SECRET_NAME` matches.
+- No `ariane.toml` key lets a project say which variables its checks need.
+
+## Decided spec
+
+- **Allow list.** `untrusted_environment` passes only:
+  - the base set: `PATH` (filtered as today), `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LANGUAGE`, `LC_*`, `TZ`, `TERM`, `TMPDIR`, `TMP`, `TEMP`; the proxy and certificate variables `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `ALL_PROXY` (any case), `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `CURL_CA_BUNDLE`; on Windows `SYSTEMROOT`, `SYSTEMDRIVE`, `WINDIR`, `COMSPEC`, `PATHEXT`, `USERPROFILE`, `USERNAME`, `HOMEDRIVE`, `HOMEPATH`, `APPDATA`, `LOCALAPPDATA`, `PROGRAMDATA`, `PROGRAMFILES`, `PROGRAMFILES(X86)`, `COMMONPROGRAMFILES`, `NUMBER_OF_PROCESSORS`, `PROCESSOR_ARCHITECTURE`, `OS`, `COMPUTERNAME`;
+  - the runtime's login variables, for agent sessions only (as today);
+  - the names the project declares in a new key `[project] env = ["NAME", "PREFIX_"]` (an entry ending in `_` is a prefix, as ADR 0024 already does for login variables).
+  The tracker token, `ARIANE_*` and Ariane's virtual environment never pass, even if declared. Ariane's own additions (`GIT_SSH_COMMAND`, `IS_SANDBOX`, the push-blocking git config) stay.
+- **Declared secrets.** A declared name that matches the secret patterns passes (the project asked for it), and the journal says so once per run (`ticket.env.declared_secret`, names only, never values).
+- **Redaction.** `known_secrets` keeps the token, the credential channels and every variable whose name matches the secret patterns, now extended with `PAT`, `_KEY$`, `DSN`, `DATABASE_URL`, `_AUTH`, `KUBECONFIG`, `DOCKER_AUTH_CONFIG`.
+- **Migration.** Ariane's own `ariane.toml` and `docs/ariane.example.toml` declare `[project] env = []` (Ariane's checks need nothing more); the README says how to declare a variable a project's checks need.
+- ADR 0024 amendment: allow list instead of deny list, the base set, `[project] env`, why proxies and certificates are in the base set (checks behind a proxy need them; a proxy URL with credentials is the project's to declare instead).
+
+## Release note
+
+Security, behaviour change: agents, checks and setup commands now receive only system variables, proxy and certificate settings, and the variables the project declares in `[project] env`.
+
+## Acceptance criteria
+
+- Tests named `test_c21_env_allow_list_*` show:
+  - an undeclared variable (for example `DATABASE_URL`, `GITHUB_PAT`, `KUBECONFIG`, `MY_SETTING`) is absent from the checks' and the agents' environments;
+  - the base set and the proxy and certificate variables pass;
+  - a declared exact name and a declared prefix pass; the tracker token and `ARIANE_*` do not, even if declared;
+  - a declared name that looks like a secret passes and is journaled by name only;
+  - `known_secrets` holds the values of the extended patterns;
+  - `[project] env` is validated by the config schema (strings only).
+- All checks in CLAUDE.md pass.
+
+## Acceptance checklist
+
+- [ ] `uv run pytest -k c21_env_allow_list` runs at least 6 tests and they pass.
+- [ ] ADR 0024 has the amendment.
+- [ ] All checks in CLAUDE.md pass.
+- [ ] Definition of done, documentation (C25): `docs/architecture/modules/context.md`, `config.md`, `config_schema.md`; `docs/reference/` (schema) and `docs/logs.md` regenerated; `docs/ariane.example.toml`; README's paragraph on what agents and checks receive.
+
+## Out of scope
+
+- An OS sandbox (security slice).
+- Passing environment variables to the reviewer beyond what it gets today.
+
+## Related
+
+#165 (token scope; this ticket goes after it), #132 (own environment); ADR 0024, ADR 0040; spec C21.
+
+
+---
+_Generated by [Claude Code](https://claude.ai/code)_

@@ -6,6 +6,10 @@
 base_branch = "main"
 # Command run once in the ticket's working tree before the agent starts (list of arguments).
 setup = ["uv", "sync"]
+# Environment variables agents, checks and setup commands receive beyond the base set (system,
+# proxy and certificate variables). An entry ending in "_" is a prefix: ["DATABASE_URL", "MYAPP_"].
+# A name that looks like a secret still passes when declared, and the journal says so.
+env = []
 
 [tracker]
 # Tracker kind; only "github" exists today.

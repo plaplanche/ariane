@@ -1,6 +1,6 @@
 # Module `ariane.context`
 
-Builds what an agent receives from Ariane (C5, C21, C25, C26): its prompt and a trimmed environment that holds no secret.
+Builds what an agent receives from Ariane (C5, C21, C25, C26): its prompt and an allow-listed environment that holds no secret the project did not declare.
 
 ## Public API
 
@@ -8,24 +8,27 @@ Builds what an agent receives from Ariane (C5, C21, C25, C26): its prompt and a 
 | --- | --- | --- |
 | `UNTRUSTED_TAG` | constant | The tag, `untrusted-ticket`, that wraps the ticket text in a prompt. |
 | `implementer_prompt(issue, branch, checks, definition_of_done=DEFAULT_DEFINITION_OF_DONE, documentation=NO_DOCUMENTATION, *, recorded=False, read_at='', fix_round=0, findings='')` | function | The prompt of the implementer session; a check with `not_run_locally` is marked as not run locally (ADR 0042). |
-| `known_secrets(environ, token_env)` | function | The values to redact: the tracker token and every variable `untrusted_environment` withholds. |
-| `untrusted_environment(base, *, token_env, remotes, login_variables=(), is_root=None)` | function | The environment of an agent session or of checks running code an agent wrote. |
+| `BASE_VARIABLES` | constant | The variables untrusted code receives without being declared: system, proxy and certificate variables (ADR 0024). |
+| `WINDOWS_VARIABLES` | constant | The system variables added to the base set on Windows. |
+| `known_secrets(environ, token_env)` | function | The values to redact: the tracker token, the credential channels and every variable named like a secret (`git.SECRET_NAME`), declared or not, and a proxy URL with credentials (its value and its `user:password` part, with or without a scheme). |
+| `declared_secrets(environ, declared, token_env)` | function | One journal line naming (never valuing) the variables named like secrets that pass because `[project] env` declares them; empty if none. |
+| `untrusted_environment(base, *, token_env, remotes, login_variables=(), declared=(), is_root=None)` | function | The environment of an agent session or of checks and setup commands running code an agent wrote. |
 
 ## Behaviour and errors
 
 - `implementer_prompt` holds the rules, the checks to replay, the definition of done (C26) and a "Documentation" section with the map of source files to documents (C25). The ticket sits in an escaped untrusted block, or a pointer to `brief.md` when `recorded`. The rules tell the agent not to do what the issue lists under Out of scope, even when a finding asks for it. For a fix round (C10) it adds the review's findings in an escaped untrusted block.
-- `untrusted_environment` withholds the tracker token, credential channels, secret-looking names, the remotes' credentials, every `ARIANE_*` variable and Ariane's own virtual environment: `VIRTUAL_ENV`, `VIRTUAL_ENV_PROMPT` and the `PATH` entries that are its scripts directory or that of the interpreter running Ariane (matched case-insensitively, ADR 0040; these are not secrets, so `known_secrets` ignores them). It keeps only the login variables the runtime declares (exact names, and prefixes ending in `_`, ADR 0024); the checks' environment gets none. As root with a kept login it sets `IS_SANDBOX=1` (Claude Code refuses `bypassPermissions` as root otherwise).
-- `known_secrets` still masks a kept login variable whose name looks like a credential.
+- `untrusted_environment` is an allow list (ADR 0024): it passes only `BASE_VARIABLES` (plus `WINDOWS_VARIABLES` on Windows), the entries `declared` in `[project] env`, and, for an agent session, the login variables the runtime declares; the checks' environment gets no login variable. A proxy variable (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`) whose URL holds credentials passes only when declared, and `declared_secrets` then names it. Names are matched case-insensitively; an entry ending in `_` is a prefix, any other an exact name. The tracker token, every `ARIANE_*` variable and Ariane's own virtual environment (`VIRTUAL_ENV`, `VIRTUAL_ENV_PROMPT`) never pass, even if declared; the `PATH` entries that are Ariane's scripts directory or that of the interpreter running Ariane are removed (ADR 0040). It adds `GIT_SSH_COMMAND`, the push-blocking git config, and, as root with a kept login, `IS_SANDBOX=1` (Claude Code refuses `bypassPermissions` as root otherwise).
+- A declared name that looks like a secret passes; `declared_secrets` names it for the journal (`ticket.env.declared_secret`), and `known_secrets` still masks its value, as it masks a kept login variable whose name looks like a credential.
 - Reads no file and raises nothing.
 
 ## Workflow
 
 ```mermaid
 flowchart TD
-  A[untrusted_environment base] --> B[copy base]
-  B --> C[drop token, credential channels, secret-looking names, ARIANE_*, VIRTUAL_ENV]
+  A[untrusted_environment base] --> B[for each variable]
+  B --> C[drop token, ARIANE_*, VIRTUAL_ENV even if declared]
   B --> B2[remove Ariane's scripts directory from PATH]
-  C --> D[keep only declared login variables]
+  C --> D[keep the base set, declared entries and login variables only]
   D --> E{root and a login kept?}
   E -- yes --> F[set IS_SANDBOX=1]
   E -- no --> G[return environment]
@@ -49,7 +52,10 @@ class context {
   <<function>>
   implementer_prompt(issue, branch, checks, definition_of_done, documentation) str
   known_secrets(environ, token_env) list
-  untrusted_environment(base, token_env, remotes, login_variables, is_root) dict
+  declared_secrets(environ, declared, token_env) str
+  untrusted_environment(base, token_env, remotes, login_variables, declared, is_root) dict
+  BASE_VARIABLES tuple
+  WINDOWS_VARIABLES tuple
   UNTRUSTED_TAG str
 }
 class Issue

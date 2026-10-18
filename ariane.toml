@@ -3,6 +3,8 @@
 [project]
 base_branch = "main"
 setup = ["uv", "sync", "--locked"]
+# Agents, checks and setup get only system, proxy and certificate variables, plus these.
+env = []
 
 [tracker]
 kind = "github"
