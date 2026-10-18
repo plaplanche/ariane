@@ -61,14 +61,15 @@ class Delivery:
         if self.draft:
             self.folder.set_status(
                 "needs a human",
-                f"{self.branch} pushed; the review is still no-go, opening a draft pull request",
+                f"pushing {self.branch}, then opening a draft pull request:"
+                " the review is still no-go",
                 "finish by hand, then run `ariane verify`",
             )
         else:
             self.folder.set_status(
-                "pushed",
-                f"{self.branch} pushed; opening the pull request",
-                "see the pull request, or run ariane status <n>".replace("<n>", str(number)),
+                "pushing",
+                f"pushing {self.branch}, then opening the pull request",
+                f"see the pull request, or run ariane status {number}",
             )
         self.commit_record(f"#{number}: record the checks and the delivery")
         self._require_replayed()
@@ -78,7 +79,7 @@ class Delivery:
             self.worktree, self.url, pushed, self.branch, token=self.token, environ=self.environ
         )
         self.folder.log("ticket.pushed", "Pushed", f"Pushed `{self.branch}` {way}.")
-        # Nothing is committed from here on: the pushed commit is the one CI runs on.
+        # The pushed commit is the one CI runs on: what follows is committed locally only.
         try:
             pull = self.tracker.open_pull_request(
                 head=self.branch,
@@ -95,7 +96,25 @@ class Delivery:
             ) from None
         self.folder.log("ticket.delivered", "Delivered", f"Pull request #{pull.number}: {pull.url}")
         self._publish_statuses(results, pushed)
+        self._record_pull_request(pull.number, pull.url)
         return Delivered(pull.url, self.draft)
+
+    def _record_pull_request(self, pull_number: int, pull_url: str) -> None:
+        """C1, C23: the record ends with the pull request, in one commit on the local branch
+        only; the next push of the branch carries it (ADR 0027)."""
+        if self.draft:
+            self.folder.set_status(
+                "needs a human",
+                f"draft pull request #{pull_number} opened: {pull_url}",
+                "finish by hand, then run `ariane verify`",
+            )
+        else:
+            self.folder.set_status(
+                "delivered",
+                f"pull request #{pull_number} opened: {pull_url}",
+                f"see the pull request, or run ariane status {self.issue.number}",
+            )
+        self.commit_record(f"#{self.issue.number}: record the pull request")
 
     def _last_guard(self) -> None:
         """C11: git is as at the last agent session, and no rewrite applies to the push URL."""
@@ -129,7 +148,7 @@ class Delivery:
 
     def _publish_statuses(self, results: list[checks.CheckResult], sha: str) -> None:
         """C9: one commit status per check on the pull request's head commit. A refusal is a
-        journaled warning; the journal stays local so that the pushed commit does not move."""
+        journaled warning, committed with the pull request's record, after the push."""
         report = self.tracker.file_url(
             self.branch, f"{ticket.relative_folder(self.issue.number)}/{ticket.CHECKS}"
         )

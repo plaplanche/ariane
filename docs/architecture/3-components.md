@@ -189,6 +189,7 @@ sequenceDiagram
   D->>G: one push
   D->>T: open the pull request (a draft, needs a human, if still no-go)
   D->>T: publish statuses
+  D->>G: commit the record of the pull request (local branch only, not pushed)
   F->>N: append the run to ended.jsonl, then remove its entry (however the run ends)
   F-->>CLI: Outcome
   CLI-->>U: one line

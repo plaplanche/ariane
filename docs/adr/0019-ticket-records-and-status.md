@@ -28,6 +28,9 @@ Records stay in `work/<n>/` on the ticket branch and reach `main` with the merge
 - **The pushed `status.md` is written before the pull request exists**, so it says only what
   is known: "Last action: pushed", "ariane/<n> pushed; opening the pull request", next "see
   the pull request, or run ariane status <n>".
+  Amended by ADR 0027 (ticket #144): it says "Last action: pushing", "pushing ariane/<n>,
+  then opening the pull request", since nothing is pushed yet when it is committed; the
+  `delivered` status with the pull request is committed afterwards, on the local branch only.
 
 This decision amends ADR 0006 (records) and ADR 0011's expectations of the journal.
 
