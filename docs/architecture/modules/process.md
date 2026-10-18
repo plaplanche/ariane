@@ -102,6 +102,7 @@ flowchart LR
   git --> process
   opencode --> process
   process --> logs
+  runs --> process
   verify --> process
 ```
 <!-- end generated -->

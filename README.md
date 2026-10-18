@@ -259,7 +259,7 @@ once on one repository (one `ariane start` each): each run is registered in
 `<repo>.ariane/runs/<n>` while it lasts. Ariane checks that the agent changed nothing outside the
 ticket branch (git configuration, hooks, local branches, the remote); the only change it
 tolerates is another registered run's own bookkeeping: its branch `ariane/<m>` and that
-branch's `remote` and `merge` keys. Anything else, even another key of that branch, stops the
+branch's `remote` and `merge` keys, and only for a run Ariane saw running. Anything else, even another key of that branch, stops the
 ticket. A merge on the base branch (a fast-forward) does not stop the ticket; any other remote
 change does: a created, deleted or rewritten branch or tag, a base branch that did not
 fast-forward, or any change to the ticket's branch. The stop line names the refs (ADR 0017).

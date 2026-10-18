@@ -108,8 +108,8 @@ which never apply to an `https://` remote. The message and the `Next:` line are 
 ## Amendment (2026-10-18): two tickets at once, another run's own branch is tolerated
 
 Two `ariane start` on one repository, each in its own working tree, stopped each other: the
-second run's `git worktree add -b ariane/<m>` creates a local branch and writes
-`branch.ariane/<m>.remote` and `branch.ariane/<m>.merge` to the shared `config`, and the first
+second run's `git worktree add -b ariane/<m>` creates a local branch (and, with tracking, writes
+`branch.ariane/<m>.remote` and `branch.ariane/<m>.merge` to the shared `config`), and the first
 run's guard cannot tell that from an agent editing git (#159). Running tickets in parallel is the
 first step of the orchestration the benchmark points to.
 
@@ -117,7 +117,8 @@ first step of the orchestration the benchmark points to.
   branch, process id, start time, as JSON) before it prepares the branch, and removes the entry
   when the run ends, however it ends (delivered, stopped, Ctrl-C or an exception); the ended run
   is appended to `<repo>.ariane/runs/ended.jsonl` with its end time. An entry whose process no
-  longer exists is ignored and deleted. The entry is written whole, then linked into place: a
+  longer exists is reclaimed: its end is appended to `ended.jsonl`, then it is deleted; if the
+  end cannot be written, by its run or by a reclaim, the entry stays as the evidence. The entry is written whole, then linked into place: a
   second `ariane start <n>` while a live run of `n` is registered does not start ("ticket #n is
   already running"). The per-ticket lock of #140 reuses this entry.
 - **One lock for the registry.** Registering (check, reclaim a stale entry, link), ending (append
@@ -130,12 +131,20 @@ first step of the orchestration the benchmark points to.
 - **Git first, then the registry.** A run registers before it writes to git, so the guard takes
   its git snapshot first and reads the registry after: every other run whose changes the snapshot
   shows is already registered, or has ended into `ended.jsonl`.
+- **Only runs Ariane can vouch for.** The entries and `ended.jsonl` are files an agent can
+  write, so they are cross-checked. A live entry counts only if it is `genuine`: its process
+  exists, is not a descendant of this run (every agent process is one, Ariane being the subreaper
+  on Linux, ADR 0031), and on Linux its command line is `... start <m>`. A thread of Ariane's own
+  process, which no agent reaches, reads the registry every 0.2 s for the whole run and keeps the
+  genuine runs it sees (`witnessed`), so a run that starts and ends within one agent session is
+  seen too. An ended run counts only if this run saw it live with the same process and start: a
+  forged history line is not enough.
 - **What the guard tolerates, and nothing more.** For a ticket `m` other than its own that was
-  registered at any time since the guard's first snapshot (registered now, or in `ended.jsonl`
-  with an end at or after that snapshot), the guard ignores: the local branch `ariane/<m>`
+  running at any time since the guard's first snapshot and that Ariane can vouch for (above),
+  the guard ignores: the local branch `ariane/<m>`
   created, moved or deleted; and, in the shared `config`, the entries `branch.ariane/<m>.remote`
-  with value `origin` and `branch.ariane/<m>.merge` with value `refs/heads/ariane/<m>` or
-  `refs/heads/<base>` added or removed. The shared config is compared by key: the snapshot keeps
+  with value `origin` and `branch.ariane/<m>.merge` with value `refs/heads/ariane/<m>` added or
+  removed. The shared config is compared by key: the snapshot keeps
   its `git config --list --null`, parsed from the same bytes as its digest (one read, so another
   run writing meanwhile cannot make them disagree), and the file's change is ignored only when
   every entry that moved is one of those and every other entry keeps its order (reordering the
@@ -147,15 +156,20 @@ first step of the orchestration the benchmark points to.
   changes, and the sentence ending the `Next:` line says that only Ariane runs git commands in
   the repository or pushes to it while a ticket runs.
 
-Why these keys: they are what Ariane's own preparation writes, nothing in them runs code or
+Why these keys: they are the ones a branch pushed with an upstream to its own name gets, nothing in them runs code or
 reroutes a push (`remote` and `merge` only set what `git pull` and `git status` compare the
 branch with; the push is to an explicit URL and ref), and both values are fixed. A key such as
 `pushRemote` or `rebase` is not written by Ariane and is therefore an agent's or a person's: it
-stops. Why `refs/heads/<base>` as well as `refs/heads/ariane/<m>`: `git worktree add -b
-ariane/<m> <path> origin/<base>` sets the new branch to track the start point, so git writes
-`merge = refs/heads/<base>`. Why `ended.jsonl`: a run that starts and ends within another run's
+stops. Ariane's own preparation writes no key at all: `git worktree add --no-track -b ariane/<m>`
+(the push is to an explicit URL and ref, so no upstream is needed), so `merge = refs/heads/<base>`,
+which tracking would write, is not tolerated either. Why `ended.jsonl`: a run that starts and ends within another run's
 session (a quick stop) leaves its branch behind but no entry; without its end time the other run
 would stop on it. The file grows by one line per run.
+
+Residuals (until an operating-system sandbox, slice 7): on macOS and Windows a process's command
+line is not read and there is no subreaper, so a live entry naming any live process that is not a
+child of this run counts as genuine; and a run seen live for less than 0.2 s may be missed, which
+stops the other run (the safe side).
 
 Not covered: the base branch's remote-tracking ref, part of the snapshot, moves when another run
 fetches a base branch that advanced; that still stops the ticket. `ariane verify` and shadow runs

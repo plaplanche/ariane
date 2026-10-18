@@ -550,3 +550,24 @@ Same branch and history, git unchanged, remote unchanged.
 ## 2026-10-18 03:31:10Z Delivering
 
 Pushing ariane/159 and opening the pull request.
+
+## 2026-10-18 03:31:10Z Verified after the delivery
+
+Same branch and history, git unchanged, remote unchanged.
+
+## 2026-10-18 03:31:13Z Pushed
+
+Pushed `ariane/159` with the tracker token as an authorization header.
+
+## 2026-10-18 03:31:14Z Delivered
+
+Pull request #192: https://github.com/plaplanche/ariane/pull/192
+
+## 2026-10-18 03:31:16Z Warning: commit statuses refused
+
+- `ariane/lint`: GitHub API POST /repos/plaplanche/ariane/statuses/da2ade3f21168f47943998cdce515caeffc25130: HTTP 403 Write access to this GitHub API path is not permitted through this proxy.
+- `ariane/format`: GitHub API POST /repos/plaplanche/ariane/statuses/da2ade3f21168f47943998cdce515caeffc25130: HTTP 403 Write access to this GitHub API path is not permitted through this proxy.
+- `ariane/types`: GitHub API POST /repos/plaplanche/ariane/statuses/da2ade3f21168f47943998cdce515caeffc25130: HTTP 403 Write access to this GitHub API path is not permitted through this proxy.
+- `ariane/tests`: GitHub API POST /repos/plaplanche/ariane/statuses/da2ade3f21168f47943998cdce515caeffc25130: HTTP 403 Write access to this GitHub API path is not permitted through this proxy.
+- `ariane/file length`: GitHub API POST /repos/plaplanche/ariane/statuses/da2ade3f21168f47943998cdce515caeffc25130: HTTP 403 Write access to this GitHub API path is not permitted through this proxy.
+- `ariane/docs: references`: GitHub API POST /repos/plaplanche/ariane/statuses/da2ade3f21168f47943998cdce515caeffc25130: HTTP 403 Write access to this GitHub API path is not permitted through this proxy.

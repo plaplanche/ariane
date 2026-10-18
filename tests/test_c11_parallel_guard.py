@@ -25,17 +25,30 @@ from conftest import FakeRuntime, Project, edit_app, sh
 from test_flow import start
 
 
+@pytest.fixture(autouse=True)
+def in_process_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The other runs of these tests are registered by the test process itself, whose command
+    line is not `ariane start <n>`; the watcher reads the registry often, so it sees them."""
+    monkeypatch.setattr(runs, "_started_as", lambda pid, number: True)
+    monkeypatch.setattr(runs, "WATCH_SECONDS", 0.01)
+
+
 def _registry(project: Project) -> Path:
     return runs.folder(project.root)
 
 
-def _second_run_branch(project: Project, number: int = 8) -> None:
-    """What `ariane start <number>` does to the repository's git when it prepares its ticket."""
+def _second_run_branch(project: Project, number: int = 8, keys: bool = True) -> None:
+    """What `ariane start <number>` does to the repository's git when it prepares its ticket
+    (a branch without upstream), with the two branch keys the guard tolerates if `keys`."""
     tree = flow.worktree_path(project.root, number)
+    branch = f"ariane/{number}"
     sh(
-        ["git", "worktree", "add", "--quiet", "-b", f"ariane/{number}", str(tree), "origin/main"],
+        ["git", "worktree", "add", "--quiet", "--no-track", "-b", branch, str(tree), "origin/main"],
         project.root,
     )
+    if keys:
+        sh(["git", "config", f"branch.{branch}.remote", "origin"], project.root)
+        sh(["git", "config", f"branch.{branch}.merge", f"refs/heads/{branch}"], project.root)
 
 
 @contextlib.contextmanager
@@ -233,14 +246,17 @@ def test_c11_parallel_guard_registered_refuses_a_live_entry(tmp_path: Path) -> N
 def test_c11_parallel_guard_during_keeps_runs_that_ended_since_the_snapshot(
     tmp_path: Path,
 ) -> None:
+    seen: dict[int, runs.Run] = {}
     with runs.registered(tmp_path, 3, "ariane/3"):
-        pass
+        runs.during(tmp_path, runs.now(), seen)
     time.sleep(0.01)  # the clock moves on: run 3 ended strictly before `since`
     since = runs.now()
     with runs.registered(tmp_path, 4, "ariane/4"):
-        pass
+        assert runs.during(tmp_path, since, seen) == {4}  # seen live
+    with runs.registered(tmp_path, 6, "ariane/6"):
+        pass  # never seen live by this run: its history line is not enough
     with runs.registered(tmp_path, 5, "ariane/5"):
-        assert runs.during(tmp_path, since) == {4, 5}
+        assert runs.during(tmp_path, since, seen) == {4, 5}
 
 
 def _snapshot(project: Project) -> dict[str, str]:
@@ -253,12 +269,12 @@ def test_c11_parallel_guard_compares_the_shared_config_by_key(project: Project) 
     sh(["git", "config", "branch.ariane/8.merge", "refs/heads/ariane/8"], project.root)
     after = _snapshot(project)
     assert git.snapshot_changes(before, after)
-    assert runs.foreign_changes(before, after, {8}, "main") == []
-    assert runs.foreign_changes(before, after, {9}, "main") != []
+    assert runs.foreign_changes(before, after, {8}) == []
+    assert runs.foreign_changes(before, after, {9}) != []
     # The same keys removed again (the other run's branch deleted) are tolerated as well.
     sh(["git", "branch", "--quiet", "ariane/8", "main"], project.root)
     sh(["git", "branch", "--quiet", "-D", "ariane/8"], project.root)
-    assert runs.foreign_changes(after, _snapshot(project), {8}, "main") == []
+    assert runs.foreign_changes(after, _snapshot(project), {8}) == []
 
 
 def test_c11_parallel_guard_a_wrong_value_or_a_bare_edit_is_not_tolerated(
@@ -268,12 +284,12 @@ def test_c11_parallel_guard_a_wrong_value_or_a_bare_edit_is_not_tolerated(
     sh(["git", "config", "branch.ariane/8.remote", "elsewhere"], project.root)
     assert any(
         "ariane/8.remote=elsewhere" in c
-        for c in runs.foreign_changes(before, _snapshot(project), {8}, "main")
+        for c in runs.foreign_changes(before, _snapshot(project), {8})
     )
     before = _snapshot(project)
     with (project.root / ".git" / "config").open("a", encoding="utf-8") as config:
         config.write("# a comment changes the file, not its keys\n")
-    changes = runs.foreign_changes(before, _snapshot(project), {8}, "main")
+    changes = runs.foreign_changes(before, _snapshot(project), {8})
     assert [c for c in changes if c.startswith("changed: file ")]
 
 
@@ -296,7 +312,7 @@ def test_c11_parallel_guard_another_run_writing_during_the_baseline_is_tolerated
     before = _snapshot(project)
     monkeypatch.setattr(git, "git", real_git)
     assert wrote
-    assert runs.foreign_changes(before, _snapshot(project), {8}, "main") == []
+    assert runs.foreign_changes(before, _snapshot(project), {8}) == []
 
 
 def test_c11_parallel_guard_reordering_a_repeated_setting_is_not_tolerated(
@@ -310,7 +326,7 @@ def test_c11_parallel_guard_reordering_a_repeated_setting_is_not_tolerated(
     swapped = text.replace("= unsafe", "= @").replace("= safe", "= unsafe").replace("= @", "= safe")
     config.write_text(swapped, encoding="utf-8")
     _second_run_branch(project)  # legitimate bookkeeping in the same session
-    changes = runs.foreign_changes(before, _snapshot(project), {8}, "main")
+    changes = runs.foreign_changes(before, _snapshot(project), {8})
     assert any(c.startswith("changed: keys ") for c in changes)
     assert any("core.sshcommand=unsafe" in c for c in changes)
 
@@ -323,7 +339,7 @@ def test_c11_parallel_guard_reordering_settings_in_an_included_file_is_not_toler
     sh(["git", "config", "include.path", str(included)], project.root)
     before = _snapshot(project)
     included.write_text("[core]\n\tsshCommand = safe\n\tsshCommand = unsafe\n", encoding="utf-8")
-    changes = runs.foreign_changes(before, _snapshot(project), {8}, "main")
+    changes = runs.foreign_changes(before, _snapshot(project), {8})
     assert any(c.startswith("changed: setting ") and "sshcommand=unsafe" in c for c in changes)
 
 
@@ -335,9 +351,11 @@ def test_c11_parallel_guard_reads_git_before_the_runs_that_authorize_it(
     real_during = runs.during
     stack, started = contextlib.ExitStack(), list[int]()
 
-    def during(where: Path, since: str) -> set[int]:
-        numbers = real_during(where, since)
-        if not started:  # once: the other run starts just after this read
+    def during(where: Path, since: str, witnessed: dict[int, runs.Run]) -> set[int]:
+        numbers = real_during(where, since, witnessed)
+        # Once, after a read by the guard (the main thread, not the watcher): the other run
+        # starts just after it.
+        if not started and threading.current_thread() is threading.main_thread():
             started.append(8)
             stack.enter_context(runs.registered(_registry(project), 8, "ariane/8"))
             _second_run_branch(project)
@@ -357,14 +375,15 @@ def test_c11_parallel_guard_a_run_ending_is_always_in_the_registry_or_its_histor
     real_release = runs._release
 
     def release(entry: Path, run: runs.Run) -> None:  # a reader between the two writes
-        seen.append(set(runs._live(tmp_path)) | runs._ended(tmp_path, since))
+        ended = {r.number for r in runs._ended(tmp_path, since)}
+        seen.append(set(runs._live(tmp_path)) | ended)
         real_release(entry, run)
 
     monkeypatch.setattr(runs, "_release", release)
     with runs.registered(tmp_path, 3, "ariane/3"):
         pass
     assert seen == [{3}]
-    assert runs.during(tmp_path, since) == {3}
+    assert {r.number for r in runs._ended(tmp_path, since)} == {3}
     assert not (tmp_path / "3").exists()
 
 
@@ -451,3 +470,80 @@ def test_c11_parallel_guard_cleaning_a_stale_entry_never_erases_a_new_registrati
     assert runs.running(tmp_path) == {3: results[0]}
     leave.set()
     starter.join(10)
+
+
+def test_c11_parallel_guard_a_forged_history_line_does_not_authorize_a_branch(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    """Review of #159: the history is a file an agent can write. A run this run never saw live
+    is not tolerated, whatever its history line says."""
+
+    def forge(session: Session) -> None:
+        edit_app(session)
+        _second_run_branch(project)
+        fake = {"number": 8, "branch": "ariane/8", "pid": os.getpid(), "started": runs.now()}
+        with (_registry(project) / runs.ENDED).open("a", encoding="utf-8") as history:
+            history.write(json.dumps({**fake, "ended": "9999"}) + "\n")
+
+    outcome = start(project, tracker, FakeRuntime(action=forge))
+    assert outcome.exit_code == 1
+    assert "added: ref refs/heads/ariane/8" in outcome.detail
+
+
+def test_c11_parallel_guard_a_live_entry_of_an_agent_process_is_not_genuine(
+    tmp_path: Path,
+) -> None:
+    """An entry naming one of this run's descendants (every agent process is one) is refused."""
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        run = runs.Run(8, "ariane/8", child.pid, runs.now())
+        if sys.platform.startswith("linux"):  # descendants are read from /proc
+            assert not runs.genuine(run)
+        assert runs.genuine(runs.Run(8, "ariane/8", os.getpid(), runs.now()))
+    finally:
+        child.kill()
+        child.wait()
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="command lines from /proc")
+def test_c11_parallel_guard_a_live_process_of_another_ticket_is_not_genuine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.undo()  # the real `_started_as`: this process is not `ariane start 8`
+    assert not runs.genuine(runs.Run(8, "ariane/8", os.getpid(), runs.now()))
+    assert runs._started_as(os.getpid(), 8) is False
+
+
+def test_c11_parallel_guard_a_merge_key_to_the_base_branch_is_not_tolerated(
+    project: Project,
+) -> None:
+    """Only `merge=refs/heads/ariane/<m>` is the other run's own (the decided spec)."""
+    before = _snapshot(project)
+    sh(["git", "config", "branch.ariane/8.merge", "refs/heads/main"], project.root)
+    changes = runs.foreign_changes(before, _snapshot(project), {8})
+    assert any("branch.ariane/8.merge=refs/heads/main" in c for c in changes)
+
+
+def test_c11_parallel_guard_a_ticket_branch_has_no_upstream(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    def look(session: Session) -> None:
+        edit_app(session)
+        keys = _shared_keys(project)
+        assert "branch.ariane/7." not in keys, keys
+
+    assert start(project, tracker, FakeRuntime(action=look)).exit_code == 0
+
+
+def test_c11_parallel_guard_a_failed_history_write_keeps_the_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #159: if the end cannot be published, the entry stays as the evidence."""
+
+    def refuse(where: Path, run: runs.Run) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(runs, "_publish_end", refuse)
+    with runs.registered(tmp_path, 3, "ariane/3"):
+        pass
+    assert (tmp_path / "3").exists()

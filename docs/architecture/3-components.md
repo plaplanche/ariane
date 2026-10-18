@@ -102,6 +102,7 @@ flowchart TD
   review_session --> ticket
   review_session --> tracker
   runs --> git
+  runs --> process
   runs --> stop
   runtime --> attempts
   runtime --> config

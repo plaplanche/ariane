@@ -7,6 +7,7 @@ import contextlib
 import json
 import os
 import sys
+import threading
 import time
 from collections import Counter
 from collections.abc import Iterator
@@ -14,13 +15,14 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ariane import git
+from ariane import git, process
 from ariane.stop import Stop
 
 FOLDER = "runs"
 LOCK = ".lock"  # serializes every read and write of the registry
 ENDED = "ended.jsonl"  # one line per run that ended: number, branch, start and end
 REMOTE = "origin"
+WATCH_SECONDS = 0.2  # how often a run reads the registry for the runs it can vouch for
 
 
 @dataclass(frozen=True)
@@ -130,9 +132,12 @@ def registered(where: Path, number: int, branch: str) -> Iterator[Run]:
         yield run
     finally:  # the registry never hides how the run ended
         with contextlib.suppress(OSError), _locked(where):
-            with contextlib.suppress(OSError):
+            try:
                 _publish_end(where, run)  # first: a reader always finds the run in one place
-            _release(entry, run)
+            except OSError:
+                pass  # the entry stays: once its process is gone, readers count it as ended
+            else:
+                _release(entry, run)
 
 
 def _publish_end(where: Path, run: Run) -> None:
@@ -147,47 +152,112 @@ def _release(entry: Path, run: Run) -> None:
 
 
 def running(where: Path) -> dict[int, Run]:
-    """The registered runs whose process exists; stale entries are removed."""
+    """The registered runs whose process exists; stale entries are moved to the history."""
     if not where.is_dir():
         return {}
     with _locked(where):
+        _reclaim(where)
         return _live(where)
 
 
 def _live(where: Path) -> dict[int, Run]:
     found: dict[int, Run] = {}
     for path in where.iterdir():
-        if not path.name.isdigit():
-            continue
-        run = _read(path)
+        run = _read(path) if path.name.isdigit() else None
         if run is not None and alive(run.pid):
             found[run.number] = run
-        else:
-            path.unlink(missing_ok=True)  # stale: its process is gone, or it is unreadable
     return found
 
 
-def during(where: Path, since: str) -> set[int]:
-    """The tickets registered as running now, or that ended at or after `since`, read under
-    the lock: a run ending meanwhile is in one or the other."""
+def _reclaim(where: Path) -> None:
+    """An entry whose process is gone (a crashed run, or one that could not publish its end)
+    is published to the history, ended now, then removed; unreadable, it is removed. If the
+    history cannot be written the entry stays, so the run is always found in one place."""
+    for path in [p for p in where.iterdir() if p.name.isdigit()]:
+        run = _read(path)
+        if run is not None and alive(run.pid):
+            continue
+        if run is not None:
+            try:
+                _publish_end(where, run)
+            except OSError:
+                continue
+        path.unlink(missing_ok=True)
+
+
+def genuine(run: Run) -> bool:
+    """Whether `run` is an Ariane run Ariane can vouch for, not an entry an agent wrote: its
+    process exists, is not a descendant of this one (every agent process is, Ariane being the
+    subreaper on Linux, ADR 0031), and on Linux its command line is `... start <number>`."""
+    if not alive(run.pid) or run.pid in process.descendants():
+        return False
+    return _started_as(run.pid, run.number)
+
+
+def _started_as(pid: int, number: int) -> bool:
+    """On Linux, whether `pid` runs `start <number>`; elsewhere it cannot be read (a residual of
+    ADR 0017), so the live process is taken as enough."""
+    if not sys.platform.startswith("linux"):
+        return True
+    try:
+        words = Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace").split("\0")
+    except OSError:
+        return False
+    return any(w == "start" and words[i + 1 : i + 2] == [str(number)] for i, w in enumerate(words))
+
+
+@contextlib.contextmanager
+def watching(where: Path) -> Iterator[dict[int, Run]]:
+    """The other runs seen live and `genuine` while the block runs, read every `WATCH_SECONDS`
+    by a thread of Ariane's own process, which no agent reaches: a run that starts and ends
+    during one agent session is seen too (C11)."""
+    witnessed: dict[int, Run] = {}
+    done = threading.Event()
+
+    def watch() -> None:
+        while True:
+            with contextlib.suppress(OSError):
+                during(where, now(), witnessed)
+            if done.wait(WATCH_SECONDS):
+                return
+
+    thread = threading.Thread(target=watch, name="ariane-runs", daemon=True)
+    thread.start()
+    try:
+        yield witnessed
+    finally:
+        done.set()
+        thread.join()
+
+
+def during(where: Path, since: str, witnessed: dict[int, Run]) -> set[int]:
+    """The other runs whose branch bookkeeping the guard tolerates, read under the lock (a run
+    ending meanwhile is in one place or the other). The entries and the history are files an
+    agent can write, so only what Ariane can vouch for counts: a live entry that is `genuine`,
+    added to `witnessed`; and a run that ended at or after `since` (a stale entry is ended when
+    reclaimed) only if this run saw it live (`witnessed`) with the same process and start."""
     if not where.is_dir():
         return set()
     with _locked(where):
-        return set(_live(where)) | _ended(where, since)
+        _reclaim(where)
+        live = {number: run for number, run in _live(where).items() if genuine(run)}
+        witnessed.update(live)
+        gone = _ended(where, since)
+    return set(live) | {run.number for run in gone if witnessed.get(run.number) == run}
 
 
-def _ended(where: Path, since: str) -> set[int]:
-    numbers = set()
+def _ended(where: Path, since: str) -> set[Run]:
+    found = set()
     with contextlib.suppress(OSError):
         for line in (where / ENDED).read_text(encoding="utf-8").splitlines():
             with contextlib.suppress(ValueError, KeyError, TypeError, AttributeError):
                 ended = json.loads(line)
-                if ended["ended"] >= since:
-                    numbers.add(int(ended["number"]))
-    return numbers
+                if ended.pop("ended") >= since:
+                    found.add(Run(**ended))
+    return found
 
 
-def _bookkeeping(numbers: set[int], base_branch: str) -> set[str]:
+def _bookkeeping(numbers: set[int]) -> set[str]:
     """The `key=value` entries git writes for another run's branch `ariane/<m>`, and no other."""
     allowed = set()
     for m in numbers:
@@ -195,18 +265,15 @@ def _bookkeeping(numbers: set[int], base_branch: str) -> set[str]:
         allowed |= {
             f"{section}.remote={REMOTE}",
             f"{section}.merge=refs/heads/ariane/{m}",
-            f"{section}.merge=refs/heads/{base_branch}",  # what `worktree add -b` writes
         }
     return allowed
 
 
-def foreign_changes(
-    before: dict[str, str], after: dict[str, str], numbers: set[int], base_branch: str
-) -> list[str]:
+def foreign_changes(before: dict[str, str], after: dict[str, str], numbers: set[int]) -> list[str]:
     """`git.snapshot_changes(before, after)` without those that are another run's own: the
     branch `ariane/<m>` of a ticket in `numbers`, and its `remote` and `merge` keys added to or
     removed from the shared config. Anything else is kept, so the guard still stops on it."""
-    allowed = _bookkeeping(numbers, base_branch)
+    allowed = _bookkeeping(numbers)
     refs = {f"ref refs/heads/ariane/{m}" for m in numbers}
     keys = next((k for k in {*before, *after} if k.startswith("keys ")), None)
     shared = keys.removeprefix("keys ") if keys else None

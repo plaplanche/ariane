@@ -15,16 +15,19 @@ The run registry: which tickets Ariane runs on a repository, so that several tic
 | `folder(repo_root)` | function | `<repo>.ariane/runs`, next to the tickets' working trees. |
 | `alive(pid)` | function | Whether a process exists: signal 0 on POSIX, an open handle and `STILL_ACTIVE` on Windows. |
 | `registered(where, number, branch)` | function | A context manager: records the run in `where/<n>` for the time of the block, then appends it to `ended.jsonl` and removes the entry if it is still its own, however the block ends. |
-| `running(where)` | function | The registered runs whose process exists, by ticket number; stale entries are removed. |
-| `during(where, since)` | function | The tickets registered now, or that ended at or after `since`. |
+| `WATCH_SECONDS` | constant | How often `watching` reads the registry (0.2 s). |
+| `running(where)` | function | The registered runs whose process exists, by ticket number; stale entries are reclaimed (their end published, then removed). |
+| `genuine(run)` | function | Whether a live entry is an Ariane run: its process exists, is not a descendant of this one, and on Linux runs `start <n>`. |
+| `watching(where)` | function | A context manager: a thread of this process reads the registry every `WATCH_SECONDS` and returns the dict of the genuine runs it saw live (`witnessed`). |
+| `during(where, since, witnessed)` | function | The genuine live runs (added to `witnessed`), and the runs that ended at or after `since` that `witnessed` holds with the same process and start. |
 | `foreign_changes(before, after, numbers, base_branch)` | function | `git.snapshot_changes(before, after)` without the changes that are the own bookkeeping of a run in `numbers`. |
 
 ## Behaviour and errors
 
 - Every operation holds `where/.lock` (`fcntl.flock` on POSIX, `msvcrt.locking` on Windows; the system frees it when the process dies): registering (check, reclaim a stale entry, link), ending a run, `running` and `during`. Two starters reclaiming one stale entry admit one run; a reader cleaning a stale entry never deletes a run registered meanwhile.
 - `registered` writes the entry whole, then links it to `where/<n>`: a live entry for the same ticket raises `Stop` ("ticket #n is already running (process p)"); a stale one (dead process, or unreadable) is replaced. At the end it appends the run to `ended.jsonl` first, then removes the entry only if it is still this run's: a reader always finds the run in one or the other, and a run never removes another's entry. `flow.start` enters it before the ticket's branch exists and leaves it after the outcome, so a stop, Ctrl-C or an exception removes the entry too.
-- `running` and `during` ignore and delete an entry whose process no longer exists. `ended.jsonl` makes a run that started and ended within another run's session known to that run's guard.
-- `foreign_changes` tolerates, for each ticket `m` in `numbers`, and nothing more: the local branch `refs/heads/ariane/<m>` created, moved or deleted; in the shared `config`, the entries `branch.ariane/<m>.remote=origin` and `branch.ariane/<m>.merge=refs/heads/ariane/<m>` or `=refs/heads/<base>` (what `git worktree add -b` writes) added or removed. The shared config is compared by key: the snapshot's `keys <path>` part (`git config --file <path> --list --null`), as counted entries and in order. Its digest and `keys` changes are dropped only when every entry that moved is one of those and every other entry is still there in the same order (swapping two values of a repeated key changes its effect); a change of the file that moves no key (a comment) is kept. Its `setting local` lines (origin that same file) whose entry is one of those are always dropped: the `keys` part decides for that file, and its setting lines are read separately, possibly before or after another run's write. Any other change, another key of that section (`pushRemote`), a hook, another branch, another scope, is kept and stops the ticket.
+- `running` and `during` reclaim an entry whose process no longer exists: its end is appended to `ended.jsonl`, then it is deleted (if the end cannot be written it stays). If a run cannot publish its own end, its entry stays too. The entries and `ended.jsonl` are files an agent can write: `during` counts a live entry only if `genuine`, and an ended run only if this run saw it live (`witnessed`, filled by `watching` for the whole run), so a run that started and ended within another run's session is known to that run's guard, and a forged line is not.
+- `foreign_changes` tolerates, for each ticket `m` in `numbers`, and nothing more: the local branch `refs/heads/ariane/<m>` created, moved or deleted; in the shared `config`, the entries `branch.ariane/<m>.remote=origin` and `branch.ariane/<m>.merge=refs/heads/ariane/<m>` added or removed (Ariane's own preparation writes no key: `worktree add --no-track`). The shared config is compared by key: the snapshot's `keys <path>` part (`git config --file <path> --list --null`), as counted entries and in order. Its digest and `keys` changes are dropped only when every entry that moved is one of those and every other entry is still there in the same order (swapping two values of a repeated key changes its effect); a change of the file that moves no key (a comment) is kept. Its `setting local` lines (origin that same file) whose entry is one of those are always dropped: the `keys` part decides for that file, and its setting lines are read separately, possibly before or after another run's write. Any other change, another key of that section (`pushRemote`), a hook, another branch, another scope, is kept and stops the ticket.
 
 ## Workflow
 
@@ -59,7 +62,7 @@ class runs {
   alive(pid) bool
   registered(where, number, branch) Run
   running(where) dict
-  during(where, since) set
+  during(where, since, witnessed) set
   foreign_changes(before, after, numbers, base_branch) list
 }
 runs ..> Run
@@ -74,6 +77,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 flowchart LR
   flow --> runs
   runs --> git
+  runs --> process
   runs --> stop
 ```
 <!-- end generated -->

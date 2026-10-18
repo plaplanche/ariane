@@ -23,7 +23,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `merge_base(cwd, first, second)` | function | The common ancestor of two revisions. |
 | `commit_messages(cwd, since, until)` | function | The commit messages between two revisions. |
 | `remote_refs(cwd, url)` | function | The refs of a remote URL, by name. |
-| `add_worktree(cwd, path, branch, start)` | function | Adds a working tree on a new branch. |
+| `add_worktree(cwd, path, branch, start)` | function | Adds a working tree on a new branch, without upstream (`--no-track`: no `branch.<name>.*` key is written, #159). |
 | `add_detached_worktree(cwd, path, commit)` | function | Adds a detached working tree at a commit. |
 | `add_reviewer_worktree(cwd, path, commit)` | function | Adds a detached tree without instruction files or symlinks leaving it. |
 | `base_instructions(cwd, remote, branch)` | function | The base branch's `CLAUDE.md`, or empty. |

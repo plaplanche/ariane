@@ -69,9 +69,11 @@ def start(
     with contextlib.ExitStack() as registry:  # the entry goes however the run ends (C11)
         try:
             registry.enter_context(runs.registered(runs.folder(repo_root), number, branch))
+            witnessed = registry.enter_context(runs.watching(runs.folder(repo_root)))
             url, refs_before, instructions = _prepare(repo_root, config, branch, worktree)
             run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url)
             run.base_instructions = instructions
+            run.witnessed = witnessed
         except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
             reason, next_action = describe(exc)
             code = EXIT_INTERRUPTED if isinstance(exc, KeyboardInterrupt) else EXIT_STOPPED
@@ -144,6 +146,7 @@ class _TicketRun:
         self.truncated: list[str] = []  # the files whose hunks the last reviewed diff lacked
         self.processes_before: set[int] = set()
         self.registry = worktree.parent.parent / runs.FOLDER  # `runs.folder` of the repository
+        self.witnessed: dict[int, runs.Run] = {}  # the other runs this run has seen live
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
         self.folder = ticket.TicketFolder(worktree, issue.number, secrets=self.secrets)
         self.metrics = Metrics(issue.number, "delivered", lambda t: self.folder.write(METRICS, t))
@@ -341,8 +344,8 @@ class _TicketRun:
         another Ariane run's own branch and its two branch keys (C11, ADR 0017). Git is read
         first: a run registers before its git writes, so any it shows is in `during`."""
         now = self.snapshot()
-        others = runs.during(self.registry, self.guard_since) - {self.number}
-        changes = runs.foreign_changes(guard, now, others, self.config.base_branch)
+        others = runs.during(self.registry, self.guard_since, self.witnessed) - {self.number}
+        changes = runs.foreign_changes(guard, now, others)
         written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
         if written:
             return Stop(
