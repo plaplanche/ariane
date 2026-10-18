@@ -12,7 +12,7 @@ from ariane.flow import Outcome
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
 
-from conftest import FakeRuntime, Project, make_config, sh
+from conftest import FakeRuntime, Project, commit_on_branch, make_config, sh
 from test_flow import environ
 
 BRANCH = "hand/fix"
@@ -21,12 +21,9 @@ BRANCH = "hand/fix"
 @pytest.fixture
 def branch(project: Project) -> str:
     """A local branch with one commit that makes the default check pass, not checked out."""
-    sh(["git", "branch", BRANCH], project.root)
-    other = project.root.parent / "hand-tree"
-    sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
-    (other / "app.txt").write_text("version 2\n", encoding="utf-8")
-    sh(["git", "commit", "--quiet", "-am", "Bump the version by hand"], other)
-    sh(["git", "worktree", "remove", str(other)], project.root)
+    commit_on_branch(
+        project.root, BRANCH, "Bump the version by hand", {"app.txt": "version 2\n"}, parent="main"
+    )
     return BRANCH
 
 
@@ -161,11 +158,7 @@ def test_c23_verify_records_a_branch_committed_to_during_the_run_commits_nothing
     project: Project, branch: str
 ) -> None:
     def commit_elsewhere(session: Session) -> None:
-        other = project.root.parent / "racing-tree"
-        sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
-        (other / "app.txt").write_text("version 3\n", encoding="utf-8")
-        sh(["git", "commit", "--quiet", "-am", "Racing commit"], other)
-        sh(["git", "worktree", "remove", str(other)], project.root)
+        commit_on_branch(project.root, BRANCH, "Racing commit", {"app.txt": "version 3\n"})
 
     runtime = FakeRuntime(review_actions=[commit_elsewhere])
     outcome = run(project, runtime)
@@ -195,11 +188,7 @@ def test_c23_verify_records_branch_moved_is_caught_before_the_commit(
     monkeypatch.setattr(verify._Verification, "_unchanged", lambda *a, **k: None)
 
     def commit_elsewhere(session: Session) -> None:
-        other = project.root.parent / "racing-tree"
-        sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
-        (other / "app.txt").write_text("version 3\n", encoding="utf-8")
-        sh(["git", "commit", "--quiet", "-am", "Racing commit"], other)
-        sh(["git", "worktree", "remove", str(other)], project.root)
+        commit_on_branch(project.root, BRANCH, "Racing commit", {"app.txt": "version 3\n"})
 
     outcome = run(project, FakeRuntime(review_actions=[commit_elsewhere]))
     assert outcome.exit_code == 1 and "committed to during the run" in outcome.line

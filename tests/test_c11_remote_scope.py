@@ -11,7 +11,7 @@ from ariane.flow import Outcome
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
 
-from conftest import FakeRuntime, Project, edit_app, make_config, sh
+from conftest import FakeRuntime, Project, commit_on_branch, edit_app, make_config, sh
 from test_flow import environ, start
 
 BRANCH = "hand/fix"
@@ -105,12 +105,9 @@ def _verify(project: Project, runtime: FakeRuntime) -> Outcome:
 
 @pytest.fixture
 def hand_branch(project: Project) -> None:
-    sh(["git", "branch", BRANCH], project.root)
-    other = project.root.parent / "hand-tree"
-    sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
-    (other / "app.txt").write_text("version 2\n", encoding="utf-8")
-    sh(["git", "commit", "--quiet", "-am", "Bump the version by hand"], other)
-    sh(["git", "worktree", "remove", str(other)], project.root)
+    commit_on_branch(
+        project.root, BRANCH, "Bump the version by hand", {"app.txt": "version 2\n"}, parent="main"
+    )
 
 
 def _reviewer_pushing(project: Project, *args: str) -> FakeRuntime:

@@ -327,6 +327,10 @@ From a clone, `uv sync` installs the development tools; the checks are listed in
 CPU (`pytest-xdist`, `-n auto`); `uv run pytest -n 0` runs them serially, for example to debug
 one test with `pdb`. CI runs the checks with Python 3.13 on Windows, macOS and Linux, and with
 Python 3.11, the minimum, on Linux only ([ADR 0048](docs/adr/0048-parallel-tests-and-ci-matrix.md)).
+The tests' git project is built once per worker and copied for each test; on Windows, CI runs
+the tests in two shards, `uv run pytest --splits 2 --group 1` (or `2`) with
+`--splitting-algorithm least_duration`, balanced from `.test_durations`, which
+`uv run pytest --store-durations` refreshes ([ADR 0049](docs/adr/0049-template-project-and-windows-shards.md)).
 
 ## License
 
