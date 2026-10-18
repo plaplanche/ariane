@@ -38,7 +38,7 @@ class Metrics:
         self.blocking_red = 0
         self.first_pass_verdict = NOT_REVIEWED
         self.outcome = "running"
-        self.restarted_from: dict[str, str] | None = None  # the run this one started over
+        self.restarted_from: dict[str, str | float] | None = None  # the run this one started over
 
     def step(self, name: str) -> None:
         self.steps.append({"name": name, "at": ticket.now().replace(" ", "T")})

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from ariane import flow, git, report, restart, runs
+from ariane import flow, git, measures, report, restart, runs
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
 
@@ -454,3 +454,43 @@ def test_c23_restart_refuses_an_unregistered_ticket_folder_that_holds_files(
     assert "--restart" in outcome.line
     assert (tree / "app.txt").read_text(encoding="utf-8") == "work git does not know\n"
     assert kept_branches(project) == []
+
+
+def test_c23_restart_an_interrupted_preparation_names_restart(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl-C after the preparation created the ticket's tree and branch: a plain start would
+    refuse them, so the next action names `--restart`."""
+    created = git.add_worktree
+
+    def then_interrupt(*args: object, **kwargs: object) -> None:
+        created(*args, **kwargs)  # type: ignore[arg-type]
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(git, "add_worktree", then_interrupt)
+    outcome = start(project, tracker, FakeRuntime())
+    assert outcome.exit_code == 130
+    assert "run `ariane start 7 --restart`" in outcome.line
+
+
+def test_c23_restart_time_adds_up_over_a_chain_of_restarts() -> None:
+    """Run A stops at 09:00, B starts over at 10:00 and stops at 11:00, C starts over at 12:00:
+    two hours, not one."""
+    run_b = {
+        "started": "2026-10-18T10:00:00Z",
+        "restarted_from": {"branch": "k1", "stopped_at": "2026-10-18T09:00:00Z"},
+        "steps": [{"at": "2026-10-18T11:00:00Z", "name": "outcome: stopped"}],
+    }
+    earlier = restart._earlier(json.dumps(run_b))
+    assert earlier == 3600
+    run_c = {
+        "started": "2026-10-18T12:00:00Z",
+        "restarted_from": {
+            "branch": "k2",
+            "stopped_at": "2026-10-18T11:00:00Z",
+            "earlier_s": earlier,
+        },
+        "steps": [],
+    }
+    assert measures.restart_seconds(run_c, []) == 7200
+    assert restart._earlier("not json") == 0.0

@@ -88,6 +88,7 @@ class Restarted:
     saved: str  # the commit holding the uncommitted work of the ticket's tree, "" when none
     last_action: str  # "" when the kept branch has no readable status
     stopped_at: str | None  # the previous run's last step, None when unreadable
+    earlier_s: float = 0.0  # the restart time the previous run itself carried (ADR 0047)
 
     def journal(self, number: int) -> str:
         trees = "\n".join(f"- `{p}`" for p in self.removed) or "- none"
@@ -107,9 +108,11 @@ class Restarted:
             f"{trees}\n\n{branch}\n\nPrevious run's last action: {last}."
         )
 
-    def metrics(self) -> dict[str, str]:
-        found = {"branch": self.kept_branch}
-        return found | ({"stopped_at": self.stopped_at} if self.stopped_at else {})
+    def metrics(self) -> dict[str, str | float]:
+        found: dict[str, str | float] = {"branch": self.kept_branch}
+        if self.stopped_at:
+            found["stopped_at"] = self.stopped_at
+        return found | ({"earlier_s": self.earlier_s} if self.earlier_s else {})
 
 
 def kept_name(number: int) -> str:
@@ -205,7 +208,8 @@ def clear(repo_root: Path, worktree: Path, number: int, branch: str, kept: str) 
         saved or previous,
         saved,
         _last_action(_show(repo_root, records, f"{folder}/{ticket.STATUS}")),
-        _stopped_at(_show(repo_root, records, f"{folder}/{METRICS}")),
+        _stopped_at(metrics := _show(repo_root, records, f"{folder}/{METRICS}")),
+        _earlier(metrics),
     )
 
 
@@ -295,6 +299,23 @@ def _last_action(text: str) -> str:
     detail = f" ({fields['Detail']})" if fields.get("Detail") else ""
     at = f", at {fields['At']}" if fields.get("At") else ""
     return f"{action}{detail}{at}"
+
+
+def _earlier(text: str) -> float:
+    """The restart time a `metrics.json` carries: its own `earlier_s` plus its stop-to-start
+    interval, so a chain of restarts adds up (ADR 0047); 0 when unreadable."""
+    try:
+        data = json.loads(text)
+        before = data["restarted_from"]
+        earlier = float(before.get("earlier_s", 0))
+        gap = _moment(data["started"]) - _moment(before["stopped_at"])
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return 0.0
+    return max(0.0, earlier) + max(0.0, gap.total_seconds())
+
+
+def _moment(text: str) -> datetime:
+    return datetime.fromisoformat(text.replace("Z", "+00:00"))
 
 
 def _stopped_at(text: str) -> str | None:

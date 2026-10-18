@@ -83,6 +83,9 @@ def start(
             run.witnessed = witnessed
         except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
             reason, next_action = describe(exc)
+            left = worktree.exists() or git.local_branch_exists(repo_root, branch)
+            if left and not isinstance(exc, Stop):  # a preparation interrupted after creating them
+                next_action = with_restart(next_action, number)
             code = EXIT_INTERRUPTED if isinstance(exc, KeyboardInterrupt) else EXIT_STOPPED
             return Outcome(code, f"Did not start ticket #{number}: {reason}. Next: {next_action}.")
         return run.execute(refs_before)

@@ -44,6 +44,9 @@ def restart_seconds(data: dict[str, Any], restarts: list[dict[str, Any]]) -> flo
     total = 0.0
     previous = data.get("restarted_from")
     stopped_at = previous.get("stopped_at") if isinstance(previous, dict) else None
+    earlier = previous.get("earlier_s") if isinstance(previous, dict) else None
+    if isinstance(earlier, int | float) and earlier > 0:  # the earlier restarts of a chain
+        total += float(earlier)
     if isinstance(stopped_at, str):
         with contextlib.suppress(ValueError):
             total += max(0.0, (moment(data["started"]) - moment(stopped_at)).total_seconds())

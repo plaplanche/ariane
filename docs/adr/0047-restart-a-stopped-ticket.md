@@ -53,8 +53,11 @@ removes.
   the last step of the kept branch's `work/<n>/metrics.json` (absent when unreadable). Both are
   read from the branch, not from the removed trees: the branch holds what Ariane committed after
   restoring its records, the trees what an agent may have rewritten. `measures.restart_seconds`
-  adds `started - stopped_at` (never negative).
-- **Next actions.** The refusals of a leftover tree or local branch, in the preparation and in the
+  adds `started - stopped_at` (never negative). A chain of restarts adds up: `restarted_from`
+  also carries `earlier_s`, the restart time the previous run itself carried (its own `earlier_s`
+  plus its `started - stopped_at`), absent when zero.
+- **Next actions.** A preparation interrupted or failed after it created the ticket's tree or
+  branch (not one of its own refusals) also names `--restart`. The refusals of a leftover tree or local branch, in the preparation and in the
   replay and review round, say "run `ariane start <n> --restart`"; every stop of a ticket that
   was not pushed ends with "to start over, run `ariane start <n> --restart`". A stop after the
   push (the delivery calls `on_pushed`) and a shadow run's stops do not name it.

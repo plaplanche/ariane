@@ -24,7 +24,7 @@ The success measure of `ariane report` (C19, ADR 0038): human time, gates bypass
 
 - Reads and writes no file; it works on the parsed metrics and asks the tracker for the pull request's state.
 - `waiting` is None when the tracker is missing or fails (`TrackerError`, `ValueError`, `OSError`); 0 while the pull request is open or absent.
-- `restart_seconds` adds each stop (an `outcome: ` step that is not `delivered`, `needs a human` or `running`) to the next `verify` start, and, for a run that started over with `ariane start --restart`, `restarted_from.stopped_at` to the run's `started` (ADR 0047; never negative, an unreadable time adds nothing).
+- `restart_seconds` adds each stop (an `outcome: ` step that is not `delivered`, `needs a human` or `running`) to the next `verify` start, and, for a run that started over with `ariane start --restart`, `restarted_from.stopped_at` to the run's `started`, plus `restarted_from.earlier_s` for the earlier restarts of a chain (ADR 0047; never negative, an unreadable time adds nothing).
 - `bypassed`: a hand takeover per `verify` record of the branch, blocking checks red at delivery, and a merge while the last review on the branch is no-go (the last `verify` go cancels it).
 - `shadow_lines`: tickets, accept rate, not yet judged, agent push and pull-request attempts, guard violations, then `shadow pass: yes|no` over the last `SHADOW_WINDOW` tickets of `recent` (all the shadow tickets, whatever `--since`): ten required, no attempt, no violation, at least `SHADOW_ACCEPTED` accepted. No shadow ticket gives no line.
 
