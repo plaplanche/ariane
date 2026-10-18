@@ -58,7 +58,7 @@ def test_c1_start_creates_ticket_folder_with_brief_prefilled_from_the_issue(
     assert "Approved:" not in brief
     assert "Set app.txt to version 2." in brief
     assert "# Journal of ticket #7" in project.show("ariane/7", "work/7/journal.md")
-    assert "Last action: pushed" in project.show("ariane/7", "work/7/status.md")
+    assert "Last action: pushing" in project.show("ariane/7", "work/7/status.md")
 
 
 def test_c1_records_brief_has_no_approval_lines(project: Project, tracker: InMemoryTracker) -> None:
@@ -423,13 +423,13 @@ def test_c1_records_pointer_has_read_time_in_the_journal(
     assert re.search(r"see brief\.md, read at \d{4}-\d\d-\d\d \d\d:\d\d:\d\dZ\)", journal)
 
 
-def test_c11_pushed_status_does_not_claim_a_pull_request(
+def test_c11_pushed_status_does_not_claim_a_push_or_a_pull_request(
     project: Project, tracker: InMemoryTracker
 ) -> None:
     assert start(project, tracker, FakeRuntime()).exit_code == 0
     status = project.show("ariane/7", "work/7/status.md")
-    assert "Last action: pushed" in status
-    assert "ariane/7 pushed; opening the pull request" in status
+    assert "Last action: pushing" in status
+    assert "pushing ariane/7, then opening the pull request" in status
     assert "see the pull request, or run ariane status 7" in status
     assert "delivered" not in status
 

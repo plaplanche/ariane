@@ -16,6 +16,7 @@ Delivers a ticket: one push, the pull request (a draft that can carry failing bl
 - `Delivery`: performs the delivery.
 - `Delivered`: the pull request (and whether it is a draft) and the statuses published. When the last review is still `no-go` after the fix rounds the pull request is a draft whose body says "Needs a human", and the ticket status is `needs a human` with next action "finish by hand, then run `ariane verify`". The pull request body carries the review's verdict and definition-of-done results. When the reviewed diff was cut (`truncated`, the files whose hunks it lacked), the review section says the diff given to the reviewer was truncated and how many files were missing (ADR 0031).
 - Last guard (C11, ADR 0017): right before the push, the `guard` callable given by the run is called (the same check as after an agent session), and any `url.*.insteadof` or `url.*.pushinsteadof` key whose prefix matches the push URL stops the delivery with `PullRequestRefused`; nothing is pushed.
+- Record (C1, C23, ADR 0027): the status committed before the push is `pushing` (`needs a human` for a draft) and never claims a push or a pull request. After the pull request is opened and the statuses published, the status becomes `delivered` with the pull request's number and URL (`needs a human`, "draft pull request #<p> opened" for a draft) and `work/<n>/` is committed as `#<n>: record the pull request` on the local branch only: the pushed commit, which carries the statuses, does not move, and the ticket's working tree is clean.
 - `PullRequestRefused`: raised when the tracker refuses the pull request.
 
 ## Workflow
@@ -24,7 +25,7 @@ Delivers a ticket: one push, the pull request (a draft that can carry failing bl
 flowchart TD
   A[Delivery.deliver results] --> E{settled review is no-go?}
   E -- yes --> F[status needs a human]
-  E -- no --> G[status pushed]
+  E -- no --> G[status pushing]
   F --> H[commit the record]
   G --> H
   H --> B[require a replayed commit]
@@ -33,8 +34,10 @@ flowchart TD
   C --> D[build the pull request body: checks, review section, redacted]
   D --> O[tracker.open_pull_request, draft only if no-go]
   O -- refused --> X2[raise PullRequestRefused, branch pushed]
-  O -- ok --> I[publish commit statuses]
-  I --> J[return Delivered]
+  O -- ok --> I[publish commit statuses on the pushed commit]
+  I --> K[status delivered, or needs a human for a draft]
+  K --> L[commit the record locally, not pushed]
+  L --> J[return Delivered]
 ```
 
 ## Code view (C4 level 4)

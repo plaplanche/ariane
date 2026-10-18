@@ -318,9 +318,10 @@ def test_c11_one_push_a_delivered_ticket_updates_the_remote_branch_once(
     outcome = start(project, tracker, FakeRuntime())
     assert outcome.exit_code == 0, outcome.line
     assert pushed == [project.remote_branches()["ariane/7"]]
-    assert "Last action: pushed" in project.show("ariane/7", "work/7/status.md")
+    assert "Last action: pushing" in project.show("ariane/7", "work/7/status.md")
     assert "Summary: 1 passed" in project.show("ariane/7", "work/7/checks.md")
-    assert sh(["git", "rev-parse", "HEAD"], worktree(project)) == pushed[0]
+    # The record of the pull request is one local commit on top of the pushed one (ADR 0027).
+    assert sh(["git", "rev-parse", "HEAD~1"], worktree(project)) == pushed[0]
 
 
 def test_c11_one_push_refused_pull_request_leaves_one_push_and_a_stopped_status(
