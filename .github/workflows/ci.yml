@@ -10,16 +10,22 @@ permissions:
 
 jobs:
   checks:
-    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}${{ matrix.shard && format(' / shard {0}', matrix.shard) || '' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         python: ["3.13"]
         include:
           - os: ubuntu-latest
             python: "3.11"
+          - os: windows-latest
+            python: "3.13"
+            shard: 1
+          - os: windows-latest
+            python: "3.13"
+            shard: 2
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,7 +61,7 @@ jobs:
         run: uv run mypy
       - name: Tests
         if: steps.docs.outputs.docs_only != 'true'
-        run: uv run pytest
+        run: uv run pytest --durations=30 ${{ matrix.shard && format('--splits 2 --group {0} --splitting-algorithm least_duration', matrix.shard) || '' }}
       - name: File length
         if: steps.docs.outputs.docs_only != 'true'
         run: uv run python scripts/check_file_length.py

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
@@ -25,6 +26,12 @@ from ariane.runtime import Session, SessionResult, StopReason
 from ariane.tracker import InMemoryTracker
 
 PY = sys.executable
+
+IDENTITY = {
+    f"GIT_{name}_{part}": value
+    for name in ("AUTHOR", "COMMITTER")
+    for part, value in (("NAME", "Ariane Test"), ("EMAIL", "ariane-test@example.invalid"))
+}
 
 
 def sh(args: list[str], cwd: Path, env: dict[str, str] | None = None) -> str:
@@ -48,9 +55,8 @@ def isolated_git(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     ]:
         monkeypatch.delenv(key)
     monkeypatch.delenv("GIT_CONFIG_COUNT", raising=False)
-    for name in ("AUTHOR", "COMMITTER"):
-        monkeypatch.setenv(f"GIT_{name}_NAME", "Ariane Test")
-        monkeypatch.setenv(f"GIT_{name}_EMAIL", "ariane-test@example.invalid")
+    for key, value in IDENTITY.items():
+        monkeypatch.setenv(key, value)
 
 
 @pytest.fixture(autouse=True)
@@ -80,19 +86,88 @@ class Project:
         return sh(["git", "--git-dir", str(self.remote), "show", f"{ref}:{path}"], self.root)
 
 
-@pytest.fixture
-def project(tmp_path: Path) -> Project:
-    remote = tmp_path / "origin.git"
-    sh(["git", "init", "--quiet", "--bare", "--initial-branch=main", str(remote)], tmp_path)
-    root = tmp_path / "proj"
-    sh(["git", "clone", "--quiet", str(remote), str(root)], tmp_path)
-    sh(["git", "checkout", "--quiet", "-b", "main"], root)
+@pytest.fixture(scope="session")
+def project_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The bare remote and its clone, built once per xdist worker (ADR 0049).
+
+    Its base temp directory is the worker's own, and no test gets its path: `project` copies it.
+    It runs before the per-test `isolated_git`, so it sets its own isolated configuration.
+    """
+    base = tmp_path_factory.mktemp("project-template")
+    env = {
+        **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+        **IDENTITY,
+        "GIT_CONFIG_GLOBAL": str(base / "gitconfig"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+    remote = base / "origin.git"
+    sh(["git", "init", "--quiet", "--bare", "--initial-branch=main", str(remote)], base, env)
+    root = base / "proj"
+    sh(["git", "clone", "--quiet", str(remote), str(root)], base, env)
+    sh(["git", "checkout", "--quiet", "-b", "main"], root, env)
     (root / ".gitignore").write_text("ignored-by-git/\n", encoding="utf-8")
     (root / "app.txt").write_text("version 1\n", encoding="utf-8")
-    sh(["git", "add", "--all"], root)
-    sh(["git", "commit", "--quiet", "-m", "initial"], root)
-    sh(["git", "push", "--quiet", "origin", "main"], root)
+    sh(["git", "add", "--all"], root, env)
+    sh(["git", "commit", "--quiet", "-m", "initial"], root, env)
+    sh(["git", "push", "--quiet", "origin", "main"], root, env)
+    return base
+
+
+def _config_value(text: str) -> str:
+    """`text` quoted as a value of a git configuration file."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def copy_template(template: Path, dest: Path) -> Project:
+    """A copy of `template` under `dest` whose `origin` is the copy's own remote, without git."""
+    remote = dest / "origin.git"
+    shutil.copytree(template / "origin.git", remote, symlinks=True)
+    root = dest / "proj"
+    shutil.copytree(template / "proj", root, symlinks=True)
+    config = root / ".git" / "config"
+    lines = config.read_text(encoding="utf-8").splitlines(keepends=True)
+    urls = [i for i, line in enumerate(lines) if line.strip().startswith("url = ")]
+    assert len(urls) == 1, lines
+    lines[urls[0]] = f"\turl = {_config_value(str(remote))}\n"
+    config.write_text("".join(lines), encoding="utf-8")
     return Project(root=root.resolve(), remote=remote)
+
+
+@pytest.fixture
+def project(tmp_path: Path, project_template: Path) -> Project:
+    """A repository and a remote of the test's own, copied from the worker's template."""
+    return copy_template(project_template, tmp_path)
+
+
+def commit_on_branch(
+    repo: Path, branch: str, message: str, files: dict[str, str], *, parent: str | None = None
+) -> None:
+    """Add one commit to `branch` without checking it out, with one git process.
+
+    The commit's parent is `parent` (by default the branch itself, which must exist) and it sets
+    `files`, a path to its content, keeping every other file of the parent. A path whose content
+    starts with `symlink:` becomes a symbolic link to the rest of the content.
+    """
+    lines = [
+        f"commit refs/heads/{branch}",
+        f"committer {os.environ['GIT_COMMITTER_NAME']} <{os.environ['GIT_COMMITTER_EMAIL']}> now",
+        f"data {len(message.encode())}",
+        message,
+        f"from {parent or 'refs/heads/' + branch}^0",
+    ]
+    for path, content in files.items():
+        mode = "120000" if content.startswith("symlink:") else "100644"
+        data = content.removeprefix("symlink:")
+        lines += [f"M {mode} inline {path}", f"data {len(data.encode())}", data]
+    script = "\n".join(lines) + "\n"
+    done = subprocess.run(
+        ["git", "fast-import", "--quiet", "--date-format=now"],
+        cwd=repo,
+        input=script.encode(),
+        capture_output=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr.decode(errors="replace")
 
 
 def make_config(

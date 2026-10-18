@@ -13,7 +13,7 @@ from ariane.config import TrackerConfig
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
 
-from conftest import FakeRuntime, Project, edit_app, make_config, sh
+from conftest import FakeRuntime, Project, commit_on_branch, edit_app, make_config, sh
 from test_flow import TOKEN, journal, start
 
 _RECORD = tuple[tuple[str, ...], dict[str, str]]
@@ -117,17 +117,14 @@ def _remote_change(project: Project, change: Callable[[Path], None]) -> Callable
     return action
 
 
-def _commit_on_main(clone: Path) -> None:
-    (clone / "merged.txt").write_text("merge\n", encoding="utf-8")
-    sh(["git", "add", "--all"], clone)
-    sh(["git", "commit", "--quiet", "-m", "merge"], clone)
-    sh(["git", "push", "--quiet", "origin", "HEAD:main"], clone)
-
-
 def test_c11_remote_check_a_fast_forward_of_the_base_branch_does_not_stop(
     project: Project, tracker: InMemoryTracker
 ) -> None:
-    action = _remote_change(project, _commit_on_main)
+    def action(session: Session) -> None:
+        edit_app(session)
+        # A merge on the base branch, committed straight into the remote (ADR 0049).
+        commit_on_branch(project.remote, "main", "merge", {"merged.txt": "merge\n"})
+
     outcome = start(project, tracker, FakeRuntime(action=action))
     assert outcome.exit_code == 0, outcome.line + outcome.detail
     assert "ariane/7" in project.remote_branches()

@@ -13,7 +13,7 @@ from ariane.flow import Outcome
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
 
-from conftest import PY, FakeRuntime, Project, make_config, sh
+from conftest import PY, FakeRuntime, Project, commit_on_branch, make_config, sh
 from test_flow import environ, start
 
 BRANCH = "hand/fix"
@@ -22,12 +22,9 @@ RECORD = f"work/verify/{BRANCH}/checks.md"
 
 @pytest.fixture
 def hand_branch(project: Project) -> None:
-    sh(["git", "branch", BRANCH], project.root)
-    other = project.root.parent / "hand-tree"
-    sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
-    (other / "app.txt").write_text("version 2\n", encoding="utf-8")
-    sh(["git", "commit", "--quiet", "-am", "Bump the version by hand"], other)
-    sh(["git", "worktree", "remove", str(other)], project.root)
+    commit_on_branch(
+        project.root, BRANCH, "Bump the version by hand", {"app.txt": "version 2\n"}, parent="main"
+    )
 
 
 def _verify(project: Project, runtime: FakeRuntime, config: object = None) -> Outcome:
@@ -175,14 +172,8 @@ def test_c11_guard_hardening_verify_records_replace_a_symlinked_checks_file(
 ) -> None:
     outside = tmp_path / "outside.txt"
     outside.write_text("keep me\n", encoding="utf-8")
-    other = project.root.parent / "link-tree"
-    sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
-    target = tmp_path / "target.txt"
-    target.write_text(outside.as_posix(), encoding="utf-8")
-    blob = sh(["git", "hash-object", "-w", str(target)], other)
-    sh(["git", "update-index", "--add", "--cacheinfo", f"120000,{blob},{RECORD}"], other)
-    sh(["git", "commit", "--quiet", "-m", "A link where the record goes"], other)
-    sh(["git", "worktree", "remove", "--force", str(other)], project.root)
+    link = {RECORD: f"symlink:{outside.as_posix()}"}
+    commit_on_branch(project.root, BRANCH, "A link where the record goes", link)
     sh(["git", "config", "core.symlinks", symlinks], project.root)
     outcome = _verify(project, FakeRuntime())
     assert outcome.exit_code == 0, outcome.line

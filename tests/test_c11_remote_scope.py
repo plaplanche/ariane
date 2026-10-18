@@ -11,7 +11,7 @@ from ariane.flow import Outcome
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
 
-from conftest import FakeRuntime, Project, edit_app, make_config, sh
+from conftest import FakeRuntime, Project, commit_on_branch, edit_app, make_config, sh
 from test_flow import environ, start
 
 BRANCH = "hand/fix"
@@ -36,19 +36,16 @@ def _push(project: Project, *args: str) -> Callable[[Session], None]:
 
 def _advance_base(project: Project, *, rewrite: bool) -> Callable[[Session], None]:
     def push(session: Session) -> None:
+        if not rewrite:  # a fast-forward, committed straight into the remote (ADR 0049)
+            commit_on_branch(project.remote, "main", "merge", {"x.txt": "x\n"})
+            return
         other = project.root.parent / "other-clone"
         sh(["git", "clone", "--quiet", str(project.remote), str(other)], project.root.parent)
-        if rewrite:
-            sh(["git", "reset", "--quiet", "--hard", "HEAD"], other)
-            (other / "x.txt").write_text("x\n", encoding="utf-8")
-            sh(["git", "add", "x.txt"], other)
-            sh(["git", "commit", "--quiet", "--amend", "-m", "rewritten"], other)
-            sh(["git", "push", "--quiet", "--force", "origin", "HEAD:main"], other)
-        else:
-            (other / "x.txt").write_text("x\n", encoding="utf-8")
-            sh(["git", "add", "x.txt"], other)
-            sh(["git", "commit", "--quiet", "-m", "merge"], other)
-            sh(["git", "push", "--quiet", "origin", "HEAD:main"], other)
+        sh(["git", "reset", "--quiet", "--hard", "HEAD"], other)
+        (other / "x.txt").write_text("x\n", encoding="utf-8")
+        sh(["git", "add", "x.txt"], other)
+        sh(["git", "commit", "--quiet", "--amend", "-m", "rewritten"], other)
+        sh(["git", "push", "--quiet", "--force", "origin", "HEAD:main"], other)
 
     return push
 
@@ -105,12 +102,9 @@ def _verify(project: Project, runtime: FakeRuntime) -> Outcome:
 
 @pytest.fixture
 def hand_branch(project: Project) -> None:
-    sh(["git", "branch", BRANCH], project.root)
-    other = project.root.parent / "hand-tree"
-    sh(["git", "worktree", "add", "--quiet", str(other), BRANCH], project.root)
-    (other / "app.txt").write_text("version 2\n", encoding="utf-8")
-    sh(["git", "commit", "--quiet", "-am", "Bump the version by hand"], other)
-    sh(["git", "worktree", "remove", str(other)], project.root)
+    commit_on_branch(
+        project.root, BRANCH, "Bump the version by hand", {"app.txt": "version 2\n"}, parent="main"
+    )
 
 
 def _reviewer_pushing(project: Project, *args: str) -> FakeRuntime:
