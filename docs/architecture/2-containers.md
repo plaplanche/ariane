@@ -13,7 +13,7 @@ flowchart TB
   shadowstore[(Shadow clones repo.ariane/shadow/n/, origin removed)]
   logs[(Log files in repo.ariane/logs/)]
   slotfiles[(Slot locks ~/.ariane/slots/k.lock, one per machine-wide run slot)]
-  session["Agent session process: claude, opencode or codex (Codex CLI, an external system, reviewer only)"]
+  session["Agent session process: claude, opencode, codex or pi (Codex CLI and pi CLI: external systems, reviewer only)"]
   ci[CI workflows: ci.yml, check-statuses.yml]
   github[GitHub]
   user --> cmd
@@ -43,7 +43,7 @@ flowchart TB
 - `check-statuses.yml` publishes the statuses from the committed report when Ariane cannot.
 - The reviewer session is read-only: its tools are an allow list (`Read`, `Glob`, `Grep`). It reads a
   separate reviewer tree with no `CLAUDE.md`, `AGENTS.md` or `.claude/` (ADR 0031); Claude Code starts
-  from an empty folder with `--restricted`. On opencode it ignores project configuration files. On Codex it runs `codex exec` in the read-only sandbox with the CLI's own login; Ariane never reads `~/.codex/auth.json`.
+  from an empty folder with `--restricted`. On opencode it ignores project configuration files. On Codex it runs `codex exec` in the read-only sandbox with the CLI's own login; Ariane never reads `~/.codex/auth.json`. On pi it runs `pi -p --mode json` with the read-only tools (`read`, `grep`, `find`, `ls`), no session file, extension, skill, prompt template, theme or context file, and offline; Ariane never reads pi's `auth.json`.
 - Each `ariane start` (shadow included) and `ariane verify` holds one of 16 machine-wide slots, an operating-system lock on `~/.ariane/slots/<k>.lock` (outside every repository), until it ends; the project gets it as `ARIANE_SLOT` (ADR 0050).
 - The shadow clone is separate from the repository and has no remote: a shadow run cannot push (ADR 0036).
 - The ticket folder (`brief.md`, `journal.md`, `checks.md`, `review-<n>.md`, `status.md`, `metrics.json`) is committed with the ticket and readable without Ariane.

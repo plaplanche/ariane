@@ -11,6 +11,7 @@ flowchart TB
   claude[Claude Code]
   opencode[opencode, reviewer role]
   codex[Codex CLI, reviewer role]
+  pi[pi CLI, reviewer role]
   vendors[Model vendors]
   sandbox[Cloud sandbox]
   owner -->|writes issues, merges pull requests| github
@@ -21,9 +22,11 @@ flowchart TB
   ariane -->|starts sessions| claude
   ariane -->|starts reviewer sessions| opencode
   ariane -->|starts reviewer sessions| codex
+  ariane -->|starts reviewer sessions| pi
   claude -->|model calls| vendors
   opencode -->|model calls| vendors
   codex -->|model calls, ChatGPT plan or API key| vendors
+  pi -->|model calls, pi's login or an API key| vendors
   github -->|runs workflows| github
   sandbox -.->|may host Ariane and the agents| ariane
 ```

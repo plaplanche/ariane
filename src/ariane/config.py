@@ -13,9 +13,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ariane.config_schema import CODEX, OPENCODE, OPENCODE_TOOLS, REVIEWER_TOOLS, RUNTIMES, SCHEMA
+from ariane.config_schema import (
+    CODEX,
+    OPENCODE,
+    PI,
+    RUNTIMES,
+    SCHEMA,
+    agent_problem,
+    model_problem,
+)
 
-__all__ = ["CODEX", "OPENCODE", "SCHEMA"]
+__all__ = ["CODEX", "OPENCODE", "PI", "SCHEMA"]
 
 CONFIG_FILE = "ariane.toml"
 CONFIG_ENV = "ARIANE_CONFIG"
@@ -43,7 +51,7 @@ class AgentConfig:
     max_budget_usd: float
     timeout_minutes: float
     max_tokens: int | None = None
-    api_key_env: str | None = None  # codex: variable holding the API key, if not a plan login
+    api_key_env: str | None = None  # codex, pi: variable holding an API key, else CLI's login
     idle_minutes: float | None = None  # no event for this long stops the session; None: no limit
     small: SmallReview | None = None  # reviewer only: settings for a small change (ADR 0046)
 
@@ -305,7 +313,7 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
     )
     prefix = f"{where}."
     runtime = _str(table, "runtime", prefix)
-    if runtime in (OPENCODE, CODEX) and role == "implementer":
+    if runtime in (OPENCODE, CODEX, PI) and role == "implementer":
         raise ConfigError(
             f"{CONFIG_FILE}: {where}.runtime: {runtime} is not supported for the {role} role yet"
         )
@@ -316,41 +324,25 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
         )
     tools = _str_list(table, "tools", prefix)
     api_key_env = _str(table, "api_key_env", prefix) if "api_key_env" in table else None
-    if api_key_env is not None and runtime != CODEX:
-        raise ConfigError(f'{CONFIG_FILE}: {where}.api_key_env: only with runtime = "codex"')
-    if api_key_env is not None and "max_tokens" not in table:
-        raise ConfigError(
-            f"{CONFIG_FILE}: {where}.max_tokens: required with api_key_env"
-            " (a per-token Codex session needs a token cap)"
-        )
-    if runtime == OPENCODE:
-        _opencode_agent(table, tools, where)
-    if role == "reviewer" and runtime != OPENCODE:
-        other = [t for t in tools if t not in REVIEWER_TOOLS]
-        if other:
-            raise ConfigError(
-                f"{CONFIG_FILE}: {where}.tools: {other[0]} is not allowed"
-                f" (the reviewer's tools are an allow list: {', '.join(REVIEWER_TOOLS)}; C10)"
-            )
-    if "Skill" in tools:
-        raise ConfigError(
-            f"{CONFIG_FILE}: {where}.tools: Skill is not allowed (undeclared skills, C6)"
-        )
+    model = _str(table, "model", prefix)
+    problem = agent_problem(role, runtime, model, tools, api_key_env, "max_tokens" in table)
+    if problem is not None:
+        raise ConfigError(f"{CONFIG_FILE}: {where}.{problem[0]}: {problem[1]}")
     timeout_minutes = _positive(table, "timeout_minutes", prefix)
     return AgentConfig(
         runtime=runtime,
-        model=_str(table, "model", prefix),
+        model=model,
         tools=tools,
         max_budget_usd=_positive(table, "max_budget_usd", prefix),
         timeout_minutes=timeout_minutes,
         max_tokens=_max_tokens(table, where),
         api_key_env=api_key_env,
         idle_minutes=_idle_minutes(table, where, timeout_minutes),
-        small=_small(table, where, runtime) if "small" in table else None,
+        small=_small(table, where, runtime, api_key_env) if "small" in table else None,
     )
 
 
-def _small(table: dict[str, Any], where: str, runtime: str) -> SmallReview:
+def _small(table: dict[str, Any], where: str, runtime: str, api_key_env: str | None) -> SmallReview:
     """`[agents.reviewer.small]`: same runtime and tools as the reviewer (ADR 0046)."""
     small = _table(table, "small", f"{where}.")
     prefix = f"{where}.small."
@@ -365,8 +357,9 @@ def _small(table: dict[str, Any], where: str, runtime: str) -> SmallReview:
     if isinstance(lines, bool) or not isinstance(lines, int) or lines <= 0:
         raise ConfigError(f"{CONFIG_FILE}: {prefix}max_lines: expected a positive integer")
     model = _str(small, "model", prefix) if "model" in small else None
-    if model is not None and runtime == OPENCODE and "" in model.partition("/")[::2]:
-        raise ConfigError(f"{CONFIG_FILE}: {prefix}model: opencode wants <provider>/<model>")
+    problem = model and model_problem(runtime, model, api_key_env)
+    if problem:
+        raise ConfigError(f"{CONFIG_FILE}: {prefix}model: {problem}")
     numbers = {
         k: _positive(small, k, prefix) for k in ("max_budget_usd", "timeout_minutes") if k in small
     }
@@ -385,23 +378,6 @@ def _idle_minutes(table: dict[str, Any], where: str, timeout_minutes: float) -> 
             f" ({timeout_minutes:g})"
         )
     return idle
-
-
-def _opencode_agent(table: dict[str, Any], tools: Sequence[str], where: str) -> None:
-    unknown = [t for t in tools if t not in OPENCODE_TOOLS]
-    if unknown:
-        raise ConfigError(
-            f"{CONFIG_FILE}: {where}.tools: {unknown[0]!r} is not an opencode tool"
-            f" ({', '.join(OPENCODE_TOOLS)})"
-        )
-    provider, _, name = _str(table, "model", f"{where}.").partition("/")
-    if not provider or not name:
-        raise ConfigError(f"{CONFIG_FILE}: {where}.model: opencode wants <provider>/<model>")
-    if "max_tokens" not in table:
-        raise ConfigError(
-            f"{CONFIG_FILE}: {where}.max_tokens: required with opencode"
-            " (opencode does not cap its own cost; Ariane needs a token cap)"
-        )
 
 
 def _safe_api_url(url: str) -> bool:

@@ -101,6 +101,7 @@ flowchart LR
   flow --> process
   git --> process
   opencode --> process
+  pi --> process
   process --> logs
   runs --> process
   verify --> process
