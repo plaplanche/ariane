@@ -277,6 +277,56 @@ def test_c11_parallel_guard_a_wrong_value_or_a_bare_edit_is_not_tolerated(
     assert [c for c in changes if c.startswith("changed: file ")]
 
 
+@pytest.mark.parametrize("between", ["--file", "--show-scope"])
+def test_c11_parallel_guard_another_run_writing_during_the_baseline_is_tolerated(
+    project: Project, monkeypatch: pytest.MonkeyPatch, between: str
+) -> None:
+    """Run 8 writes its branch and keys while the first run's baseline is being read, just
+    before the read of the shared config's keys or of the settings: the baseline stays coherent."""
+    real_git = git.git
+    wrote: list[bool] = []
+
+    def interrupted(args: list[str], cwd: Path, **kwargs: object) -> object:
+        if between in args and not wrote:
+            wrote.append(True)
+            _second_run_branch(project)
+        return real_git(args, cwd, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(git, "git", interrupted)
+    before = _snapshot(project)
+    monkeypatch.setattr(git, "git", real_git)
+    assert wrote
+    assert runs.foreign_changes(before, _snapshot(project), {8}, "main") == []
+
+
+def test_c11_parallel_guard_reordering_a_repeated_setting_is_not_tolerated(
+    project: Project,
+) -> None:
+    config = project.root / ".git" / "config"
+    sh(["git", "config", "--add", "core.sshCommand", "unsafe"], project.root)
+    sh(["git", "config", "--add", "core.sshCommand", "safe"], project.root)
+    before = _snapshot(project)
+    text = config.read_text(encoding="utf-8")
+    swapped = text.replace("= unsafe", "= @").replace("= safe", "= unsafe").replace("= @", "= safe")
+    config.write_text(swapped, encoding="utf-8")
+    _second_run_branch(project)  # legitimate bookkeeping in the same session
+    changes = runs.foreign_changes(before, _snapshot(project), {8}, "main")
+    assert any(c.startswith("changed: keys ") for c in changes)
+    assert any("core.sshcommand=unsafe" in c for c in changes)
+
+
+def test_c11_parallel_guard_reordering_settings_in_an_included_file_is_not_tolerated(
+    project: Project, tmp_path: Path
+) -> None:
+    included = tmp_path / "included"
+    included.write_text("[core]\n\tsshCommand = unsafe\n\tsshCommand = safe\n", encoding="utf-8")
+    sh(["git", "config", "include.path", str(included)], project.root)
+    before = _snapshot(project)
+    included.write_text("[core]\n\tsshCommand = safe\n\tsshCommand = unsafe\n", encoding="utf-8")
+    changes = runs.foreign_changes(before, _snapshot(project), {8}, "main")
+    assert any(c.startswith("changed: setting ") and "sshcommand=unsafe" in c for c in changes)
+
+
 def test_c11_parallel_guard_reads_git_before_the_runs_that_authorize_it(
     project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
 ) -> None:

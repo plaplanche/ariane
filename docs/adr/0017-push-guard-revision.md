@@ -136,8 +136,11 @@ first step of the orchestration the benchmark points to.
   created, moved or deleted; and, in the shared `config`, the entries `branch.ariane/<m>.remote`
   with value `origin` and `branch.ariane/<m>.merge` with value `refs/heads/ariane/<m>` or
   `refs/heads/<base>` added or removed. The shared config is compared by key: the snapshot keeps
-  its `git config --file <path> --list --null` next to its digest, and the file's change is
-  ignored only when every entry that moved is one of those. Anything else still stops the ticket:
+  its `git config --list --null`, parsed from the same bytes as its digest (one read, so another
+  run writing meanwhile cannot make them disagree), and the file's change is ignored only when
+  every entry that moved is one of those and every other entry keeps its order (reordering the
+  values of a repeated key changes the effective configuration). Each scoped setting records its
+  positions among the settings of its key, so a reorder in any other file is a change too. Anything else still stops the ticket:
   another key of that section (`pushRemote`, `rebase`), the same keys for a ticket not
   registered, a hook, another branch, another scope, a change of the file that moves no key.
 - **The stop names what is not another run's own.** The detail lists only the remaining

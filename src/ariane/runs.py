@@ -212,18 +212,24 @@ def foreign_changes(
     shared = keys.removeprefix("keys ") if keys else None
     config_ok = False
     if keys is not None:
-        delta = Counter(_entries(after.get(keys, "")))
-        delta.subtract(_entries(before.get(keys, "")))
+        old, new = _entries(before.get(keys, "")), _entries(after.get(keys, ""))
+        delta = Counter(new)
+        delta.subtract(old)
         moved = {entry for entry, count in delta.items() if count}
-        config_ok = bool(moved) and moved <= allowed
+        # Every other entry in the same order: reordering duplicates changes their effect.
+        config_ok = (
+            bool(moved)
+            and moved <= allowed
+            and [e for e in old if e not in allowed] == [e for e in new if e not in allowed]
+        )
     kept = []
     for line in git.snapshot_changes(before, after):
-        kind, _, part = line.partition(": ")
+        part = line.partition(": ")[2]
         if part in refs:
             continue
         if config_ok and part in (f"file {shared}", keys):
             continue
-        if config_ok and kind != "changed" and _shared_setting(part, shared, allowed):
+        if _shared_setting(part, shared, allowed):  # the `keys` part decides for that file
             continue
         kept.append(line)
     return kept
