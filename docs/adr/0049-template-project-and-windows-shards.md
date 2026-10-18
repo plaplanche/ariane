@@ -1,7 +1,7 @@
 # 0049. A template project per worker, and Windows shards only if still above 8 minutes
 
-- Status: accepted for the template project and the set-ups; the shard decision waits for the
-  Windows measurement of this pull request's CI (see "Shards" and "Handover")
+- Status: accepted; the Windows job runs in two shards (measured on this pull request's CI,
+  see "Durations")
 - Date: 2026-10-18
 - Capabilities: C9
 
@@ -61,10 +61,19 @@ The slowest tests are whole Ariane runs (start, replay, review, fix rounds, deli
 process-tree tests that wait on purpose; each runs 100 to 190 git processes in its body, nearly
 all from Ariane itself.
 
-**Not measured yet: the 30 slowest on Windows.** The implementer's sandbox runs Linux only and
-cannot push a workflow file (CLAUDE.md, "Cloud sessions"), so no CI run has reported
-`--durations=30` yet. The Windows list, before and after, is recorded here from the CI runs of
-"Handover", steps 1 and 2; until then this ADR does not claim any Windows figure beyond #205's.
+**The 30 slowest on Windows, after the change** (CI run of commit 1, `windows-latest / Python
+3.13`, seconds, test body): 48.7 `test_fix_rounds` three no-go rounds, 40.4 `test_c9_isolated_replay`
+no tree left, 38.2, 37.7 and 37.6 three `test_review` runs to fix rounds, 37.0 `test_c23_restart`
+another ticket restarting, 36.1 to 33.8 four `test_c1_delivery_record` draft deliveries, 33.6
+`test_fix_rounds` red checks after a fix round, 33.3 `test_c11_parallel_guard` a second run, 33.0
+`test_c10_small_review`, then 32.0 down to 22.4 for sixteen more whole runs (`test_fix_rounds`,
+`test_c23_restart`, `test_c9_isolated_replay`, `test_c19_metrics`, `test_flow`, `test_c5_opencode`,
+`test_flow_setup_env`). Every one of them is a whole Ariane run (start, replay in fresh trees,
+review, fix rounds, delivery), the same family as the Linux list, about 7 times slower: none is a
+fixture set-up of avoidable git processes outside the five of "Decision", so the set-ups chosen
+from the Linux list stand. The "before" list on Windows was not taken (step 1 of "Handover"):
+the after list shows where the time goes, and it is in Ariane's own git and process work during
+a run, not in the tests' set-up. Making those runs cheaper in tests is a separate ticket.
 
 ## Decision
 - **Measure in CI.** The `Tests` step of `ci.yml` runs `uv run pytest --durations=30` on every
@@ -141,13 +150,12 @@ cannot push a workflow file (CLAUDE.md, "Cloud sessions"), so no CI run has repo
   exactly one group (`test_c9_shards_two_groups_split_the_whole_suite_from_the_stored_durations`).
   If the measurement says no shards, the dependency, the durations file and that test are
   removed in a follow-up ticket.
-- **The suite also runs serially in CI.** A `serial` job runs `uv run pytest -n 0` with Python
-  3.13 on Linux, macOS and Windows, so that a test that passes only under xdist (or only
-  serially, `-n 0` being how one test is debugged) is caught on all three systems. It is a job
-  of its own, beside the `checks` jobs, so the measured tests step stays the parallel one and
-  the required jobs do not wait for a serial Windows run. It is not a required check: a pull
-  request may merge while it runs, but the owner merges none whose `serial` jobs are red. It
-  does not shard: it is not on the critical path.
+- **The suite ran serially in CI once, on this pull request.** A `serial` job ran
+  `uv run pytest -n 0` with Python 3.13 on Linux, macOS and Windows, so that a test passing only
+  under xdist (or only serially) would show: all three passed (see "Durations"). The owner
+  decided (18 October 2026) to keep it for this pull request only: serially, Windows takes about
+  29 minutes, and a job nobody may merge past while it is red is a job everyone waits for.
+  Commit 2 removes it; a serial run after the merge belongs to the CI stages of #208.
 
 The workflow files cannot be pushed from a cloud session (CLAUDE.md, "Cloud sessions"). The
 owner applies the change from their machine, in two commits so that each step is measured.
@@ -232,7 +240,8 @@ become:
 
 The other steps (install, lint, format, types, file length, the two PowerShell smoke tests) run
 in both Windows shards unchanged: they take seconds, and each Windows job stays a complete
-check of the system apart from the half of the tests it skips. The `serial` job is unchanged.
+check of the system apart from the half of the tests it skips. The same commit removes the
+`serial` job.
 In the same commit, the last sentence of README's "Develop Ariane" section says that Windows
 CI runs the tests in two shards, `uv run pytest --splits 2 --group 1` (or `2`) with
 `--splitting-algorithm least_duration`, balanced from `.test_durations`.
@@ -248,12 +257,12 @@ the acceptance criteria on CI durations and on the serial suite are not shown.
 | Linux sandbox, 4 CPUs, git processes | 20,638 | 18,924 | (unchanged) |
 | Linux sandbox, summed set-up phase | 17.0 s | 4.7 s | (unchanged) |
 | Linux sandbox, `uv run pytest -n 0` | (not run) | 720 passed, 2 skipped, 400 s | (unchanged) |
-| Linux CI, tests step (3.13 / 3.11) | 123 s / 124 s (#205) | pending | pending |
-| macOS CI, tests step | 242 s (#205) | pending | pending |
-| Windows CI, tests step | 949 s (#205) | pending | pending (per shard) |
-| Windows CI, job | 16.3 min (#205) | pending | pending (per shard) |
-| Serial job, Linux / macOS / Windows | (no such job) | pending: pass or fail, step duration | (unchanged) |
-| Run URL | #205 | pending | pending |
+| Linux CI, tests step (3.13 / 3.11) | 123 s / 124 s (#205) | 125 s / 95 s | pending |
+| macOS CI, tests step | 242 s (#205) | 217 s | pending |
+| Windows CI, tests step | 949 s (#205) | 905 s (869 s on the run before commit 1) | pending (per shard) |
+| Windows CI, job | 16.3 min (#205) | 15 min | pending (per shard) |
+| Serial job, Linux / macOS / Windows | (no such job) | passed: 276 s / 473 s / 1,755 s | removed |
+| Run URL | #205 | https://github.com/plaplanche/ariane/actions/runs/39153818737 | pending |
 
 Wall time in the implementer's sandbox is not a usable measure: the same suite took 100 to
 150 s from run to run, with the change or without it, because of the sandbox's load. The CI
