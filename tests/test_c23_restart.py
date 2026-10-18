@@ -382,3 +382,58 @@ def test_c23_restart_a_forged_kept_branch_of_a_live_run_is_never_exempt(
     assert runs.kept_branches({8: runs.Run(8, "ariane/8", 1, started, old)}, {8}) == set()
     own = "ariane-restarted/8-20261018T100004Z"
     assert runs.kept_branches({8: runs.Run(8, "ariane/8", 1, started, own)}, {8}) == {own}
+
+
+def test_c23_restart_keeps_staged_work_that_differs_from_the_files(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    """Version 2 staged, then version 1 restored in the file only: both versions are kept, the
+    staged one in a commit of its own below the files' one."""
+    head = leave_killed_run(project)
+    tree = worktree(project)
+    (tree / "app.txt").write_text("version 2\n", encoding="utf-8")
+    sh(["git", "add", "app.txt"], tree)
+    (tree / "app.txt").write_text("version 1\n", encoding="utf-8")
+
+    assert start(project, tracker, FakeRuntime(), restarting=True).exit_code == 0
+    [kept] = kept_branches(project)
+    assert kept_file(project, kept, "app.txt") == "version 1"
+    assert kept_file(project, f"{kept}^", "app.txt") == "version 2"
+    assert sh(["git", "rev-parse", f"{kept}^^"], project.root) == head
+
+
+def test_c23_restart_the_saved_work_is_reachable_before_any_tree_is_removed(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A restart that dies while removing the trees has already written the kept branch."""
+    head = leave_killed_run(project)
+    tree = worktree(project)
+    (tree / "app.txt").write_text("version 2\n", encoding="utf-8")
+
+    def killed(*args: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(restart, "_remove_tree", killed)
+    kept = "ariane-restarted/7-20261018T000000Z"
+    with pytest.raises(KeyboardInterrupt):
+        restart.clear(project.root, tree, 7, "ariane/7", kept)
+    assert kept_file(project, kept, "app.txt") == "version 2"
+    assert sh(["git", "rev-parse", f"{kept}^"], project.root) == head
+    assert tree.is_dir()
+
+
+def test_c23_restart_an_existing_kept_name_stops_before_removing_anything(
+    project: Project,
+) -> None:
+    head = leave_killed_run(project)
+    tree = worktree(project)
+    kept = "ariane-restarted/7-20261018T000000Z"
+    sh(["git", "branch", kept, "main"], project.root)
+    with pytest.raises(git.GitError):
+        restart.clear(project.root, tree, 7, "ariane/7", kept)
+    for name in ("7", "7-replay-1", "7-review"):
+        assert tree.with_name(name).is_dir()
+    assert sh(["git", "rev-parse", "ariane/7"], project.root) == head
+    assert sh(["git", "rev-parse", kept], project.root) == sh(
+        ["git", "rev-parse", "main"], project.root
+    )

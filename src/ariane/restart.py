@@ -170,10 +170,11 @@ def leftovers(worktree: Path, number: int) -> list[Path]:
 
 
 def clear(repo_root: Path, worktree: Path, number: int, branch: str, kept: str) -> Restarted | None:
-    """Save the uncommitted work of the ticket's tree, remove the ticket's working trees and
-    keep its local branch as `kept`, the saved work on top; None when there was nothing to
-    clear (a plain start). Nothing is removed until the work is saved: if saving fails, the
-    restart stops with every tree in place."""
+    """Save the uncommitted work of the ticket's tree, keep its local branch as `kept` with the
+    saved work on top, then remove the ticket's working trees and its old branch name; None when
+    there was nothing to clear (a plain start). `kept` is written as a new ref before anything is
+    removed, so the saved work stays reachable whenever the restart dies: if saving or that
+    write fails (`kept` already exists), the restart stops with every tree in place."""
     removed = leftovers(worktree, number)
     has_branch = git.local_branch_exists(repo_root, branch)
     if not removed and not has_branch:
@@ -182,13 +183,13 @@ def clear(repo_root: Path, worktree: Path, number: int, branch: str, kept: str) 
     registered = _worktree_paths(repo_root)
     previous = git.out(["rev-parse", f"refs/heads/{branch}"], repo_root) if has_branch else ""
     saved = _save(worktree, previous) if worktree.resolve() in registered else ""
+    if saved or previous:  # created, never overwritten: an existing `kept` stops the restart
+        git.git(["update-ref", f"refs/heads/{kept}", saved or previous, ""], repo_root)
     for tree in removed:
         _remove_tree(repo_root, tree, registered)
     git.git(["worktree", "prune"], repo_root)
     if has_branch:
-        git.git(["branch", "-m", branch, kept], repo_root)
-    if saved:
-        git.git(["update-ref", f"refs/heads/{kept}", saved, previous], repo_root)
+        git.git(["branch", "-D", branch], repo_root)  # its config goes with it
     if not has_branch and not saved:
         return Restarted(tuple(removed), "", "", "", "", None)
     folder = ticket.relative_folder(number)
@@ -205,23 +206,40 @@ def clear(repo_root: Path, worktree: Path, number: int, branch: str, kept: str) 
 
 def _save(tree: Path, branch_head: str) -> str:
     """A commit of everything in `tree` that is not ignored, tracked or not, on top of
-    `branch_head` (and of the tree's own HEAD when it differs, so both stay reachable); "" when
-    the tree holds nothing beyond its HEAD and that HEAD is on the branch. Built in a temporary
-    index: the tree, its index and its refs are untouched."""
+    `branch_head` (and of the tree's own HEAD when it differs, so both stay reachable); when the
+    tree's index differs from both its HEAD and its files, the staged content is a commit of its
+    own just below, so neither version is lost. "" when the tree and its index hold nothing
+    beyond its HEAD and that HEAD is on the branch. Built in temporary indexes: the tree, its
+    index and its refs are untouched."""
     tree_head = git.out(["rev-parse", "HEAD"], tree)
+    head_tree = git.out(["rev-parse", f"{tree_head}^{{tree}}"], tree)
+    index = Path(git.out(["rev-parse", "--path-format=absolute", "--git-path", "index"], tree))
     with tempfile.TemporaryDirectory(prefix="ariane-restart-") as scratch:
         env = {**git.token_free_environment(), "GIT_INDEX_FILE": str(Path(scratch) / "index")}
+        if index.is_file():
+            shutil.copyfile(index, env["GIT_INDEX_FILE"])
+            staged = git.out(["write-tree"], tree, env=env)  # fails on a conflicted index
+        else:
+            staged = head_tree
         git.git(["read-tree", tree_head], tree, env=env)
         git.git(["add", "--all"], tree, env=env)
         snapshot = git.out(["write-tree"], tree, env=env)
-    clean = snapshot == git.out(["rev-parse", f"{tree_head}^{{tree}}"], tree)
+    clean = snapshot == head_tree and staged == head_tree
     if clean and branch_head and git.is_ancestor(tree, tree_head, branch_head):
         return ""
     parents = list(dict.fromkeys(h for h in (branch_head, tree_head) if h))
-    message = "Work left uncommitted in the working tree when the run stopped (ariane --restart)"
-    args = ["commit-tree", snapshot, *(a for h in parents for a in ("-p", h)), "-m", message]
     identity = git._identity(os.environ)  # Ariane's own, as on its other commits
-    return git.out(args, tree, env={**git.token_free_environment(), **identity})
+    commit_env = {**git.token_free_environment(), **identity}
+
+    def commit(tree_id: str, on: list[str], message: str) -> str:
+        args = ["commit-tree", tree_id, *(a for h in on for a in ("-p", h)), "-m", message]
+        return git.out(args, tree, env=commit_env)
+
+    if staged not in (head_tree, snapshot):
+        staged_message = "Work left staged in the working tree when the run stopped"
+        parents = [commit(staged, parents, f"{staged_message} (ariane --restart)")]
+    message = "Work left uncommitted in the working tree when the run stopped (ariane --restart)"
+    return commit(snapshot, parents, message)
 
 
 def _worktree_paths(repo_root: Path) -> set[Path]:

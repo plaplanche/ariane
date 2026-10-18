@@ -26,19 +26,23 @@ removes.
 - **`--restart`.** With the lock held and no `ariane/<n>` on the remote (a pushed ticket is never
   restarted), Ariane removes the ticket's trees that exist (`git worktree remove --force` each,
   then `git worktree prune`; a folder at a tree path that git does not know, left by a run killed
-  before it registered it, is Ariane's own and removed as a folder, a link unlinked), renames the local branch to
+  before it registered it, is Ariane's own and removed as a folder, a link unlinked), keeps the local branch as
   `ariane-restarted/<n>-<UTC time as YYYYMMDDTHHMMSSZ>`, and starts the ticket as a new run.
   Nothing to remove: a plain start. `--restart --shadow` is refused before the configuration is
   read; a shadow ticket starts over by removing its clone.
-- **Nothing is deleted.** The previous branch is renamed, never deleted: what the previous run
+- **Nothing is deleted.** The previous branch is kept, never deleted: what the previous run
   committed (its records, the agent's work) stays reachable under a name that sorts by time and
   cannot collide with a ticket branch `ariane/<m>`. Before any tree is removed, the files left
   uncommitted in the ticket's tree `<n>` (modified or untracked, not ignored: a run killed during
   its implementer session has its work only there) are saved: `git add --all` into a temporary
   index, `write-tree`, then `commit-tree` on top of the branch's head (and of the tree's own HEAD
   when it is not on the branch, so both stay reachable); the kept branch points at that commit.
-  The tree, its index and its refs are not touched, so if saving fails the restart stops with
-  everything in place. The `<n>-review` and `<n>-replay*` trees are Ariane's checkouts of
+  Content staged in the tree's index that differs from both its HEAD and its files (a copy of the
+  index, `write-tree`) is a commit of its own just below, so neither version is lost. The tree,
+  its index and its refs are not touched, so if saving fails the restart stops with everything in
+  place. The kept name is then created as a new ref (never overwritten: an existing name stops
+  the restart) at the saved commit or the branch's head, **before** any tree is removed, and the
+  old name `ariane/<n>` is deleted last: a restart that dies midway leaves the work reachable. The `<n>-review` and `<n>-replay*` trees are Ariane's checkouts of
   committed work and are removed as they are. Ignored files (build output, environments) are not
   saved.
 - **Records.** The new run's journal opens with `ticket.restarted`: the trees removed, the kept

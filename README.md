@@ -150,11 +150,12 @@ branch.
 **Restarting a stopped ticket.** A ticket that stopped (a blocking check, a budget stop, a
 reviewer failure) or whose process died (Ctrl-C, a machine restart) leaves its working trees and
 its branch, so `ariane start 12` refuses it and names `--restart`. `ariane start 12 --restart`
-removes the ticket's working trees (`12`, `12-review`, `12-replay-*`), renames the branch
-`ariane/12` to `ariane-restarted/12-<UTC time>` (kept, never deleted: what the previous run
+removes the ticket's working trees (`12`, `12-review`, `12-replay-*`), keeps the branch
+`ariane/12` as `ariane-restarted/12-<UTC time>` (kept, never deleted: what the previous run
 committed stays there) and starts the ticket as a new run, whose journal opens with what was
 removed and kept. Files the previous run left uncommitted in its working tree `12`, modified or
-untracked (not ignored), are first saved in a commit on top of the kept branch. It refuses while
+untracked (not ignored), and staged content, are first saved in commits on top of the kept
+branch, written before any tree is removed. It refuses while
 another `ariane start 12` runs (each run holds `<repo>.ariane/locks/12.lock`), when `ariane/12` is
 already on the remote, and with `--shadow` (remove the clone instead). `ariane report` counts the
 time from the previous stop to the restart in the human time
