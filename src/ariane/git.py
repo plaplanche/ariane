@@ -31,6 +31,7 @@ _SAFE_OPTIONS = [
 ]
 # Every diff Ariane runs: no external diff driver or textconv filter from the configuration.
 _PLAIN_DIFF = ["diff", "--no-ext-diff", "--no-textconv"]
+_URL_REWRITES = (".insteadof", ".pushinsteadof")
 # Listings `git update-server-info` regenerates for the dumb HTTP transport: not part of the guard.
 # Markers of a push refused for authentication, in git's output (lowercase).
 _AUTH_REFUSALS = (
@@ -181,7 +182,7 @@ def add_detached_worktree(cwd: Path, path: Path, commit: str) -> None:
 
 # Lower case: names are compared case-folded, as case-insensitive file systems find them.
 INSTRUCTION_FILES = ("claude.md", "claude.local.md", "agents.md", "agents.override.md")
-INSTRUCTION_DIRS = (".claude", ".codex", ".agents")
+INSTRUCTION_DIRS = (".claude", ".codex", ".agents", ".pi")
 
 
 def add_reviewer_worktree(cwd: Path, path: Path, commit: str) -> None:
@@ -218,6 +219,7 @@ def _leaves_tree(link: Path, root: Path) -> bool:
 
 
 ANCESTOR_INSTRUCTIONS = ("CLAUDE.md", "CLAUDE.local.md")
+PI_FILES = ("settings.json", "models.json", "AGENTS.md", "SYSTEM.md", "APPEND_SYSTEM.md")
 
 
 def instruction_snapshot(
@@ -225,7 +227,7 @@ def instruction_snapshot(
 ) -> dict[str, str]:
     """The instruction files a reviewer runtime can load from outside the review tree, by part
     (ADR 0031): `CLAUDE.md` and `CLAUDE.local.md` in each of `dirs` and their ancestors, the
-    user-level Claude file, and the global instructions and configuration of opencode or Codex.
+    user-level Claude file, and the global instructions and configuration of opencode, Codex or pi.
     `env` is the reviewer's environment. An absent file is a part too: creating one is a change."""
     paths: list[Path] = []
     for folder in dirs:
@@ -243,6 +245,8 @@ def instruction_snapshot(
     elif runtime == "codex":
         codex = Path(env.get("CODEX_HOME") or home / ".codex")
         paths += [codex / name for name in ("AGENTS.md", "AGENTS.override.md", "config.toml")]
+    elif runtime == "pi":
+        paths += [Path(env.get("PI_CODING_AGENT_DIR") or home / ".pi/agent") / n for n in PI_FILES]
     return {f"instructions {path.as_posix()}": _digest(path) for path in dict.fromkeys(paths)}
 
 
@@ -274,12 +278,8 @@ def push_rewrites(cwd: Path, url: str, env: Mapping[str, str] | None = None) -> 
     rewrites = []
     for entry in listing.split("\0"):
         key, _, prefix = entry.partition("\n")
-        lowered = key.lower()
-        if (
-            lowered.startswith("url.")
-            and lowered.endswith((".insteadof", ".pushinsteadof"))
-            and url.startswith(prefix)
-        ):
+        kind = key.lower()
+        if kind.startswith("url.") and kind.endswith(_URL_REWRITES) and url.startswith(prefix):
             rewrites.append(f"{key}={prefix}")
     return rewrites
 

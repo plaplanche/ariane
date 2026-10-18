@@ -161,3 +161,12 @@ the process kept running. Decided for C10:
 Residual: a process that changes its session at every fork (a new `setsid()` in each generation)
 still forms a new group the scans may never see running, and can escape them; only an
 operating-system sandbox (cgroups, slice 7) closes that.
+
+## Amendment (#182, 2026-10-18): pi
+
+With the pi reviewer runtime (ADR 0051), `.pi/` joins the directories removed from the reviewer
+tree at any depth: pi reads project settings, extensions and a `SYSTEM.md` from it. The guard also
+watches pi's global folder (`$PI_CODING_AGENT_DIR`, else `~/.pi/agent`, from the reviewer's
+environment): `settings.json`, `models.json` (it can point a provider elsewhere), `AGENTS.md`,
+`SYSTEM.md` and `APPEND_SYSTEM.md`, present or absent, as for opencode and Codex. pi's
+`auth.json` is not watched: it changes when pi refreshes a login token, and Ariane never reads it.

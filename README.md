@@ -1,7 +1,7 @@
 # Ariane
 
 **Ariane is a local command-line orchestrator that turns GitHub issues into reviewed pull requests
-with AI coding agents (Claude Code, Codex, opencode), while the human keeps deciding,
+with AI coding agents (Claude Code, Codex, opencode, pi), while the human keeps deciding,
 understanding and approving.** The name comes from Ariadne's thread (*le fil d'Ariane*): you
 never lose the thread of your own code.
 
@@ -27,7 +27,7 @@ run on macOS (see [Measure Ariane on your project](#measure-ariane-on-your-proje
 Slice 3 (review, vendor-neutral) is done: `ariane start <issue>` takes a GitHub issue to a
 pull request whose checks Ariane replayed, each in its own clean tree, and that a read-only reviewer on a
 different model approved, after up to two fix rounds (`[agents.reviewer]` in `ariane.toml`; the
-reviewer can run on Claude Code, opencode or Codex). `ariane verify <branch>` gives a branch finished by
+reviewer can run on Claude Code, opencode, Codex or pi). `ariane verify <branch>` gives a branch finished by
 hand the same checks and review. Approvals
 (slice 5) come next (see the roadmap in [`docs/spec.md`](docs/spec.md)).
 
@@ -67,7 +67,7 @@ The reviewer is given the ticket's Out of scope section, and a finding about out
 The reviewer also checks the order of side effects: a write before the check that should guard it, or a retry that can write twice, is a blocking finding.
 
 The reviewer loads nothing from the tree under review (no hooks, settings or instruction files; ADR 0031): a Claude Code reviewer's `tools` are a subset of `Read`, `Glob`, `Grep`, and it gets the base branch's `CLAUDE.md` in its prompt as data.
-The instruction files it could load from outside that tree (`CLAUDE.md` and `CLAUDE.local.md` in the ancestors of its folders, the user-level `CLAUDE.md`, opencode's or Codex's global instructions and configuration) are guarded from before the first setup command and compared right after every setup (before its check runs), agent session and check: one written by any of them stops the ticket before the review.
+The instruction files it could load from outside that tree (`CLAUDE.md` and `CLAUDE.local.md` in the ancestors of its folders, the user-level `CLAUDE.md`, opencode's, Codex's or pi's global instructions and configuration) are guarded from before the first setup command and compared right after every setup (before its check runs), agent session and check: one written by any of them stops the ticket before the review.
 A small change can get a lighter review (ADR 0046): with `[agents.reviewer.small]` (`max_lines`, and optional `model`, `max_budget_usd`, `max_tokens`, `timeout_minutes`), a review round whose diff has at most `max_lines` changed lines (added plus deleted, without `work/`, a binary file counting 0) uses those values instead of the reviewer's, and the reviewer is told to review the changed files, their tests and their callers rather than the whole repository. The runtime and tools stay the reviewer's, the small model must still differ from the implementer's, and `ariane verify` applies the same rule; the journal and `metrics.json` (`changed_lines`) record the size. Without the table nothing changes.
 The review always gets the full list of changed files (`git diff --name-status`); when the diff is over 200,000 characters it is cut, the prompt names the files whose hunks are missing, and the journal and the pull request body say so.
 On Linux, Ariane is the subreaper of the processes it starts: one an agent, a setup or a check leaves running (in its process group or a new session) is killed as soon as that command ends, even when it fails or is interrupted, counted in `metrics.json` and stops the ticket; `ariane verify` keeps the `metrics.json` of a refused run in `<repo>.ariane/verify/<branch>/`.
@@ -88,6 +88,27 @@ time. Not logged in and no `api_key_env`: the ticket stops with "Codex is not lo
 `api_key_env` the CLI must be logged in with ChatGPT: a CLI logged in with an API key stops the
 ticket ("Codex is logged in with an API key, not ChatGPT"; run `codex login --device-auth` with the
 ChatGPT account, or set `api_key_env`), since `max_tokens` cannot bound a per-token turn (ADR 0043).
+
+### Reviewer on pi
+
+The reviewer can run on the [pi coding agent](https://www.npmjs.com/package/@mariozechner/pi-coding-agent),
+which reaches many providers (Anthropic, OpenAI, Google, DeepSeek, OpenRouter, GitHub Copilot and
+others). Install it with `npm install -g @mariozechner/pi-coding-agent` and check that `pi --version`
+works, then set `runtime = "pi"`, `model = "<provider>/<id>"` (`pi --list-models` lists them),
+`tools = ["read", "grep", "find", "ls"]` (or a subset: `bash`, `edit` and `write` are refused) and
+`max_tokens` in `[agents.reviewer]`. Ariane only drives the official CLI: `pi -p --mode json` with
+the prompt on standard input, the read-only tools, no session file, no extensions, skills, prompt
+templates, themes or context files, offline, and `PI_TELEMETRY=0`. Log in once by running `pi` and
+`/login` (an API key, or a subscription such as ChatGPT Plus/Pro, Claude Pro/Max or GitHub Copilot):
+pi stores it in `~/.pi/agent/auth.json` (or under `PI_CODING_AGENT_DIR`). Keep that file private,
+like a password: Ariane never reads, copies or logs it, and gives the process no provider key from
+its own environment. Or set `api_key_env = "<variable>"` in `[agents.reviewer]`: that variable's
+value is given to the pi process only, under the provider's own variable (`ANTHROPIC_API_KEY` for
+`anthropic/...`). `max_tokens` is required because pi may bill per token whatever the login (pi's
+docs say Claude Pro/Max through pi draws from extra usage); `ariane report` shows the cost pi reports.
+Without credentials the ticket stops with "pi has no credentials for <provider>", never a no-go. A
+`.pi/` folder in the repository is left out of the reviewer's tree, and pi's `settings.json`,
+`models.json`, `AGENTS.md`, `SYSTEM.md` and `APPEND_SYSTEM.md` are guarded (ADR 0051).
 
 ### Reviewer on opencode
 

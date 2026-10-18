@@ -15,6 +15,7 @@ from ariane.claude_code import ClaudeCodeRuntime
 from ariane.codex import CodexRuntime
 from ariane.github import GitHubTracker
 from ariane.opencode import OpenCodeRuntime
+from ariane.pi import PiRuntime
 from ariane.runtime import AgentRuntime, RoutedRuntime
 
 EXIT_OK = flow.EXIT_OK
@@ -156,6 +157,8 @@ def _runtime(cfg: config.Config) -> RoutedRuntime:
             runtimes[role] = OpenCodeRuntime(model=agent.model)
         elif agent.runtime == config.CODEX:
             runtimes[role] = CodexRuntime(api_key_env=agent.api_key_env)
+        elif agent.runtime == config.PI:
+            runtimes[role] = PiRuntime(api_key_env=agent.api_key_env)
         else:
             runtimes[role] = ClaudeCodeRuntime()
     return RoutedRuntime(runtimes)

@@ -1,6 +1,6 @@
 # Module `ariane.runtime`
 
-The agent runtime interface (C5): one fresh session per stage, whatever the agent CLI. Claude Code implements it, and opencode and Codex for the reviewer role.
+The agent runtime interface (C5): one fresh session per stage, whatever the agent CLI. Claude Code implements it, and opencode, Codex and pi for the reviewer role.
 
 ## Public API
 
@@ -89,6 +89,7 @@ flowchart LR
   flow --> runtime
   metrics --> runtime
   opencode --> runtime
+  pi --> runtime
   review_session --> runtime
   runtime --> attempts
   runtime --> config

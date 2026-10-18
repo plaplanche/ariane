@@ -65,6 +65,7 @@ flowchart LR
 - [`measures`](modules/measures.md)
 - [`metrics`](modules/metrics.md)
 - [`opencode`](modules/opencode.md)
+- [`pi`](modules/pi.md)
 - [`process`](modules/process.md)
 - [`redact`](modules/redact.md)
 - [`replay`](modules/replay.md)

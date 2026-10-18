@@ -92,6 +92,7 @@ flowchart LR
   cli --> github
   cli --> logs
   cli --> opencode
+  cli --> pi
   cli --> process
   cli --> report
   cli --> runtime

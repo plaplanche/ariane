@@ -24,6 +24,7 @@ flowchart TD
   cli --> github
   cli --> logs
   cli --> opencode
+  cli --> pi
   cli --> process
   cli --> report
   cli --> runtime
@@ -75,6 +76,9 @@ flowchart TD
   opencode --> attempts
   opencode --> process
   opencode --> runtime
+  pi --> config_schema
+  pi --> process
+  pi --> runtime
   process --> logs
   replay --> checks
   replay --> config

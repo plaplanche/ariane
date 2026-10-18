@@ -2,15 +2,103 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 CLAUDE_CODE = "claude-code"
 OPENCODE = "opencode"
 CODEX = "codex"
-# Runtimes per role: opencode and codex start with the reviewer (ADR 0029, ADR 0043).
-RUNTIMES = {"implementer": (CLAUDE_CODE,), "reviewer": (CLAUDE_CODE, OPENCODE, CODEX)}
+PI = "pi"
+# Runtimes per role: opencode, codex and pi start with the reviewer (ADR 0029, 0043, 0051).
+RUNTIMES = {"implementer": (CLAUDE_CODE,), "reviewer": (CLAUDE_CODE, OPENCODE, CODEX, PI)}
 OPENCODE_TOOLS = ("read", "glob", "grep")
+PI_TOOLS = ("read", "grep", "find", "ls")  # pi's read-only tools (not bash, edit, write)
 REVIEWER_TOOLS = ("Read", "Glob", "Grep")
+# The provider's own key variable, from pi's documented list (docs/providers.md, pi 0.73.1).
+PI_PROVIDER_KEYS = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "azure-openai-responses": "AZURE_OPENAI_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "google": "GEMINI_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "cerebras": "CEREBRAS_API_KEY",
+    "cloudflare-ai-gateway": "CLOUDFLARE_API_KEY",
+    "cloudflare-workers-ai": "CLOUDFLARE_API_KEY",
+    "xai": "XAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
+    "zai": "ZAI_API_KEY",
+    "opencode": "OPENCODE_API_KEY",
+    "opencode-go": "OPENCODE_API_KEY",
+    "huggingface": "HF_TOKEN",
+    "fireworks": "FIREWORKS_API_KEY",
+    "kimi-coding": "KIMI_API_KEY",
+    "minimax": "MINIMAX_API_KEY",
+    "minimax-cn": "MINIMAX_CN_API_KEY",
+    "xiaomi": "XIAOMI_API_KEY",
+    "xiaomi-token-plan-cn": "XIAOMI_TOKEN_PLAN_CN_API_KEY",
+    "xiaomi-token-plan-ams": "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
+    "xiaomi-token-plan-sgp": "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+}
+
+
+def agent_problem(
+    role: str,
+    runtime: str,
+    model: str,
+    tools: Sequence[str],
+    api_key_env: str | None,
+    max_tokens: bool,
+) -> tuple[str, str] | None:
+    """The first rule of its runtime an `[agents.<role>]` table breaks, as (key, message), or
+    None (C10, ADR 0029, ADR 0043, ADR 0051). `max_tokens`: whether the table sets it."""
+    if api_key_env is not None and runtime not in (CODEX, PI):
+        return "api_key_env", 'only with runtime "codex" or "pi"'
+    if api_key_env is not None and not max_tokens:
+        return "max_tokens", "required with api_key_env (a per-token session needs a token cap)"
+    if runtime in (OPENCODE, PI):
+        allowed = OPENCODE_TOOLS if runtime == OPENCODE else PI_TOOLS
+        unknown = [t for t in tools if t not in allowed]
+        if unknown:
+            return (
+                "tools",
+                f"{unknown[0]!r} is not an allowed {runtime} tool ({', '.join(allowed)})",
+            )
+        problem = model_problem(runtime, model, api_key_env)
+        if problem is not None:
+            return "model", problem
+        if not max_tokens:  # neither caps its own cost
+            reason = f"{runtime} does not cap its own cost; Ariane needs a token cap"
+            return "max_tokens", f"required with {runtime} ({reason})"
+    elif role == "reviewer":
+        other = [t for t in tools if t not in REVIEWER_TOOLS]
+        if other:
+            allow = ", ".join(REVIEWER_TOOLS)
+            return (
+                "tools",
+                f"{other[0]} is not allowed (the reviewer's tools are an allow list: {allow}; C10)",
+            )
+    if "Skill" in tools:
+        return "tools", "Skill is not allowed (undeclared skills, C6)"
+    return None
+
+
+def model_problem(runtime: str, model: str, api_key_env: str | None) -> str | None:
+    """opencode and pi want `<provider>/<model>`; with `api_key_env`, pi passes the key under the
+    provider's own variable, so the provider must be one pi documents (ADR 0051)."""
+    if runtime not in (OPENCODE, PI):
+        return None
+    provider, _, name = model.partition("/")
+    if not provider or not name:
+        return f"{runtime} wants <provider>/<model>"
+    if runtime == PI and api_key_env is not None and provider.lower() not in PI_PROVIDER_KEYS:
+        return (
+            f"api_key_env needs a provider whose key variable pi documents; {provider!r} is not"
+            " one (or remove api_key_env and use pi's login)"
+        )
+    return None
 
 
 _STR: dict[str, Any] = {"type": "string", "minLength": 1}
@@ -22,7 +110,7 @@ _AGENT: dict[str, Any] = {
     "additionalProperties": False,
     "required": ["runtime", "model", "tools", "max_budget_usd", "timeout_minutes"],
     "properties": {
-        "runtime": {"enum": [CLAUDE_CODE, OPENCODE, CODEX]},
+        "runtime": {"enum": [CLAUDE_CODE, OPENCODE, CODEX, PI]},
         "model": _STR,
         "tools": {**_ARGV, "description": "Tools the agent may use (not Skill)."},
         "max_budget_usd": _POSITIVE,
@@ -30,7 +118,7 @@ _AGENT: dict[str, Any] = {
             "type": "integer",
             "exclusiveMinimum": 0,
             "description": "Cap on tokens counted by Ariane per session;"
-            " required when runtime is opencode.",
+            " required when runtime is opencode or pi.",
         },
         "timeout_minutes": _POSITIVE,
         "idle_minutes": {
@@ -40,8 +128,9 @@ _AGENT: dict[str, Any] = {
         },
         "api_key_env": {
             **_STR,
-            "description": "Codex reviewer only: variable holding an API key, passed to the"
-            " session as CODEX_API_KEY; without it the CLI's own login (ChatGPT plan) is used.",
+            "description": "Codex or pi reviewer only: variable holding an API key, passed to the"
+            " session as CODEX_API_KEY (Codex) or as the model provider's own key variable (pi);"
+            " without it the CLI's own login is used.",
         },
     },
 }
@@ -63,14 +152,33 @@ _SMALL: dict[str, Any] = {
     },
 }
 
-# Only a role that may run on opencode requires `max_tokens` for it.
-_OPENCODE_NEEDS_TOKENS: dict[str, Any] = {
+# Only a role that may run on opencode or pi requires `max_tokens` for it.
+_NEEDS_TOKENS: dict[str, Any] = {
     "if": {
         "type": "object",
-        "properties": {"runtime": {"const": OPENCODE}},
+        "properties": {"runtime": {"enum": [OPENCODE, PI]}},
         "required": ["runtime"],
     },
     "then": {"type": "object", "required": ["max_tokens"]},
+}
+
+# A pi reviewer may only read (ADR 0051).
+_PI_REVIEWER_TOOLS: dict[str, Any] = {
+    "if": {
+        "type": "object",
+        "properties": {"runtime": {"const": PI}},
+        "required": ["runtime"],
+    },
+    "then": {
+        "type": "object",
+        "properties": {
+            "tools": {
+                "type": "array",
+                "items": {"enum": list(PI_TOOLS)},
+                "description": "A pi reviewer: read, grep, find, ls only",
+            }
+        },
+    },
 }
 
 # A Claude Code reviewer may only read (ADR 0031).
@@ -155,7 +263,7 @@ SCHEMA: dict[str, Any] = {
                 "reviewer": {
                     **_AGENT,
                     "properties": {**_AGENT["properties"], "small": _SMALL},
-                    "allOf": [_OPENCODE_NEEDS_TOKENS, _CLAUDE_REVIEWER_TOOLS],
+                    "allOf": [_NEEDS_TOKENS, _CLAUDE_REVIEWER_TOOLS, _PI_REVIEWER_TOOLS],
                     "description": "Read-only reviewer (C10); model differs from the implementer.",
                 },
             },
