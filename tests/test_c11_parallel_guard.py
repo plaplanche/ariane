@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -172,7 +173,7 @@ def test_c11_parallel_guard_the_registry_entry_is_removed_when_a_run_stops_or_ra
     with pytest.raises(RuntimeError):
         start(project, tracker, FakeRuntime(action=crash), number=8)
     assert runs.running(_registry(project)) == {}
-    assert sorted(p.name for p in _registry(project).iterdir()) == [runs.ENDED]
+    assert sorted(p.name for p in _registry(project).iterdir()) == [runs.LOCK, runs.ENDED]
 
 
 def _dead_pid() -> int:
@@ -274,3 +275,129 @@ def test_c11_parallel_guard_a_wrong_value_or_a_bare_edit_is_not_tolerated(
         config.write("# a comment changes the file, not its keys\n")
     changes = runs.foreign_changes(before, _snapshot(project), {8}, "main")
     assert [c for c in changes if c.startswith("changed: file ")]
+
+
+def test_c11_parallel_guard_reads_git_before_the_runs_that_authorize_it(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run 8 registers and creates its branch right after the first run reads the registry:
+    the guard's git snapshot must not see changes newer than the registrations it uses."""
+    real_during = runs.during
+    stack, started = contextlib.ExitStack(), list[int]()
+
+    def during(where: Path, since: str) -> set[int]:
+        numbers = real_during(where, since)
+        if not started:  # once: the other run starts just after this read
+            started.append(8)
+            stack.enter_context(runs.registered(_registry(project), 8, "ariane/8"))
+            _second_run_branch(project)
+        return numbers
+
+    monkeypatch.setattr(runs, "during", during)
+    with stack:
+        outcome = start(project, tracker, FakeRuntime(action=edit_app))
+    assert outcome.exit_code == 0, (outcome.line, outcome.detail)
+
+
+def test_c11_parallel_guard_a_run_ending_is_always_in_the_registry_or_its_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    since = runs.now()
+    seen: list[set[int]] = []
+    real_release = runs._release
+
+    def release(entry: Path, run: runs.Run) -> None:  # a reader between the two writes
+        seen.append(set(runs._live(tmp_path)) | runs._ended(tmp_path, since))
+        real_release(entry, run)
+
+    monkeypatch.setattr(runs, "_release", release)
+    with runs.registered(tmp_path, 3, "ariane/3"):
+        pass
+    assert seen == [{3}]
+    assert runs.during(tmp_path, since) == {3}
+    assert not (tmp_path / "3").exists()
+
+
+def test_c11_parallel_guard_a_run_never_removes_an_entry_that_is_not_its_own(
+    tmp_path: Path,
+) -> None:
+    with runs.registered(tmp_path, 3, "ariane/3"):
+        _write_entry(tmp_path, 3, os.getpid())  # replaced meanwhile: another run's entry
+        other = (tmp_path / "3").read_text(encoding="utf-8")
+    assert (tmp_path / "3").read_text(encoding="utf-8") == other
+
+
+class _Paused:
+    """`runs.alive` pausing its first call for `pid` until `go` is set."""
+
+    def __init__(self, pid: int) -> None:
+        self.pid, self.inside, self.go = pid, threading.Event(), threading.Event()
+        self.real = runs.alive
+
+    def __call__(self, pid: int) -> bool:
+        if pid == self.pid and not self.inside.is_set():
+            self.inside.set()
+            assert self.go.wait(10)
+        return self.real(pid)
+
+
+def _hold(
+    where: Path, number: int, held: threading.Event, leave: threading.Event, results: list[object]
+) -> None:
+    try:
+        with runs.registered(where, number, f"ariane/{number}") as run:
+            results.append(run)
+            held.set()
+            assert leave.wait(10)
+    except Stop as stop:
+        results.append(stop)
+        held.set()
+
+
+def test_c11_parallel_guard_two_starters_reclaiming_one_stale_entry_admit_one_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_entry(tmp_path, 3, dead := _dead_pid())
+    paused = _Paused(dead)
+    monkeypatch.setattr(runs, "alive", paused)
+    leave, results = threading.Event(), list[object]()
+    held = [threading.Event(), threading.Event()]
+    first = threading.Thread(target=_hold, args=(tmp_path, 3, held[0], leave, results))
+    first.start()
+    assert paused.inside.wait(10)  # the first starter read the stale entry
+    second = threading.Thread(target=_hold, args=(tmp_path, 3, held[1], leave, results))
+    second.start()
+    time.sleep(0.2)
+    paused.go.set()
+    assert held[0].wait(10) and held[1].wait(10)
+    admitted = [r for r in results if isinstance(r, runs.Run)]
+    assert len(admitted) == 1 and len(results) == 2
+    assert runs.running(tmp_path) == {3: admitted[0]}
+    leave.set()
+    first.join(10)
+    second.join(10)
+    assert not (tmp_path / "3").exists()
+
+
+def test_c11_parallel_guard_cleaning_a_stale_entry_never_erases_a_new_registration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_entry(tmp_path, 3, dead := _dead_pid())
+    paused = _Paused(dead)
+    monkeypatch.setattr(runs, "alive", paused)
+    found: list[dict[int, runs.Run]] = []
+    reader = threading.Thread(target=lambda: found.append(runs.running(tmp_path)))
+    reader.start()
+    assert paused.inside.wait(10)  # the reader judged the old entry stale
+    held, leave, results = threading.Event(), threading.Event(), list[object]()
+    starter = threading.Thread(target=_hold, args=(tmp_path, 3, held, leave, results))
+    starter.start()
+    time.sleep(0.2)
+    paused.go.set()
+    reader.join(10)
+    assert held.wait(10)
+    assert found == [{}]
+    assert isinstance(results[0], runs.Run)
+    assert runs.running(tmp_path) == {3: results[0]}
+    leave.set()
+    starter.join(10)

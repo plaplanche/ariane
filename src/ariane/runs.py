@@ -7,6 +7,7 @@ import contextlib
 import json
 import os
 import sys
+import time
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
@@ -17,6 +18,7 @@ from ariane import git
 from ariane.stop import Stop
 
 FOLDER = "runs"
+LOCK = ".lock"  # serializes every read and write of the registry
 ENDED = "ended.jsonl"  # one line per run that ended: number, branch, start and end
 REMOTE = "origin"
 
@@ -72,46 +74,88 @@ def _read(path: Path) -> Run | None:
 
 
 @contextlib.contextmanager
+def _locked(where: Path) -> Iterator[None]:
+    """Hold `where/.lock` for the block: registration, reclaiming stale entries, ending a run
+    and reading the registry never interleave. The system frees the lock when its process dies,
+    so a crashed run never leaves it held."""
+    where.mkdir(parents=True, exist_ok=True)
+    with (where / LOCK).open("a+b") as file:
+        if sys.platform == "win32":
+            import msvcrt
+
+            file.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(file.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    time.sleep(0.01)
+            try:
+                yield
+            finally:
+                file.seek(0)
+                msvcrt.locking(file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(file.fileno(), fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
 def registered(where: Path, number: int, branch: str) -> Iterator[Run]:
     """Record ticket `number` as running in `where/<number>` for the time of the block, then
-    remove the entry and append the run to `ended.jsonl`, however the block ends. A live entry
+    append the run to `ended.jsonl` and remove the entry, however the block ends. A live entry
     for the same ticket is another run of it: `Stop`. A stale one (dead process) is replaced."""
-    where.mkdir(parents=True, exist_ok=True)
     entry = where / str(number)
     run = Run(number, branch, os.getpid(), now())
-    draft = where / f"{number}.{run.pid}.tmp"
-    draft.write_text(json.dumps(asdict(run)), encoding="utf-8")
-    try:
-        for _ in range(2):
-            try:
-                os.link(draft, entry)  # atomic, and never replaces: an entry is always whole
-                break
-            except FileExistsError:
-                other = _read(entry)
-                if other is not None and alive(other.pid):
-                    raise Stop(
-                        f"ticket #{number} is already running (process {other.pid})",
-                        "wait for that run to end, or stop it",
-                    ) from None
-                entry.unlink(missing_ok=True)
-        else:
-            raise Stop(f"could not register ticket #{number} in {where}", "start it again")
-    finally:
-        draft.unlink(missing_ok=True)
+    with _locked(where):
+        other = _read(entry)
+        if other is not None and alive(other.pid):
+            raise Stop(
+                f"ticket #{number} is already running (process {other.pid})",
+                "wait for that run to end, or stop it",
+            )
+        entry.unlink(missing_ok=True)  # stale: under the lock, nobody registered it since
+        draft = where / f"{number}.{run.pid}.tmp"
+        draft.write_text(json.dumps(asdict(run)), encoding="utf-8")
+        try:
+            os.link(draft, entry)  # atomic: an entry is always whole
+        finally:
+            draft.unlink(missing_ok=True)
     try:
         yield run
     finally:  # the registry never hides how the run ended
-        with contextlib.suppress(OSError):
-            entry.unlink(missing_ok=True)
-        with contextlib.suppress(OSError), (where / ENDED).open("a", encoding="utf-8") as file:
-            file.write(json.dumps({**asdict(run), "ended": now()}) + "\n")
+        with contextlib.suppress(OSError), _locked(where):
+            with contextlib.suppress(OSError):
+                _publish_end(where, run)  # first: a reader always finds the run in one place
+            _release(entry, run)
+
+
+def _publish_end(where: Path, run: Run) -> None:
+    with (where / ENDED).open("a", encoding="utf-8") as file:
+        file.write(json.dumps({**asdict(run), "ended": now()}) + "\n")
+
+
+def _release(entry: Path, run: Run) -> None:
+    """Remove `entry` if it is still `run`'s: never another run's registration."""
+    if _read(entry) == run:
+        entry.unlink(missing_ok=True)
 
 
 def running(where: Path) -> dict[int, Run]:
     """The registered runs whose process exists; stale entries are removed."""
-    found: dict[int, Run] = {}
     if not where.is_dir():
-        return found
+        return {}
+    with _locked(where):
+        return _live(where)
+
+
+def _live(where: Path) -> dict[int, Run]:
+    found: dict[int, Run] = {}
     for path in where.iterdir():
         if not path.name.isdigit():
             continue
@@ -124,8 +168,16 @@ def running(where: Path) -> dict[int, Run]:
 
 
 def during(where: Path, since: str) -> set[int]:
-    """The tickets registered as running now, or that ended at or after `since`."""
-    numbers = set(running(where))
+    """The tickets registered as running now, or that ended at or after `since`, read under
+    the lock: a run ending meanwhile is in one or the other."""
+    if not where.is_dir():
+        return set()
+    with _locked(where):
+        return set(_live(where)) | _ended(where, since)
+
+
+def _ended(where: Path, since: str) -> set[int]:
+    numbers = set()
     with contextlib.suppress(OSError):
         for line in (where / ENDED).read_text(encoding="utf-8").splitlines():
             with contextlib.suppress(ValueError, KeyError, TypeError, AttributeError):

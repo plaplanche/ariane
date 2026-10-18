@@ -117,10 +117,19 @@ first step of the orchestration the benchmark points to.
   branch, process id, start time, as JSON) before it prepares the branch, and removes the entry
   when the run ends, however it ends (delivered, stopped, Ctrl-C or an exception); the ended run
   is appended to `<repo>.ariane/runs/ended.jsonl` with its end time. An entry whose process no
-  longer exists is ignored and deleted. The entry is written whole, then linked into place
-  (`os.link` never replaces a file): a second `ariane start <n>` while a live run of `n` is
-  registered does not start ("ticket #n is already running"). The per-ticket lock of #140 reuses
-  this entry.
+  longer exists is ignored and deleted. The entry is written whole, then linked into place: a
+  second `ariane start <n>` while a live run of `n` is registered does not start ("ticket #n is
+  already running"). The per-ticket lock of #140 reuses this entry.
+- **One lock for the registry.** Registering (check, reclaim a stale entry, link), ending (append
+  to `ended.jsonl`, then remove the entry if it is still this run's) and reading (`running`,
+  `during`) each hold `<repo>.ariane/runs/.lock`, an exclusive OS file lock (`flock` on POSIX,
+  `msvcrt.locking` on Windows) that the system frees when its process dies. Without it, two
+  starters reclaiming the same stale entry could both be admitted, and a reader cleaning a stale
+  entry could delete a run registered meanwhile. The end is published before the entry goes, so
+  a run is always in one or the other.
+- **Git first, then the registry.** A run registers before it writes to git, so the guard takes
+  its git snapshot first and reads the registry after: every other run whose changes the snapshot
+  shows is already registered, or has ended into `ended.jsonl`.
 - **What the guard tolerates, and nothing more.** For a ticket `m` other than its own that was
   registered at any time since the guard's first snapshot (registered now, or in `ended.jsonl`
   with an end at or after that snapshot), the guard ignores: the local branch `ariane/<m>`

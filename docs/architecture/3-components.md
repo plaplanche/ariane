@@ -161,7 +161,7 @@ sequenceDiagram
   R-->>F: SessionResult
   F->>M: write metrics.json
   F->>G: guard checks (configuration, branch, untracked files)
-  F->>N: drop the changes that are another registered run's own branch and keys
+  F->>N: snapshot git first, then drop the changes that are another registered run's own branch and keys
   F->>G: commit
   F->>P: replay and review
   loop for each check
@@ -188,7 +188,7 @@ sequenceDiagram
   D->>G: one push
   D->>T: open the pull request (a draft, needs a human, if still no-go)
   D->>T: publish statuses
-  F->>N: remove the entry, append it to ended.jsonl (however the run ends)
+  F->>N: append the run to ended.jsonl, then remove its entry (however the run ends)
   F-->>CLI: Outcome
   CLI-->>U: one line
 ```

@@ -338,9 +338,11 @@ class _TicketRun:
 
     def _unchanged(self, after: str, guard: dict[str, str]) -> Stop | None:
         """The stop when git or the reviewer's instruction files differ from `guard`, apart from
-        another Ariane run's own branch and its two branch keys (C11, ADR 0017)."""
+        another Ariane run's own branch and its two branch keys (C11, ADR 0017). Git is read
+        first: a run registers before its git writes, so any it shows is in `during`."""
+        now = self.snapshot()
         others = runs.during(self.registry, self.guard_since) - {self.number}
-        changes = runs.foreign_changes(guard, self.snapshot(), others, self.config.base_branch)
+        changes = runs.foreign_changes(guard, now, others, self.config.base_branch)
         written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
         if written:
             return Stop(
