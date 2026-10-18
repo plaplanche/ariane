@@ -105,7 +105,7 @@ like a password: Ariane never reads, copies or logs it, and gives the process no
 its own environment. Or set `api_key_env = "<variable>"` in `[agents.reviewer]`: that variable's
 value is given to the pi process only, under the provider's own variable (`ANTHROPIC_API_KEY` for
 `anthropic/...`). `max_tokens` is required because pi may bill per token whatever the login (pi's
-docs say Claude Pro/Max through pi draws from extra usage); `ariane report` shows the cost pi reports.
+docs say Claude Pro/Max through pi draws from extra usage); `max_budget_usd` stops the session on the cost pi reports, and `ariane report` shows it.
 Without credentials the ticket stops with "pi has no credentials for <provider>", never a no-go. A
 `.pi/` folder in the repository is left out of the reviewer's tree, and pi's `settings.json`,
 `models.json`, `AGENTS.md`, `SYSTEM.md` and `APPEND_SYSTEM.md` are guarded (ADR 0051).

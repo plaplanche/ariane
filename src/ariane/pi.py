@@ -17,6 +17,7 @@ from ariane.runtime import (
     StopReason,
     as_int,
     as_number,
+    cost_cap,
     idle_summary,
     json_object,
     timeout_summary,
@@ -93,7 +94,7 @@ class PiRuntime:
         if self.api_key_env is not None and not session.env.get(self.api_key_env):
             message = f"agents.reviewer.api_key_env: variable {self.api_key_env} is not set"
             return SessionResult.failed(StopReason.ERROR, message)
-        events = Events(session.max_tokens)
+        events = Events(session.max_tokens, session.max_budget_usd)
         try:
             # pi merges piped standard input into the prompt in print mode: no file is written.
             completed = process.stream(
@@ -161,10 +162,12 @@ def _message(session: Session) -> str:
 class Events:
     """What `pi --mode json` says: usage of each assistant `message_end`, the final answer."""
 
-    def __init__(self, max_tokens: int | None) -> None:
+    def __init__(self, max_tokens: int | None, max_budget_usd: float | None = None) -> None:
         self.max_tokens = max_tokens
+        self.max_budget_usd = max_budget_usd
         self.input = self.cache_read = self.cache_write = self.output = 0
         self.cost = 0.0
+        self.cost_seen = False  # pi reported a cost, even 0
         self.messages = 0
         self.text = ""
         self.stop_reason: str | None = None
@@ -177,7 +180,7 @@ class Events:
         return self.input + self.cache_read + self.cache_write + self.output
 
     def add_line(self, line: str) -> bool:
-        """Count one event line; True when the token cap is reached and the session must stop."""
+        """Count one event line; True when a cap is reached and the session must stop."""
         event = json_object(line)
         if event is None:
             return False
@@ -204,11 +207,18 @@ class Events:
         self.output += as_int(usage.get("output")) or 0
         self.cache_read += as_int(usage.get("cacheRead")) or 0
         self.cache_write += as_int(usage.get("cacheWrite")) or 0
-        self.cost += (as_number(cost.get("total")) if isinstance(cost, dict) else None) or 0.0
+        total = as_number(cost.get("total")) if isinstance(cost, dict) else None
+        if total is not None:
+            self.cost += total
+            self.cost_seen = True
         self._settle(message)
         if self.max_tokens is not None and self.total >= self.max_tokens:
             self.cap = token_cap(self.max_tokens)
             self.stop_text = f"stopped by Ariane at {self.total} tokens"
+        elif self.cost_seen and self.max_budget_usd is not None:
+            if self.cost >= self.max_budget_usd:
+                self.cap = cost_cap(self.max_budget_usd)
+                self.stop_text = f"stopped by Ariane at {self.cost:.4f} USD"
         return self.cap is not None
 
     def _agent_end(self, messages: Any) -> None:
@@ -229,8 +239,8 @@ class Events:
 
     @property
     def reported_cost(self) -> float | None:
-        """A cost of 0 counts as "cost not reported"."""
-        return self.cost if self.cost > 0 else None
+        """The summed cost pi reported (0 included), or None when no message reported one."""
+        return self.cost if self.cost_seen else None
 
     def answer(self) -> Any:
         """The last message's fenced JSON block (else the whole text as JSON), if it parses."""

@@ -41,8 +41,10 @@ ADR 0043). The ticket named this ADR 0045; that number was taken, so it is 0051.
   or set agents.reviewer.api_key_env"; the ticket stops with that, never a review verdict.
 - Events. Each assistant `message_end` adds its `usage`: `input`, `output`, `cacheRead`,
   `cacheWrite` (recorded as input, output, cache read, cache write tokens) and `cost.total` (the
-  fields of pi's `Usage`); `max_tokens` is applied after each one, and reaching it kills the process
-  tree (`budget`). A summed cost above 0 is the session's cost, else it stays null. The answer is
+  fields of pi's `Usage`); `max_tokens`, and `max_budget_usd` against the summed reported cost,
+  are applied after each one, and reaching either kills the process tree (`budget`). The summed
+  cost is the session's cost when at least one message reported `cost.total` (0 included, as for
+  a free model), else it stays null. The answer is
   the last assistant message of `agent_end` (else of the last `message_end`): its text blocks, from
   which the last fenced `json` block is read. An assistant message whose `stopReason` is `error` or
   `aborted` is `error`, unless an `auto_retry_start` follows and a later message succeeds; a failed
@@ -56,7 +58,7 @@ ADR 0043). The ticket named this ADR 0045; that number was taken, so it is 0051.
 
 ## Consequences
 A reviewer on any provider pi supports, on an API key or a subscription, with a token cap Ariane
-enforces. Whether a pi login bills per token is not known to Ariane: `max_tokens` bounds it, and
+enforces, and the dollar cap applied to the cost pi reports (ADR 0015). Whether a pi login bills per token is not known to Ariane: `max_tokens` bounds it, and
 there is no plan-only guard as for Codex (#178). The provider key list is pi 0.73.1's; a provider
 added later works with pi's own login, and needs this list updated to work with `api_key_env`.
 The "No API key found" wording is matched; another wording would be a plain `error`.

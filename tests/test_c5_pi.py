@@ -47,12 +47,14 @@ def on_path(folder: Path, env: dict[str, str] | None = None) -> dict[str, str]:
     return {**base, "PATH": f"{folder}{os.pathsep}{os.environ['PATH']}"}
 
 
-def session(tmp_path: Path, env: dict[str, str], max_tokens: int | None = 100_000) -> Session:
+def session(
+    tmp_path: Path, env: dict[str, str], max_tokens: int | None = 100_000, usd: float = 3.0
+) -> Session:
     return Session(
         role="reviewer",
         model=MODEL,
         tools=("read", "grep", "find", "ls"),
-        max_budget_usd=3.0,
+        max_budget_usd=usd,
         max_tokens=max_tokens,
         timeout_s=30,
         cwd=tmp_path,
@@ -70,11 +72,12 @@ def run(
     api_key_env: str | None = None,
     env: dict[str, str] | None = None,
     max_tokens: int | None = 100_000,
+    usd: float = 3.0,
 ) -> tuple[SessionResult, dict[str, Any]]:
     dump = tmp_path / "dump.json"
     folder = fake_pi(tmp_path / "bin", events, dump, mode)
     result = PiRuntime(api_key_env=api_key_env).run(
-        session(tmp_path, on_path(folder, env), max_tokens)
+        session(tmp_path, on_path(folder, env), max_tokens, usd)
     )
     return result, json.loads(dump.read_text(encoding="utf-8")) if dump.exists() else {}
 
@@ -92,9 +95,17 @@ def test_c5_pi_review_is_answered_with_tokens_and_cost(tmp_path: Path) -> None:
     assert Path(seen["cwd"]).resolve() == tmp_path.resolve()
 
 
-def test_c5_pi_a_cost_of_zero_is_not_reported(tmp_path: Path) -> None:
+def test_c5_pi_a_reported_cost_of_zero_is_kept(tmp_path: Path) -> None:
     events = tmp_path / "free.jsonl"
     events.write_text(re.sub(r'"total":[0-9.]+', '"total":0', REVIEW.read_text("utf-8")), "utf-8")
+    result, _ = run(tmp_path, events)
+    assert result.stop_reason is StopReason.FINISHED
+    assert result.cost_usd == 0.0 and result.input_tokens == 1500
+
+
+def test_c5_pi_no_reported_cost_stays_null(tmp_path: Path) -> None:
+    events = tmp_path / "unpriced.jsonl"
+    events.write_text(re.sub(r',"cost":\{[^}]*\}', "", REVIEW.read_text("utf-8")), "utf-8")
     result, _ = run(tmp_path, events)
     assert result.stop_reason is StopReason.FINISHED
     assert result.cost_usd is None and result.input_tokens == 1500
@@ -181,6 +192,25 @@ def test_c5_pi_max_tokens_stops_the_session(tmp_path: Path) -> None:
     assert result.cap == "Ariane token cap (1000 tokens)"
     assert result.summary == "stopped by Ariane at 1780 tokens"
     assert result.input_tokens == 1200
+
+
+def test_c5_pi_the_reported_cost_stops_the_session(tmp_path: Path) -> None:
+    # The first assistant message reports 0.0067 USD, far below the token cap.
+    result, _ = run(tmp_path, mode="hang", max_tokens=100_000, usd=0.005)
+    assert result.stop_reason is StopReason.BUDGET
+    assert result.cap == "runtime cost cap (0.005 USD)"
+    assert result.summary == "stopped by Ariane at 0.0067 USD"
+    assert result.cost_usd == pytest.approx(0.0067) and result.input_tokens == 1200
+
+
+def test_c5_pi_the_cost_cap_applies_without_a_token_cap() -> None:
+    from ariane.pi import Events
+
+    events = Events(None, 1.0)
+    usage = {"input": 10, "output": 10, "cost": {"total": 100}}
+    line = {"role": "assistant", "content": [], "stopReason": "toolUse", "usage": usage}
+    assert events.add_line(json.dumps({"type": "message_end", "message": line}))
+    assert events.cap == "runtime cost cap (1 USD)"
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc")

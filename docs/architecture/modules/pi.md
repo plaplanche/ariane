@@ -21,7 +21,7 @@ pi as an agent runtime, for the reviewer role (ADR 0051): it starts the official
 - The process environment holds no provider key of Ariane's own: the variables of pi's documented provider list (`config_schema.PI_PROVIDER_KEYS`), any `*_API_KEY`, `AWS_*` and `GOOGLE_APPLICATION_CREDENTIALS` are removed, as is `api_key_env` itself (matched case-insensitively; a name ending in `_` is a prefix, ADR 0024). With `api_key_env`, its value is passed under the model provider's own variable (`anthropic` gets `ANTHROPIC_API_KEY`) to this process only; without it pi uses its own `auth.json`.
 - An `api_key_env` naming an unset variable ends the session as `error` before pi starts.
 - "No API key found for <provider>" on pi's output, with no assistant message, ends the session as `error` with `no_credentials(provider)` and the next step `LOGIN_NEXT`: the session is not a review.
-- Each assistant `message_end` adds its `usage` (`input`, `output`, `cacheRead`, `cacheWrite`, and `cost.total`); the session stops (`budget`, the process tree is killed) when `max_tokens` is reached. A cost above 0 is recorded as the session's cost, else it stays null (`not reported`).
+- Each assistant `message_end` adds its `usage` (`input`, `output`, `cacheRead`, `cacheWrite`, and `cost.total`); the session stops (`budget`, the process tree is killed) when `max_tokens` is reached, or when the summed reported cost reaches `max_budget_usd`. The summed cost is recorded as the session's cost when any message reported `cost.total` (0 included), else it stays null (`not reported`).
 - An assistant message with `stopReason` `error` or `aborted` is an `error` with its `errorMessage`, unless an `auto_retry_start` follows and a later message succeeds; a failed `auto_retry_end` is `error` with its `finalError`. A non-zero exit, or a last assistant message whose stop reason is not `stop`, is `error`.
 - Time limits (C5): `Session.timeout_s` and `Session.idle_timeout_s` go to `process.stream`; a kill at the total limit is `timeout` with `timeout_summary`, a kill at the idle limit (ADR 0045) is `timeout` with `idle_summary`.
 
@@ -56,6 +56,7 @@ class Events {
   input int
   output int
   cost float
+  cost_seen bool
   text str
   stop_reason str
   error str
