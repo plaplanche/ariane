@@ -1,0 +1,43 @@
+{
+  "attempts": {
+    "guard_violations": 0,
+    "pull_request": 0,
+    "push": 0
+  },
+  "blocking_red_at_delivery": 0,
+  "first_pass_verdict": "no-go",
+  "mode": "verify",
+  "outcome": "stopped",
+  "rounds": 0,
+  "sessions": [
+    {
+      "billing": "plan",
+      "cache_read_tokens": 271744,
+      "cache_write_tokens": 0,
+      "changed_lines": 1228,
+      "cost_usd": 0.0,
+      "duration_s": 74.594,
+      "input_tokens": 48690,
+      "model": "gpt-6-astra",
+      "output_tokens": 1847,
+      "role": "reviewer",
+      "round": 0,
+      "runtime": "codex",
+      "stop_reason": "finished"
+    }
+  ],
+  "started": "2026-10-18T04:25:50Z",
+  "steps": [
+    {
+      "at": "2026-10-18T04:32:11Z",
+      "name": "reviewer session 1 stopped"
+    },
+    {
+      "at": "2026-10-18T04:32:12Z",
+      "name": "outcome: stopped"
+    }
+  ],
+  "surviving_processes": 0,
+  "ticket": 159,
+  "unchanged_fix_rounds": 0
+}
