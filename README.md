@@ -1,8 +1,26 @@
 # Ariane
 
-Ariane turns tickets into reviewed pull requests with AI coding agents, while the human keeps
-deciding, understanding and approving. The name comes from Ariadne's thread (*le fil d'Ariane*):
-you never lose the thread of your own code.
+**Ariane is a local command-line orchestrator that turns GitHub issues into reviewed pull requests
+with AI coding agents (Claude Code, Codex, opencode), while the human keeps deciding,
+understanding and approving.** The name comes from Ariadne's thread (*le fil d'Ariane*): you
+never lose the thread of your own code.
+
+What Ariane does with a labelled issue:
+
+- **Runs a coding agent in an isolated git worktree**, with an allow list of environment
+  variables (no tracker token, no credentials the project did not declare) and pushing blocked.
+- **Replays your checks itself** (lint, types, tests), each in its own clean tree: Ariane never
+  takes the agent's word that the tests pass.
+- **Has the change reviewed by a different model**: an independent, read-only AI code reviewer
+  answers go or no-go against the ticket and your definition of done, with up to two fix rounds.
+- **Guards git and your secrets**: a push guard stops the ticket if an agent touches git
+  configuration, refs or hooks; everything Ariane posts is redacted.
+- **Measures every ticket**: cost, tokens, time, rounds and first-pass verdict, in a journal and
+  in `ariane report`; a shadow mode measures Ariane on your project without pushing anything.
+- **Delivers one branch and one pull request**, a draft when the reviewer said no-go. You merge.
+
+It runs on Windows, macOS and Linux, from your own machine, with the agent CLIs and logins you
+already have. Free software under the AGPL.
 
 **Status:** slice 4 (measurement and shadow mode) is built; its gate is pending the second user's
 run on macOS (see [Measure Ariane on your project](#measure-ariane-on-your-project-shadow-mode)).
