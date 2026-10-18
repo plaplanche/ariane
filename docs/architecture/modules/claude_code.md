@@ -9,7 +9,7 @@ Claude Code as an agent runtime: it starts the `claude` CLI for one session and 
 | `DENIED_TOOLS` | constant | The shell commands denied to the agent: first layer of the push guard (`git push`, `checkout`, `switch`, `rebase`, `reset`, `gh`). |
 | `schema_argument(schema)` | function | The session's schema as given to `--json-schema`, without its `$schema` key. |
 | `ClaudeCodeRuntime` | class | `ClaudeCodeRuntime(executable=("claude",))` implements `AgentRuntime`; it declares `ANTHROPIC_` and `CLAUDE_` as its login variables; `command(session)` builds the command line, `run(session)` runs it. |
-| `TokenTally` | class | `TokenTally(max_tokens)`: the running token total of a stream (`parts`, `total`), fed by `add_line(line)`; `stopped_result()` is the result when the cap was reached. |
+| `TokenTally` | class | `TokenTally(max_tokens)`: the running token total of a stream (`parts`, `total`), fed by `add_line(line)`; `stopped_result()` is the result when the cap was reached; `killed_result(reason, summary, cap=None)` is the result of any session Ariane killed, with the tokens streamed so far and no cost. |
 | `parse_result(stdout, stderr, returncode)` | function | Maps the final `result` event (or a single JSON result), stderr and the exit code to a `SessionResult` and a stop reason; a stream without a result is `error`. |
 
 ## Behaviour and errors
@@ -19,7 +19,7 @@ Claude Code as an agent runtime: it starts the `claude` CLI for one session and 
 - A `reviewer` session (ADR 0031) starts with `--restricted` and one `--add-dir` per `Session.add_dirs`, from an empty working directory, with no `--permission-mode bypassPermissions` and no `--setting-sources`; every other role keeps `bypassPermissions` and `--setting-sources project,local`.
 - Attempts (C19, ADR 0036): `TokenTally` also reads the `tool_use` blocks of the assistant messages and counts, once per block id, the `Bash` commands that push or open a pull request (`attempts` module); `run` puts the counts on `SessionResult.attempts`, whatever the stop reason.
 - Errors become a `SessionResult` with stop reason `error` (or `timeout`); none is raised.
-- Time limits (C5): `Session.timeout_s` and `Session.idle_timeout_s` go to `process.stream`; a kill at the total limit is `timeout` with `timeout_summary`, a kill at the idle limit (no event for that long, ADR 0045) is `timeout` with `idle_summary`, naming the last event and its tool.
+- Time limits (C5): `Session.timeout_s` and `Session.idle_timeout_s` go to `process.stream`; a kill at the total limit is `timeout` with `timeout_summary`, a kill at the idle limit (no event for that long, ADR 0045) is `timeout` with `idle_summary`, naming the last event and its tool. Both keep the tokens streamed before the kill (`killed_result`); the cost stays not reported.
 
 ## Workflow
 
@@ -51,6 +51,7 @@ class TokenTally {
   total int
   add_line(line) bool
   stopped_result() SessionResult
+  killed_result(reason, summary, cap) SessionResult
 }
 ClaudeCodeRuntime ..|> AgentRuntime
 ClaudeCodeRuntime --> TokenTally

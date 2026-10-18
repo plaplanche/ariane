@@ -113,9 +113,9 @@ class ClaudeCodeRuntime:
             return tally.stopped_result()
         if completed.idle and session.idle_timeout_s is not None:
             summary = idle_summary(session.idle_timeout_s, completed.stdout)
-            return SessionResult.failed(StopReason.TIMEOUT, summary)
+            return tally.killed_result(StopReason.TIMEOUT, summary)
         if completed.timed_out:
-            return SessionResult.failed(StopReason.TIMEOUT, timeout_summary(session.timeout_s))
+            return tally.killed_result(StopReason.TIMEOUT, timeout_summary(session.timeout_s))
         result = parse_result(completed.stdout, completed.stderr, completed.returncode)
         if result.stop_reason is StopReason.BUDGET:
             return dataclasses.replace(result, cap=cost_cap(session.max_budget_usd))
@@ -176,17 +176,15 @@ class TokenTally:
                 self.attempts.add_command(command, str(block.get("id")))
 
     def stopped_result(self) -> SessionResult:
+        summary = f"stopped by Ariane at {self.total} tokens"
+        return self.killed_result(StopReason.BUDGET, summary, cap=token_cap(self.max_tokens))
+
+    def killed_result(
+        self, reason: StopReason, summary: str, cap: str | None = None
+    ) -> SessionResult:
+        """A session Ariane killed: the tokens streamed so far, no cost (none was reported)."""
         read, cache_read, cache_write, out = self.parts
-        return SessionResult(
-            StopReason.BUDGET,
-            None,
-            read,
-            out,
-            cache_read,
-            cache_write,
-            f"stopped by Ariane at {self.total} tokens",
-            cap=token_cap(self.max_tokens),
-        )
+        return SessionResult(reason, None, read, out, cache_read, cache_write, summary, cap=cap)
 
 
 def parse_result(stdout: str, stderr: str, returncode: int | None) -> SessionResult:

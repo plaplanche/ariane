@@ -23,6 +23,9 @@ from test_flow import environ, journal, start, worktree
 
 HERE = Path(__file__).resolve().parent
 
+# The usage both idle sessions streamed before going silent, as the journal words it.
+USAGE = "tokens 123 in, 6 cache read, 7 cache write, 45 out"
+
 # Print one line, start a grandchild writing a heartbeat to argv[1], then stay silent.
 SILENT = """
 import subprocess, sys, time
@@ -45,7 +48,19 @@ CLAUDE_TOOL_CALL = {
     "message": {
         "id": "msg_1",
         "content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "x"}}],
-        "usage": {"input_tokens": 1, "output_tokens": 1},
+        "usage": {
+            "input_tokens": 123,
+            "output_tokens": 45,
+            "cache_read_input_tokens": 6,
+            "cache_creation_input_tokens": 7,
+        },
+    },
+}
+OPENCODE_STEP = {
+    "type": "step_finish",
+    "part": {
+        "reason": "tool-calls",
+        "tokens": {"input": 123, "output": 45, "cache": {"read": 6, "write": 7}},
     },
 }
 OPENCODE_TOOL_CALL = {
@@ -140,6 +155,9 @@ def test_c5_idle_claude_code_session_is_a_timeout_naming_the_last_tool(tmp_path:
     assert result.summary == (
         "no activity for 0.025 min (idle limit); last event: assistant (tool Bash)"
     )
+    assert (result.input_tokens, result.output_tokens) == (123, 45)
+    assert (result.cache_read_tokens, result.cache_write_tokens) == (6, 7)
+    assert result.cost_usd is None
 
 
 def test_c5_idle_claude_code_journal_and_stop_line_show_the_idle_summary(
@@ -162,13 +180,14 @@ def test_c5_idle_claude_code_journal_and_stop_line_show_the_idle_summary(
     text = journal(project)
     assert "Implementer session stopped: timeout" in text
     assert summary in text
+    assert USAGE in text
     assert "its work is kept on the branch" in outcome.line
 
 
 def test_c5_idle_opencode_reviewer_stops_with_timeout_and_the_summary_in_the_journal(
     project: Project, tracker: InMemoryTracker, tmp_path: Path
 ) -> None:
-    events = write_events(tmp_path / "events.jsonl", OPENCODE_TOOL_CALL)
+    events = write_events(tmp_path / "events.jsonl", OPENCODE_STEP, OPENCODE_TOOL_CALL)
     dump = tmp_path / "dump.json"
     reviewer = OpenCodeRuntime(
         (PY, str(HERE / "fake_opencode.py"), str(events), str(dump), "0", "hang"),
@@ -198,6 +217,7 @@ def test_c5_idle_opencode_reviewer_stops_with_timeout_and_the_summary_in_the_jou
     text = journal(project)
     assert "Reviewer session 1 stopped: timeout" in text
     assert summary in text
+    assert USAGE in text
 
 
 def test_c5_idle_a_finished_session_is_unchanged(
