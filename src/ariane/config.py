@@ -19,6 +19,7 @@ __all__ = ["CODEX", "OPENCODE", "SCHEMA"]
 
 CONFIG_FILE = "ariane.toml"
 CONFIG_ENV = "ARIANE_CONFIG"
+DEFAULT_IDLE_MINUTES = 10.0
 
 
 class ConfigError(Exception):
@@ -43,6 +44,7 @@ class AgentConfig:
     timeout_minutes: float
     max_tokens: int | None = None
     api_key_env: str | None = None  # codex: variable holding the API key, if not a plan login
+    idle_minutes: float | None = None  # no event for this long stops the session; None: no limit
 
 
 @dataclass(frozen=True)
@@ -276,6 +278,7 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
             "tools",
             "max_budget_usd",
             "timeout_minutes",
+            "idle_minutes",
             "max_tokens",
             "api_key_env",
         },
@@ -313,15 +316,31 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
         raise ConfigError(
             f"{CONFIG_FILE}: {where}.tools: Skill is not allowed (undeclared skills, C6)"
         )
+    timeout_minutes = _positive(table, "timeout_minutes", prefix)
     return AgentConfig(
         runtime=runtime,
         model=_str(table, "model", prefix),
         tools=tools,
         max_budget_usd=_positive(table, "max_budget_usd", prefix),
-        timeout_minutes=_positive(table, "timeout_minutes", prefix),
+        timeout_minutes=timeout_minutes,
         max_tokens=_max_tokens(table, where),
         api_key_env=api_key_env,
+        idle_minutes=_idle_minutes(table, where, timeout_minutes),
     )
+
+
+def _idle_minutes(table: dict[str, Any], where: str, timeout_minutes: float) -> float | None:
+    """The idle limit (ADR 0045): below the time limit; by default 10 minutes, or none when the
+    time limit is 10 minutes or less."""
+    if "idle_minutes" not in table:
+        return DEFAULT_IDLE_MINUTES if timeout_minutes > DEFAULT_IDLE_MINUTES else None
+    idle = _positive(table, "idle_minutes", f"{where}.")
+    if idle >= timeout_minutes:
+        raise ConfigError(
+            f"{CONFIG_FILE}: {where}.idle_minutes: must be below {where}.timeout_minutes"
+            f" ({timeout_minutes:g})"
+        )
+    return idle
 
 
 def _opencode_agent(table: dict[str, Any], tools: Sequence[str], where: str) -> None:

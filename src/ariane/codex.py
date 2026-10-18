@@ -15,6 +15,7 @@ from ariane.runtime import (
     SessionResult,
     StopReason,
     as_int,
+    idle_summary,
     json_object,
     timeout_summary,
     token_cap,
@@ -121,6 +122,7 @@ class CodexRuntime:
                 cwd=session.cwd,
                 on_line=events.add_line,
                 timeout_s=session.timeout_s,
+                idle_timeout_s=session.idle_timeout_s,
                 env=env,
                 input_text=_message(session),
             )
@@ -130,6 +132,9 @@ class CodexRuntime:
             return events.result(StopReason.QUOTA, events.quota, next_step=events.reset_step())
         if completed.stopped:
             return events.result(StopReason.BUDGET, events.stop_text, cap=events.cap)
+        if completed.idle and session.idle_timeout_s is not None:
+            summary = idle_summary(session.idle_timeout_s, completed.stdout)
+            return events.result(StopReason.TIMEOUT, summary)
         if completed.timed_out:
             return events.result(StopReason.TIMEOUT, timeout_summary(session.timeout_s))
         if events.error is not None:

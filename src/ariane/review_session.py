@@ -164,10 +164,11 @@ class ReviewSession:
                 if self.metrics
                 else runtime.run(session)
             )
+            timed_out = result.stop_reason is StopReason.TIMEOUT
             self.folder.log(
                 "ticket.review.stopped",
                 f"Reviewer session {attempt} stopped: {result.stop_reason.value}",
-                result.usage_text(),
+                (f"{result.summary}\n\n" if timed_out else "") + result.usage_text(),
             )
             after_session()
             number = self.issue.number
@@ -194,7 +195,7 @@ class ReviewSession:
                 raise ReviewFailed(result.summary, result.next_step)
             if result.stop_reason is not StopReason.FINISHED:
                 raise ReviewFailed(
-                    f"the reviewer session stopped: {result.stop_reason.value}",
+                    f"the reviewer session stopped: {result.stop_text()}",
                     f"read work/{number}/journal.md; Ariane pushed nothing",
                     ticket.fenced(result.summary),
                 )

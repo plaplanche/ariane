@@ -118,6 +118,13 @@ implementer session, a replay and a review (a fix round that changes nothing end
 draft that needs a human if the review is still no-go) and publishes each check's result as a
 commit status (`ariane/<check name>`) on its head commit. The ticket's records are in `work/12/`, including `work/12/metrics.json`: cost, tokens, durations,
 fix rounds, first-pass verdict and outcome of the ticket, rewritten after each step.
+Each agent session stops at its limits, set per role in `[agents.<role>]`: its cost
+(`max_budget_usd`), its tokens (`max_tokens`), its total time (`timeout_minutes`) and its idle time
+(`idle_minutes`, 10 by default): a session that sends no event for that long is stopped as a
+`timeout`, and the journal and the stop line say "no activity for <m> min (idle limit)" with the
+last event ([ADR 0045](docs/adr/0045-idle-limit-of-agent-sessions.md)). Its work is kept on the
+branch.
+
 `work/12/metrics.json` also counts, in `attempts`, the `git push` and `gh pr create` commands the agent tried and the guard violations ([ADR 0036](docs/adr/0036-shadow-mode-and-attempts.md)).
 
 **Shadow mode** measures Ariane while your current process does the real work. `ariane start --shadow 12`

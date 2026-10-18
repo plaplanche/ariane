@@ -36,12 +36,13 @@ class Completed:
     """The outcome of one command."""
 
     argv: tuple[str, ...]
-    returncode: int | None  # None when the command was killed at its time limit
+    returncode: int | None  # None when the command was killed at its time or idle limit
     stdout: str
     stderr: str
     timed_out: bool
     duration_s: float
     stopped: bool = False  # the caller asked for the stop (`stream`)
+    idle: bool = False  # killed at its idle limit: no output line for too long (`stream`)
 
     @property
     def ok(self) -> bool:
@@ -317,7 +318,7 @@ def run(
     so is any descendant that left the group, and every descendant still running when the
     command exited by itself is counted (`kill_survivors`, `take_killed`).
     """
-    return _execute(argv, cwd, timeout_s, env, input_text, merge_stderr, None)
+    return _execute(argv, cwd, timeout_s, env, input_text, merge_stderr, None, None)
 
 
 def stream(
@@ -326,14 +327,17 @@ def stream(
     cwd: Path,
     on_line: Callable[[str], bool],
     timeout_s: float | None = None,
+    idle_timeout_s: float | None = None,
     env: Mapping[str, str] | None = None,
     input_text: str | None = None,
 ) -> Completed:
     """Like `run`, but `on_line` sees each line of standard output while the command runs.
 
     When `on_line` returns True the whole process tree is killed and `Completed.stopped` is set.
+    When no standard-output line has arrived for `idle_timeout_s`, the whole process tree is
+    killed and `Completed.idle` is set (C5).
     """
-    return _execute(argv, cwd, timeout_s, env, input_text, False, on_line)
+    return _execute(argv, cwd, timeout_s, env, input_text, False, on_line, idle_timeout_s)
 
 
 def _shown(arg: str, limit: int = 200) -> str:
@@ -349,6 +353,7 @@ def _execute(
     input_text: str | None,
     merge_stderr: bool,
     on_line: Callable[[str], bool] | None,
+    idle_timeout_s: float | None,
 ) -> Completed:
     if not argv:
         raise ValueError("empty command")
@@ -381,14 +386,10 @@ def _execute(
     err = _Reader(proc.stderr)
     if input_text is not None and proc.stdin is not None:
         threading.Thread(target=_feed, args=(proc.stdin, input_text), daemon=True).start()
-    timed_out = False
     left: dict[int, str] = {}
     try:
-        try:
-            proc.wait(timeout=timeout_s)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-        if not timed_out and not stop.is_set():
+        timed_out, idle = _wait_limits(proc, start, timeout_s, out, idle_timeout_s)
+        if not timed_out and not idle and not stop.is_set():
             # The command ended by itself: what it started and still runs outlived it, in its
             # group or not. Named before the group is killed, so it is counted (C10, ADR 0031).
             left = {pid: name for pid, name in descendants().items() if pid not in before}
@@ -402,22 +403,51 @@ def _execute(
         kill_survivors(before, left)
     completed = Completed(
         argv=tuple(argv),
-        returncode=None if timed_out else proc.returncode,
+        returncode=None if timed_out or idle else proc.returncode,
         stdout=out.text(),
         stderr=err.text(),
         timed_out=timed_out,
         duration_s=time.monotonic() - start,
         stopped=stop.is_set(),
+        idle=idle,
     )
     exit_text = (
         "timed out"
         if timed_out
+        else f"no output line for {idle_timeout_s:g} s (idle limit)"
+        if idle
         else "stopped by the caller"
         if completed.stopped
         else f"exit {completed.returncode}"
     )
     logs.emit("process.exited", f"{argv[0]}: {exit_text} in {completed.duration_s:.2f} s")
     return completed
+
+
+def _wait_limits(
+    proc: subprocess.Popen[bytes],
+    start: float,
+    timeout_s: float | None,
+    out: _Reader,
+    idle_timeout_s: float | None,
+) -> tuple[bool, bool]:
+    """Wait for the command to exit; (timed out, idle) when a limit ended the wait first."""
+    while True:
+        now = time.monotonic()
+        waits = []
+        if timeout_s is not None:
+            waits.append(start + timeout_s - now)
+        if idle_timeout_s is not None:
+            waits.append(out.last_line + idle_timeout_s - now)
+        try:
+            proc.wait(timeout=max(min(waits), 0) if waits else None)
+            return False, False
+        except subprocess.TimeoutExpired:
+            now = time.monotonic()
+            if timeout_s is not None and now >= start + timeout_s:
+                return True, False
+            if idle_timeout_s is not None and now >= out.last_line + idle_timeout_s:
+                return False, True
 
 
 class _Reader:
@@ -432,6 +462,7 @@ class _Reader:
         self._chunks: list[bytes] = []
         self._thread: threading.Thread | None = None
         self._on_line = on_line
+        self.last_line = time.monotonic()  # when the last line arrived (`on_line` only)
         if pipe is not None:
             self._thread = threading.Thread(target=self._read, args=(pipe,), daemon=True)
             self._thread.start()
@@ -440,6 +471,7 @@ class _Reader:
         with contextlib.suppress(OSError, ValueError):
             if self._on_line is not None:
                 for line in iter(pipe.readline, b""):
+                    self.last_line = time.monotonic()
                     self._chunks.append(line)
                     self._on_line(decode(line).rstrip("\n"))
                 return
