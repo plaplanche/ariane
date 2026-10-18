@@ -302,6 +302,26 @@ value); its value is masked in what Ariane writes. The tracker token, any `ARIAN
 Ariane's own virtual environment (`VIRTUAL_ENV` and its scripts directory on `PATH`) never pass,
 even if declared.
 
+### `ARIANE_SLOT`: keep local resources apart
+
+Each `ariane start` (shadow included) and `ariane verify` holds a slot, a number from 0 to 15 that
+no other Ariane run on the machine holds at the same time (a file lock in `~/.ariane/slots/`,
+released when the run ends or its process dies; ADR 0050). The setup, every check, every agent
+session and the commit hooks get it as `ARIANE_SLOT`. Ariane does not know your project's ports:
+derive them, or anything else two runs must not share, from it. With all 16 slots held, a run
+refuses to start ("16 Ariane runs already hold a slot on this machine. Next: wait for one to
+end."). For example, a check script that starts the project's local stack on a base port plus
+the slot:
+
+```powershell
+$slot = if ($env:ARIANE_SLOT) { [int]$env:ARIANE_SLOT } else { 0 }
+$port = 8000 + $slot
+```
+
+```bash
+port=$((8000 + ${ARIANE_SLOT:-0}))
+```
+
 Only Ariane runs git commands in the repository while a ticket runs. Several tickets may run at
 once on one repository (one `ariane start` each): each run is registered in
 `<repo>.ariane/runs/<n>` while it lasts. Ariane checks that the agent changed nothing outside the

@@ -15,10 +15,10 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import IO
 
 from ariane import git, ticket
 from ariane.metrics import METRICS
+from ariane.slots import try_lock
 from ariane.stop import Stop
 
 REMOTE = "origin"
@@ -45,32 +45,13 @@ def with_restart(action: str, number: int) -> str:
     return f"{action}; to start over, run {command(number)}"
 
 
-def _try_lock(file: IO[bytes]) -> bool:
-    if sys.platform == "win32":
-        import msvcrt
-
-        file.seek(0)
-        try:
-            msvcrt.locking(file.fileno(), msvcrt.LK_NBLCK, 1)
-        except OSError:
-            return False
-        return True
-    import fcntl
-
-    try:
-        fcntl.flock(file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        return False
-    return True
-
-
 @contextlib.contextmanager
 def locked(path: Path, number: int) -> Iterator[None]:
     """Hold the ticket's lock for the block; the system frees it when the process dies, so a
     killed run never leaves it held. Held by another process: `Stop`, without waiting."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as file:  # closing the file releases the lock
-        if not _try_lock(file):
+        if not try_lock(file):
             raise Stop(
                 f"ticket #{number} is running in another Ariane process",
                 "wait for it to end, or stop it",

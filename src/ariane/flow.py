@@ -15,6 +15,7 @@ from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
 from ariane.restart import Restarted, kept_name, lock_path, locked, prepare, with_restart
 from ariane.runtime import AgentRuntime, SessionResult, StopReason, for_role, session_for
+from ariane.slots import held as held_slot
 from ariane.stop import Stop, describe
 from ariane.tracker import Issue, Tracker, TrackerError
 
@@ -71,13 +72,14 @@ def start(
     with contextlib.ExitStack() as registry:  # the entry goes however the run ends (C11)
         try:
             registry.enter_context(locked(lock_path(repo_root, number), number))
+            slot = registry.enter_context(held_slot())  # to the run's end (ADR 0050)
             kept = kept_name(number) if restarting else ""  # registered before the rename
             registry.enter_context(runs.registered(runs.folder(repo_root), number, branch, kept))
             witnessed = registry.enter_context(runs.watching(runs.folder(repo_root)))
             url, refs_before, instructions, restarted = prepare(
                 repo_root, config.base_branch, branch, worktree, kept
             )
-            run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url)
+            run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url, slot)
             run.base_instructions = instructions
             run.restarted = restarted
             run.witnessed = witnessed
@@ -98,11 +100,6 @@ def _interrupted_before_start(number: int) -> Outcome:
     return Outcome(EXIT_INTERRUPTED, line)
 
 
-def _token(environ: Mapping[str, str], token_env: str) -> str:
-    name = token_env.upper()
-    return next((v for k, v in environ.items() if k.upper() == name and v), "")
-
-
 class _TicketRun:
     remote = REMOTE
     restartable = True  # a stop names `--restart` unless the branch was pushed (ADR 0047)
@@ -117,8 +114,10 @@ class _TicketRun:
         worktree: Path,
         branch: str,
         url: str,
+        slot: int,
     ) -> None:
         self.issue = issue
+        self.slot = slot
         self.config = config
         self.tracker = tracker
         self.runtime = runtime
@@ -146,6 +145,7 @@ class _TicketRun:
             token_env=config.tracker.token_env,
             remotes=git.remotes(worktree),
             declared=config.env,
+            slot=slot,
         )
         logins = review_session.agent_logins(runtime, config.implementer, config.reviewer)
         self.agent_envs = {kind: untrusted(login_variables=names) for kind, names in logins.items()}
@@ -169,7 +169,8 @@ class _TicketRun:
                 "ticket.started",
                 "Ticket started",
                 f"Issue #{self.number} ({self.issue.url}), branch `{self.branch}` from"
-                f" `{self.remote}/{self.config.base_branch}`, working tree `{self.worktree}`.",
+                f" `{self.remote}/{self.config.base_branch}`, working tree `{self.worktree}`,"
+                f" slot {self.slot} (`{context.SLOT_VARIABLE}`).",
             )
             env, token_env = self.config.env, self.config.tracker.token_env
             if note := context.declared_secrets(self.environ, env, token_env):
@@ -335,9 +336,8 @@ class _TicketRun:
 
     def _unchanged(self, after: str, guard: dict[str, str]) -> Stop | None:
         """The stop when git or the reviewer's instruction files differ from `guard`, apart from
-        another Ariane run's own branch, its two branch keys and the branch its restart kept
-        (C11, ADR 0017, ADR 0047). Git is read
-        first: a run registers before its git writes, so any it shows is in `during`."""
+        another run's own branch, its branch keys and its kept branch (C11, ADR 0017, ADR 0047).
+        Git is read first: a run registers before its git writes, so any it shows is in `during`."""
         now = self.snapshot()
         others = runs.during(self.registry, self.guard_since, self.witnessed) - {self.number}
         changes = runs.foreign_changes(
@@ -532,7 +532,7 @@ class _TicketRun:
             self.url,
             self._commit_record,
             self.secrets,
-            _token(self.environ, self.config.tracker.token_env),
+            context.token_value(self.environ, self.config.tracker.token_env),
             self.environ,
             checked,
             settled,

@@ -12,6 +12,7 @@ flowchart TB
   verifyrec[(Verify records work/verify/branch/: review.md, checks.md, metrics.json)]
   shadowstore[(Shadow clones repo.ariane/shadow/n/, origin removed)]
   logs[(Log files in repo.ariane/logs/)]
+  slotfiles[(Slot locks ~/.ariane/slots/k.lock, one per machine-wide run slot)]
   session["Agent session process: claude, opencode or codex (Codex CLI, an external system, reviewer only)"]
   ci[CI workflows: ci.yml, check-statuses.yml]
   github[GitHub]
@@ -29,6 +30,7 @@ flowchart TB
   cmd -->|report: reads metrics.json| shadowstore
   cmd -->|report: reads pull request states| github
   cmd -->|technical logs, redacted| logs
+  cmd -->|start, verify: holds the lowest free slot, ARIANE_SLOT| slotfiles
   session -->|reviewer: read-only, in a reviewer tree without instruction files| trees
   session -->|edits files in| trees
   cmd -->|push, pull request, statuses| github
@@ -42,5 +44,6 @@ flowchart TB
 - The reviewer session is read-only: its tools are an allow list (`Read`, `Glob`, `Grep`). It reads a
   separate reviewer tree with no `CLAUDE.md`, `AGENTS.md` or `.claude/` (ADR 0031); Claude Code starts
   from an empty folder with `--restricted`. On opencode it ignores project configuration files. On Codex it runs `codex exec` in the read-only sandbox with the CLI's own login; Ariane never reads `~/.codex/auth.json`.
+- Each `ariane start` (shadow included) and `ariane verify` holds one of 16 machine-wide slots, an operating-system lock on `~/.ariane/slots/<k>.lock` (outside every repository), until it ends; the project gets it as `ARIANE_SLOT` (ADR 0050).
 - The shadow clone is separate from the repository and has no remote: a shadow run cannot push (ADR 0036).
 - The ticket folder (`brief.md`, `journal.md`, `checks.md`, `review-<n>.md`, `status.md`, `metrics.json`) is committed with the ticket and readable without Ariane.

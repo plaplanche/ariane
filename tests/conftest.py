@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from ariane import process
+from ariane import process, slots
 from ariane.config import (
     DEFAULT_DEFINITION_OF_DONE,
     AgentConfig,
@@ -26,6 +26,7 @@ from ariane.runtime import Session, SessionResult, StopReason
 from ariane.tracker import InMemoryTracker
 
 PY = sys.executable
+MACHINE_SLOTS = slots.folder  # the real `~/.ariane/slots`; every test gets its own instead
 
 IDENTITY = {
     f"GIT_{name}_{part}": value
@@ -57,6 +58,16 @@ def isolated_git(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     monkeypatch.delenv("GIT_CONFIG_COUNT", raising=False)
     for key, value in IDENTITY.items():
         monkeypatch.setenv(key, value)
+
+
+@pytest.fixture(autouse=True)
+def isolated_slots(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """Every test gets its own slot folder, not the machine's `~/.ariane/slots` (ADR 0050)."""
+    where = tmp_path_factory.mktemp("slots") / "slots"
+    monkeypatch.setattr(slots, "folder", lambda: where)
+    return where
 
 
 @pytest.fixture(autouse=True)

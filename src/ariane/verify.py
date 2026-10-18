@@ -9,7 +9,7 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from ariane import checks, context, git, process, review, ticket
+from ariane import checks, context, git, process, review, slots, ticket
 from ariane.config import CheckConfig, Config
 from ariane.flow import (
     EXIT_INTERRUPTED,
@@ -24,6 +24,7 @@ from ariane.redact import redact
 from ariane.replay import record_truncation, replay_each, truncation_note
 from ariane.review_session import ReviewFailed, ReviewSession, agent_logins, instruction_dirs
 from ariane.runtime import AgentRuntime
+from ariane.stop import Stop
 from ariane.tracker import Issue, Tracker, TrackerError
 
 VERIFY_DIR = f"{ticket.WORK_DIR}/verify"
@@ -69,13 +70,19 @@ def verify(
 ) -> Outcome:
     """Replay the checks and review `branch` at its head; commit the records on top of it."""
     try:
-        issue_source = _issue(tracker, issue_number)
-        where = _checkout(repo_root, branch)
-        return _Verification(branch, repo_root, config, runtime, environ, where, issue_source).run()
+        with slots.held() as slot:  # held to the end of the verification (ADR 0050)
+            issue_source = _issue(tracker, issue_number)
+            where = _checkout(repo_root, branch)
+            args = (branch, repo_root, config, runtime, environ, where, issue_source, slot)
+            return _Verification(*args).run()
     except KeyboardInterrupt:
         return Outcome(
             EXIT_INTERRUPTED,
             f"Stopped verifying {branch}: interrupted by the user. Next: run verify again.",
+        )
+    except Stop as exc:  # every slot is held
+        return Outcome(
+            EXIT_STOPPED, f"Did not verify {branch}: {exc.reason}. Next: {exc.next_action}."
         )
     except Refused as exc:
         return Outcome(
@@ -123,8 +130,10 @@ class _Verification:
         environ: Mapping[str, str],
         where: Path | None,
         issue: Issue | None,
+        slot: int,
     ) -> None:
         self.branch = branch
+        self.slot = slot
         self.repo_root = repo_root
         self.config = config
         self.runtime = runtime
@@ -137,6 +146,7 @@ class _Verification:
             token_env=config.tracker.token_env,
             remotes=remotes,
             declared=config.env,
+            slot=slot,
         )
         logins = agent_logins(runtime, config.implementer, config.reviewer)
         self.reviewer_env = untrusted(login_variables=logins["reviewer"])
@@ -302,7 +312,9 @@ class _Verification:
         self.metrics.reviewed(settled.go)
         model = sessions.reviewer.model
         texts = {
-            REVIEW: review.record(settled, self.head, model) + _truncation_section(self.truncation),
+            REVIEW: review.record(settled, self.head, model)
+            + _truncation_section(self.truncation)
+            + _slot_section(self.slot),
             ticket.CHECKS: checks.report(results, self.head, changed),
         }
         green = settled.go and not checks.blocking_failures(results)
@@ -428,6 +440,11 @@ class _Verification:
         finally:
             if temporary:
                 git.remove_worktree(self.repo_root, tree)
+
+
+def _slot_section(slot: int) -> str:
+    given = f"`{context.SLOT_VARIABLE}={slot}` for the setup, the checks and the reviewer"
+    return f"\n## Run\n\nSlot {slot} ({given}, ADR 0050).\n"
 
 
 def _truncation_section(note: str) -> str:
