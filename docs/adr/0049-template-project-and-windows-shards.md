@@ -87,27 +87,39 @@ cannot push a workflow file (CLAUDE.md, "Cloud sessions"), so no CI run has repo
   `origin` is its own remote (`tests/test_c9_project_template.py`). The copies share their
   initial commit id within a worker, which no test relies on being different. Serially
   (`-n 0`) there is one template for the session.
-- **The next slowest avoidable set-ups.** Chosen from the Linux count of git processes per
-  test above, not from the Windows list, which does not exist yet: a set-up that starts git
-  processes costs more on Windows than on Linux, never less, so the set-ups with the most of
-  them are the first candidates on both. If the Windows list of "Handover", step 2, shows a
-  slow test whose set-up starts avoidable git processes and is not below, it is changed in a
-  follow-up ticket. No single test body has avoidable git set-up of the
-  size of the fixtures (the bodies' git calls are what they test), so the five changed are the
-  set-ups that commit on a branch through a temporary worktree (four or five processes each).
-  They now call `commit_on_branch` in `conftest.py`, one `git fast-import` that adds a commit to
-  a branch without checking it out, with the same files, message and identity:
-  1. the `project` fixture itself (six processes to none, above);
-  2. the `branch` fixture of `tests/test_verify.py` (four to one);
-  3. the `hand_branch` fixture of `tests/test_c11_guard_hardening.py` (four to one);
-  4. the `hand_branch` fixture of `tests/test_c11_remote_scope.py` (four to one);
-  5. the racing commit of `test_c23_verify_records_a_branch_committed_to_during_the_run_commits_nothing`
+- **The next slowest avoidable set-ups.** Beyond the `project` fixture, five more set-ups are
+  changed. They are chosen, for now, from the Linux count of git processes per test above,
+  since no Windows list exists yet: a set-up that starts git processes costs more on Windows
+  than on Linux, never less, so the set-ups with the most of them are the first candidates on
+  both. This choice is provisional: it is checked against the Windows list of "Handover",
+  step 1, and if that list shows a slow test whose set-up starts avoidable git processes and is
+  not below, it replaces the least of the five in a fix round of this ticket, not in a
+  follow-up. No single test body has avoidable git set-up of the size of the fixtures (the
+  bodies' git calls are what they test). The five commit on a branch through a temporary
+  worktree or another clone (four or five processes each); they now call `commit_on_branch` in
+  `conftest.py`, one `git fast-import` that adds a commit to a branch without checking it out,
+  with the same files, message and identity:
+  1. the `branch` fixture of `tests/test_verify.py` (four to one);
+  2. the `hand_branch` fixture of `tests/test_c11_guard_hardening.py` (four to one);
+  3. the `hand_branch` fixture of `tests/test_c11_remote_scope.py` (four to one);
+  4. the racing commit of `test_c23_verify_records_a_branch_committed_to_during_the_run_commits_nothing`
      and `test_c23_verify_records_branch_moved_is_caught_before_the_commit`, and the symbolic
      link commit of `test_c11_guard_hardening_verify_records_replace_a_symlinked_checks_file`
-     (four or five to one).
-  No assertion changed. With them, the suite starts 18,924 git processes instead of 20,638, 47
-  of them in set-up instead of 1,796, and the summed set-up phase on Linux falls from 17.0 s to
-  4.7 s (same machine, back to back).
+     (four or five to one);
+  5. the fast-forward of the base branch by another party, in
+     `test_c11_remote_check_a_fast_forward_of_the_base_branch_does_not_stop` and the
+     non-rewriting `_advance_base` of `tests/test_c11_remote_scope.py`: a clone, `add`,
+     `commit` and `push` become one `commit_on_branch` straight into the bare remote (four to
+     one). The rewriting variant keeps its clone: it replaces the root commit, which
+     `commit_on_branch` does not do.
+  No assertion changed. With the template and items 1 to 4, the suite starts 18,924 git
+  processes instead of 20,638, 47 of them in set-up instead of 1,796, and the summed set-up
+  phase on Linux falls from 17.0 s to 4.7 s (same machine, back to back); item 5 saves about
+  three more processes in each of its three tests.
+- **Regression checks.** `tests/test_c9_project_template.py` runs a two-test suite in a child
+  pytest and finds a single `project-template` directory under its base temp (one template per
+  session, two projects), and gets a `project` while starting a process is refused (the copy
+  starts no process); both fail if the template is rebuilt per test or the copy calls git.
 - **Shards on Windows, only if the measurement asks for it.** Not decided by this ADR's
   author: the order is measure, then shard. The Windows tests step of the run of commit 1
   below (template and set-ups, no shards) decides. If it is at most 480 s (8 minutes), nothing
@@ -270,7 +282,9 @@ on this pull request's branch:
 
 1. Takes the Windows "before" list: the 30 slowest tests on Windows from a CI run of `main` with
    `--durations=30` (for example a throwaway branch from `main` with only the `Tests` step of
-   commit 1), and adds it under "Measurements before the change", beside the Linux list.
+   commit 1), and adds it under "Measurements before the change", beside the Linux list. If it
+   names a slow test whose set-up starts avoidable git processes and is not among the five of
+   "Decision", the pull request goes back to a fix round with that list as a finding.
 2. Applies commit 1, pushes, waits for the run, and records in the Durations table the tests
    step and job duration of each `checks` job, the result and step duration of each `serial`
    job, the run's URL, and the 30 slowest Windows tests after the change. The three `serial`

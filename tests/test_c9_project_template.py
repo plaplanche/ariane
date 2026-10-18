@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,18 @@ from pathlib import Path
 import pytest
 
 from conftest import Project, commit_on_branch, copy_template, sh
+
+_TWO_TESTS = """
+from conftest import Project
+
+
+def test_one(project: Project) -> None:
+    assert (project.root / "app.txt").is_file()
+
+
+def test_two(project: Project) -> None:
+    assert (project.root / "app.txt").is_file()
+"""
 
 
 def _head(project: Project) -> str:
@@ -100,3 +113,37 @@ def test_c9_project_template_commit_on_branch_adds_one_commit_without_a_checkout
     assert sh(["git", "show", "hand/fix:docs/new.md"], project.root) == "new"
     assert sh(["git", "branch", "--show-current"], project.root) == "main"
     assert sh(["git", "status", "--porcelain"], project.root) == ""
+
+
+def test_c9_project_template_is_built_once_for_the_tests_of_a_session(tmp_path: Path) -> None:
+    suite = tmp_path / "suite"
+    suite.mkdir()
+    shutil.copy(Path(__file__).with_name("conftest.py"), suite / "conftest.py")
+    (suite / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    (suite / "test_two.py").write_text(_TWO_TESTS, encoding="utf-8")
+    base = tmp_path / "base"
+    options = ["-q", "-n", "0", "-p", "no:cacheprovider", f"--basetemp={base}"]
+    done = subprocess.run(
+        [sys.executable, "-m", "pytest", *options, "--rootdir", str(suite), "-c", "pytest.ini"],
+        cwd=suite,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "2 passed" in done.stdout
+    assert [p.name for p in base.glob("project-template[0-9]*")] == ["project-template0"]
+    assert len([p for p in base.glob("test_*[0-9]/proj") if p.is_dir()]) == 2
+
+
+def test_c9_project_template_copy_starts_no_process(
+    project_template: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise AssertionError(f"a process was started: {args}")
+
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+    copied = request.getfixturevalue("project")
+    monkeypatch.undo()
+    assert copied.root.parent != project_template
+    assert sh(["git", "remote", "get-url", "origin"], copied.root) == str(copied.remote)

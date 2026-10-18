@@ -36,19 +36,16 @@ def _push(project: Project, *args: str) -> Callable[[Session], None]:
 
 def _advance_base(project: Project, *, rewrite: bool) -> Callable[[Session], None]:
     def push(session: Session) -> None:
+        if not rewrite:  # a fast-forward, committed straight into the remote (ADR 0049)
+            commit_on_branch(project.remote, "main", "merge", {"x.txt": "x\n"})
+            return
         other = project.root.parent / "other-clone"
         sh(["git", "clone", "--quiet", str(project.remote), str(other)], project.root.parent)
-        if rewrite:
-            sh(["git", "reset", "--quiet", "--hard", "HEAD"], other)
-            (other / "x.txt").write_text("x\n", encoding="utf-8")
-            sh(["git", "add", "x.txt"], other)
-            sh(["git", "commit", "--quiet", "--amend", "-m", "rewritten"], other)
-            sh(["git", "push", "--quiet", "--force", "origin", "HEAD:main"], other)
-        else:
-            (other / "x.txt").write_text("x\n", encoding="utf-8")
-            sh(["git", "add", "x.txt"], other)
-            sh(["git", "commit", "--quiet", "-m", "merge"], other)
-            sh(["git", "push", "--quiet", "origin", "HEAD:main"], other)
+        sh(["git", "reset", "--quiet", "--hard", "HEAD"], other)
+        (other / "x.txt").write_text("x\n", encoding="utf-8")
+        sh(["git", "add", "x.txt"], other)
+        sh(["git", "commit", "--quiet", "--amend", "-m", "rewritten"], other)
+        sh(["git", "push", "--quiet", "--force", "origin", "HEAD:main"], other)
 
     return push
 
