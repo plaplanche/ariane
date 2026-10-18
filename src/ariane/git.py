@@ -7,6 +7,7 @@ import hashlib
 import os
 import re
 import shutil
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -75,12 +76,23 @@ def token_free_environment(base: Mapping[str, str] | None = None) -> dict[str, s
 
 
 def git(
-    args: list[str], cwd: Path, *, env: Mapping[str, str] | None = None, check: bool = True
+    args: list[str],
+    cwd: Path,
+    *,
+    env: Mapping[str, str] | None = None,
+    check: bool = True,
+    input_text: str | None = None,
 ) -> process.Completed:
     logs.emit("git.command", "git " + " ".join(args))
     if env is None:
         env = token_free_environment()
-    completed = process.run(["git", *_SAFE_OPTIONS, *args], cwd=cwd, timeout_s=_TIMEOUT_S, env=env)
+    completed = process.run(
+        ["git", *_SAFE_OPTIONS, *args],
+        cwd=cwd,
+        timeout_s=_TIMEOUT_S,
+        env=env,
+        input_text=input_text,
+    )
     if check and not completed.ok:
         raise GitError(redact(f"git {' '.join(args)} failed:\n{completed.output.strip()}"))
     return completed
@@ -159,7 +171,7 @@ def remote_refs(cwd: Path, url: str) -> dict[str, str]:
 
 def add_worktree(cwd: Path, path: Path, branch: str, start: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    git(["worktree", "add", "--quiet", "-b", branch, str(path), start], cwd)
+    git(["worktree", "add", "--quiet", "--no-track", "-b", branch, str(path), start], cwd)
 
 
 def add_detached_worktree(cwd: Path, path: Path, commit: str) -> None:
@@ -282,9 +294,13 @@ def config_snapshot(
     """Everything that makes git run code or reroute a push, by part.
 
     Parts: each file of the shared configuration, hooks and info folders and of this working
-    tree's own configuration (as a digest), every configuration scope git reads (global
-    included), the local branches and tags except branch `ignore_ref` (the ticket's own), and
-    the refs in `watch_refs` (the remote-tracking ref of the base branch).
+    tree's own configuration (as a digest), the shared `config`'s keys (`keys <path>`: its
+    `git config --list --null`, in file order, parsed from the very bytes its digest is taken
+    from, so that `runs.foreign_changes` compares it by key), every setting of every
+    configuration scope git reads (global included; its value is its positions among the
+    settings of the same key, so reordering them is a change), the local branches and tags except
+    branch `ignore_ref` (the ticket's own), and the refs in `watch_refs` (the remote-tracking ref
+    of the base branch).
     Ariane compares two snapshots taken before and after untrusted code runs: a difference
     means that code edited git itself, and `snapshot_changes` names what changed.
     """
@@ -300,6 +316,7 @@ def config_snapshot(
                 and p.relative_to(common).as_posix() not in _GENERATED_LISTINGS
             )
     snapshot = {}
+    shared = common / "config"
     for path in files:
         if path.is_symlink():
             content = b"symlink:" + os.readlink(path).encode("utf-8")
@@ -308,9 +325,16 @@ def config_snapshot(
         else:
             continue
         snapshot[f"file {path.as_posix()}"] = hashlib.sha256(content).hexdigest()[:16]
+        if path == shared:  # one read: the keys always match the digest, whoever writes
+            snapshot[f"keys {shared.as_posix()}"] = _listing(worktree, content)
     scopes = out(["config", "--list", "--show-origin", "--show-scope"], worktree)
+    positions: dict[str, list[str]] = {}
+    seen: Counter[str] = Counter()
     for line in scopes.splitlines():
-        snapshot[f"setting {line}"] = ""
+        name = line.split("\t", 2)[-1].partition("=")[0]
+        positions.setdefault(f"setting {line}", []).append(str(seen[name]))
+        seen[name] += 1
+    snapshot |= {part: ",".join(at) for part, at in positions.items()}
     refs = out(
         ["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags"], worktree
     )
@@ -323,6 +347,13 @@ def config_snapshot(
         found = git(["rev-parse", "--verify", "--quiet", ref], worktree, check=False)
         snapshot[f"ref {ref}"] = found.stdout.strip() if found.ok else ""
     return snapshot
+
+
+def _listing(cwd: Path, content: bytes) -> str:
+    """`git config --list --null` of a configuration file's `content`, read from standard input."""
+    text = content.decode("utf-8", errors="replace")
+    listing = git(["config", "--file", "-", "--list", "--null"], cwd, check=False, input_text=text)
+    return listing.stdout if listing.ok else "unreadable"
 
 
 def snapshot_changes(before: dict[str, str], after: dict[str, str]) -> list[str]:

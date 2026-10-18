@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from ariane import git, ticket
+from ariane import flow, git, ticket
 from ariane.config import CheckConfig
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker, TrackerError
@@ -357,9 +357,8 @@ def test_c11_guard_message_for_a_changed_remote(project: Project, tracker: InMem
         sh(["git", "push", "--quiet", str(project.remote), ":refs/tags/other"], session.cwd)
 
     outcome = start(project, tracker, FakeRuntime(action=delete_branch))
-    assert "nobody runs git commands in the repository or pushes to it while a ticket runs" in (
-        outcome.line
-    )
+    assert flow.QUIET in outcome.line
+    assert flow.QUIET.startswith("only Ariane runs git commands in the repository")
 
 
 def test_c11_guard_message_for_changed_git_configuration(
@@ -370,6 +369,5 @@ def test_c11_guard_message_for_changed_git_configuration(
         sh(["git", "config", "url.https://elsewhere.invalid/.insteadOf", "x"], session.cwd)
 
     outcome = start(project, tracker, FakeRuntime(action=reroute))
-    assert "nobody runs git commands in the repository or pushes to it while a ticket runs" in (
-        outcome.line
-    )
+    assert flow.QUIET in outcome.line
+    assert flow.QUIET.startswith("only Ariane runs git commands in the repository")

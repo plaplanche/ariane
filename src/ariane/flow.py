@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ariane import checks, context, git, logs, process, replay, review, review_session, ticket
+from ariane import checks, context, git, logs, process, replay, review, review_session, runs, ticket
 from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.metrics import METRICS, Metrics
@@ -33,7 +33,7 @@ class Outcome:
     detail: str = ""  # shown before the line, for example a failing setup's output
 
 
-QUIET = "nobody runs git commands in the repository or pushes to it while a ticket runs"
+QUIET = "only Ariane runs git commands in the repository or pushes to it while a ticket runs"
 
 
 def worktree_path(repo_root: Path, number: int) -> Path:
@@ -66,18 +66,19 @@ def start(
         return _interrupted_before_start(number)
     branch = branch_name(number)
     worktree = worktree_path(repo_root, number)
-    try:
-        url, refs_before, instructions = _prepare(repo_root, config, branch, worktree)
-        run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url)
-        run.base_instructions = instructions
-    except KeyboardInterrupt:
-        return _interrupted_before_start(number)
-    except (Stop, *_FAILURES) as exc:
-        reason, next_action = describe(exc)
-        return Outcome(
-            EXIT_STOPPED, f"Did not start ticket #{number}: {reason}. Next: {next_action}."
-        )
-    return run.execute(refs_before)
+    with contextlib.ExitStack() as registry:  # the entry goes however the run ends (C11)
+        try:
+            registry.enter_context(runs.registered(runs.folder(repo_root), number, branch))
+            witnessed = registry.enter_context(runs.watching(runs.folder(repo_root)))
+            url, refs_before, instructions = _prepare(repo_root, config, branch, worktree)
+            run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url)
+            run.base_instructions = instructions
+            run.witnessed = witnessed
+        except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
+            reason, next_action = describe(exc)
+            code = EXIT_INTERRUPTED if isinstance(exc, KeyboardInterrupt) else EXIT_STOPPED
+            return Outcome(code, f"Did not start ticket #{number}: {reason}. Next: {next_action}.")
+        return run.execute(refs_before)
 
 
 def _interrupted_before_start(number: int) -> Outcome:
@@ -144,6 +145,8 @@ class _TicketRun:
         self.changed: list[str] = []
         self.truncated: list[str] = []  # the files whose hunks the last reviewed diff lacked
         self.processes_before: set[int] = set()
+        self.registry = worktree.parent.parent / runs.FOLDER  # `runs.folder` of the repository
+        self.witnessed: dict[int, runs.Run] = {}  # the other runs this run has seen live
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
         self.folder = ticket.TicketFolder(worktree, issue.number, secrets=self.secrets)
         self.metrics = Metrics(issue.number, "delivered", lambda t: self.folder.write(METRICS, t))
@@ -163,6 +166,7 @@ class _TicketRun:
         try:
             self.processes_before = set(process.descendants(exited=True))
             # Taken before the setup: instruction files it writes are not part of the baseline.
+            self.guard_since = runs.now()  # other runs active since may touch their branches
             guard = self.snapshot()
             setup_error = self.setup(self.worktree, self.config.setup, guard)
             self.folder.create(self.issue)
@@ -304,49 +308,44 @@ class _TicketRun:
     ) -> None:
         """C11: after untrusted code ran, nothing escaped the ticket branch (violations counted)."""
         try:
-            self._verify(after, start_commit, guard, refs_before, expected_head)
+            keep = "inspect the working tree; Ariane pushed nothing"
+            survived = self.survivors(after)
+            if survived is not None:
+                raise survived
+            branch = git.current_branch(self.worktree)
+            if branch != self.branch:
+                raise Stop(f"{after} left branch {self.branch} (now {branch or 'detached'})", keep)
+            if not git.is_ancestor(self.worktree, start_commit, "HEAD"):
+                raise Stop(f"{after} rewrote the ticket branch's history", keep)
+            if expected_head is not None and git.head(self.worktree) != expected_head:
+                raise Stop(f"{after} moved the ticket branch", keep)
+            unchanged = self._unchanged(after, guard)
+            if unchanged is not None:
+                raise unchanged
+            changed = self._remote_changes(refs_before)
+            if changed:
+                raise Stop(
+                    f"the remote changed during {after} ({', '.join(changed)})",
+                    "check it was not the agent; if a person pushed, start the ticket again;"
+                    f" {QUIET}",
+                )
+            logs.emit("guard.verified", f"after {after}: branch, history, git and remote unchanged")
+            self.folder.log(
+                "ticket.guard.verified",
+                f"Verified after {after}",
+                "Same branch and history, git unchanged, remote unchanged.",
+            )
         except Stop:
             self.metrics.guard_violation()
             raise
 
-    def _verify(
-        self,
-        after: str,
-        start_commit: str,
-        guard: dict[str, str],
-        refs_before: dict[str, str],
-        expected_head: str | None,
-    ) -> None:
-        keep = "inspect the working tree; Ariane pushed nothing"
-        survived = self.survivors(after)
-        if survived is not None:
-            raise survived
-        branch = git.current_branch(self.worktree)
-        if branch != self.branch:
-            raise Stop(f"{after} left branch {self.branch} (now {branch or 'detached'})", keep)
-        if not git.is_ancestor(self.worktree, start_commit, "HEAD"):
-            raise Stop(f"{after} rewrote the ticket branch's history", keep)
-        if expected_head is not None and git.head(self.worktree) != expected_head:
-            raise Stop(f"{after} moved the ticket branch", keep)
-        unchanged = self._unchanged(after, guard)
-        if unchanged is not None:
-            raise unchanged
-        changed = self._remote_changes(refs_before)
-        if changed:
-            raise Stop(
-                f"the remote changed during {after} ({', '.join(changed)})",
-                f"check it was not the agent; if a person pushed, start the ticket again; {QUIET}",
-            )
-        logs.emit("guard.verified", f"after {after}: branch, history, git and remote unchanged")
-        self.folder.log(
-            "ticket.guard.verified",
-            f"Verified after {after}",
-            "Same branch and history, git unchanged, remote unchanged.",
-        )
-
     def _unchanged(self, after: str, guard: dict[str, str]) -> Stop | None:
-        """The stop when git or the reviewer's instruction files differ from `guard`."""
-        changes = git.snapshot_changes(guard, self.snapshot())
+        """The stop when git or the reviewer's instruction files differ from `guard`, apart from
+        another Ariane run's own branch and its two branch keys (C11, ADR 0017). Git is read
+        first: a run registers before its git writes, so any it shows is in `during`."""
+        now = self.snapshot()
+        others = runs.during(self.registry, self.guard_since, self.witnessed) - {self.number}
+        changes = runs.foreign_changes(guard, now, others)
         written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
         if written:
             return Stop(

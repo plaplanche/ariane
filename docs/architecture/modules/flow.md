@@ -13,7 +13,7 @@
 | `EXIT_INTERRUPTED` | constant | Exit code 130: Ctrl-C. |
 | `MAX_FIX_ROUNDS` | constant | Fix rounds after a negative review (2). |
 | `Outcome` | dataclass | What `ariane start` reports: `exit_code`, `line`, `detail`. |
-| `QUIET` | constant | The sentence naming the rule that nobody touches the repository while a ticket runs. |
+| `QUIET` | constant | The sentence naming the rule that only Ariane runs git commands in the repository or pushes to it while a ticket runs. |
 | `worktree_path(repo_root, number)` | function | Where the ticket's working tree lives. |
 | `stopped_metrics_path(worktree, number)` | function | `<repo>.ariane/stopped/<n>/metrics.json`: where a ticket stopped before its folder exists (Ctrl-C or an error in the first setup) keeps its metrics, survivors included (ADR 0031). |
 | `branch_name(number)` | function | The ticket's branch, `ariane/<n>`. |
@@ -24,6 +24,7 @@
 - `start`: the whole flow for one ticket number.
 - `Outcome`: the result reported to the command line.
 - The push guard's remote check (C11, ADR 0017) is `git.remote_changes`, called after the agent session with the ticket's branch.
+- Parallel tickets (C11, ADR 0017): `start` registers the run with `runs.registered` in `<repo>.ariane/runs/<n>` before preparing the branch and removes the entry however the run ends (a live run of the same ticket: "Did not start ticket #n: ticket #n is already running"). `_unchanged` takes the new snapshot first, then reads the registry (a run registers before it writes to git, so every run whose changes the snapshot shows is known), and compares the guard's snapshots through `runs.foreign_changes`, with the tickets other than this one that were running at any time since the guard's first snapshot and that Ariane can vouch for (`runs.during`, from `guard_since`, with the runs `runs.watching` saw live during the whole run): another run's branch `ariane/<m>` and its `remote` and `merge` keys are ignored; anything else stops the ticket, and the journal lists only what is not another run's own.
 - `Stop` (module `stop`): ends the flow early with a recorded reason.
 - The replay of the checks and the review round are in [replay](replay.md) (ADR 0034).
 - Metrics (C19): `work/<n>/metrics.json` is rewritten after the folder is opened, each session, the checks replayed, and the delivery or stop ([metrics](metrics.md)); delivery also records `blocking_red_at_delivery`, the number of blocking checks red at that point (C19, ADR 0038).
@@ -48,7 +49,8 @@
 ```mermaid
 flowchart TD
   A[start number] --> B[read the issue: TrackerError gives its exit code]
-  B --> C[prepare branch and working tree]
+  B --> R[register the run in runs/n, removed however it ends]
+  R --> C[prepare branch and working tree]
   C --> D[open the ticket folder]
   D --> E[setup command]
   E --> F[implementer session]
@@ -84,6 +86,8 @@ class Outcome {
   detail str
 }
 class _TicketRun {
+  registry Path
+  guard_since str
   execute(refs_before) Outcome
   setup(cwd, command, guard) Stop
   verify(after, start_commit, guard, refs_before, expected_head)
@@ -118,6 +122,7 @@ flowchart LR
   flow --> replay
   flow --> review
   flow --> review_session
+  flow --> runs
   flow --> runtime
   flow --> stop
   flow --> ticket

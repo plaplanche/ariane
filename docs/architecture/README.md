@@ -71,6 +71,7 @@ flowchart LR
 - [`report`](modules/report.md)
 - [`review`](modules/review.md)
 - [`review_session`](modules/review_session.md)
+- [`runs`](modules/runs.md)
 - [`runtime`](modules/runtime.md)
 - [`shadow`](modules/shadow.md)
 - [`stop`](modules/stop.md)
