@@ -4,8 +4,10 @@ kept, never while another process runs it (C5, C19, C23, ADR 0047)."""
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from collections.abc import Iterator
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -286,3 +288,97 @@ def test_c23_restart_report_counts_the_time_from_the_previous_stop(tmp_path: Pat
     }
     path.write_text(json.dumps(data), encoding="utf-8")
     assert "restarts 1h15m" in "\n".join(report.build(root, None).lines)
+
+
+def kept_file(project: Project, kept: str, path: str) -> str:
+    return sh(["git", "show", f"{kept}:{path}"], project.root)
+
+
+def test_c23_restart_keeps_the_uncommitted_work_of_a_killed_run(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    """A run killed during the implementer session, before Ariane committed: the modified and
+    the untracked files exist only in its tree, and the kept branch holds them."""
+    head = leave_killed_run(project)
+    tree = worktree(project)
+    (tree / "app.txt").write_text("version 2\n", encoding="utf-8")
+    (tree / "notes").mkdir()
+    (tree / "notes" / "new.txt").write_text("untracked work\n", encoding="utf-8")
+
+    done = start(project, tracker, FakeRuntime(), restarting=True)
+    assert done.exit_code == 0, done.line
+    [kept] = kept_branches(project)
+    saved = sh(["git", "rev-parse", kept], project.root)
+    assert saved != head
+    assert sh(["git", "rev-parse", f"{kept}^"], project.root) == head
+    assert kept_file(project, kept, "app.txt") == "version 2"
+    assert kept_file(project, kept, "notes/new.txt") == "untracked work"
+    journal = project.show("ariane/7", "work/7/journal.md")
+    assert f"saved in commit `{saved}`" in journal
+
+
+def test_c23_restart_keeps_the_work_of_an_interrupted_session(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    def edit_then_interrupt(session: Session) -> None:
+        (session.cwd / "app.txt").write_text("version 2\n", encoding="utf-8")
+        (session.cwd / "draft.txt").write_text("half done\n", encoding="utf-8")
+        raise KeyboardInterrupt
+
+    assert start(project, tracker, FakeRuntime(action=edit_then_interrupt)).exit_code == 130
+    assert start(project, tracker, FakeRuntime(), restarting=True).exit_code == 0
+    [kept] = kept_branches(project)
+    assert kept_file(project, kept, "app.txt") == "version 2"
+    assert kept_file(project, kept, "draft.txt") == "half done"
+
+
+def test_c23_restart_keeps_commits_of_a_tree_detached_from_its_branch(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    head = leave_killed_run(project)
+    tree = worktree(project)
+    sh(["git", "checkout", "--quiet", "--detach"], tree)
+    (tree / "app.txt").write_text("version 3\n", encoding="utf-8")
+    sh(["git", "commit", "--quiet", "-am", "off the branch"], tree)
+    detached = git.head(tree)
+
+    assert start(project, tracker, FakeRuntime(), restarting=True).exit_code == 0
+    [kept] = kept_branches(project)
+    parents = sh(["git", "rev-list", "--parents", "-n", "1", kept], project.root).split()[1:]
+    assert parents == [head, detached]
+    assert kept_file(project, kept, "app.txt") == "version 3"
+
+
+def test_c23_restart_a_forged_kept_branch_of_a_live_run_is_never_exempt(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ticket 8 is genuinely running; ticket 7's agent rewrites its entry to exempt `main`."""
+    monkeypatch.setattr(runs, "_started_as", lambda pid, number: True)  # runs in this process
+    where = runs.folder(project.root)
+    where.mkdir(parents=True)
+    genuine = runs.Run(8, "ariane/8", os.getpid(), runs.now())
+    entry = where / "8"
+    entry.write_text(json.dumps(asdict(genuine)), encoding="utf-8")
+    witnessed: dict[int, runs.Run] = {}
+    assert runs.during(where, runs.now(), witnessed) == {8}
+
+    before = git.config_snapshot(project.root, ignore_ref="refs/heads/ariane/7")
+    forged = {**asdict(genuine), "kept": "main"}
+    entry.write_text(json.dumps(forged), encoding="utf-8")
+    sh(["git", "commit", "--quiet", "--allow-empty", "-m", "moved main"], project.root)
+    assert runs.during(where, runs.now(), witnessed) == {8}
+    assert witnessed[8] == genuine  # the rewrite is not the run's
+    after = git.config_snapshot(project.root, ignore_ref="refs/heads/ariane/7")
+    exempt = runs.kept_branches(witnessed, {8})
+    assert runs.foreign_changes(before, after, {8}, exempt), "main moved: a change"
+
+    # Forged from the start: only a name a restart of that ticket chose when it started counts.
+    started = "2026-10-18T10:00:05.000000+00:00"
+    for name in ("main", "ariane-restarted/9-20261018T100000Z", "ariane-restarted/8-x"):
+        assert runs.kept_branches({8: runs.Run(8, "ariane/8", 1, started, name)}, {8}) == set()
+    late = "ariane-restarted/8-20261018T100010Z"  # after the run started
+    old = "ariane-restarted/8-20261018T090000Z"  # an earlier restart's branch
+    assert runs.kept_branches({8: runs.Run(8, "ariane/8", 1, started, late)}, {8}) == set()
+    assert runs.kept_branches({8: runs.Run(8, "ariane/8", 1, started, old)}, {8}) == set()
+    own = "ariane-restarted/8-20261018T100004Z"
+    assert runs.kept_branches({8: runs.Run(8, "ariane/8", 1, started, own)}, {8}) == {own}

@@ -337,8 +337,9 @@ class _TicketRun:
         first: a run registers before its git writes, so any it shows is in `during`."""
         now = self.snapshot()
         others = runs.during(self.registry, self.guard_since, self.witnessed) - {self.number}
-        kept = {self.witnessed[m].kept for m in others if m in self.witnessed}
-        changes = runs.foreign_changes(guard, now, others, kept)
+        changes = runs.foreign_changes(
+            guard, now, others, runs.kept_branches(self.witnessed, others)
+        )
         written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
         if written:
             return Stop(

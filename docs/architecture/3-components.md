@@ -109,6 +109,7 @@ flowchart TD
   review_session --> tracker
   runs --> git
   runs --> process
+  runs --> restart
   runs --> stop
   runtime --> attempts
   runtime --> config
@@ -167,7 +168,8 @@ sequenceDiagram
   F->>L: prepare
   L->>G: fetch; refuse if ariane/n is on the remote
   opt --restart
-    L->>G: remove the trees n, n-review, n-replay* (unknown folders as folders); rename ariane/n to ariane-restarted/n-time
+    L->>G: save the uncommitted work of tree n in a commit (temporary index)
+    L->>G: remove the trees n, n-review, n-replay* (unknown folders as folders); rename ariane/n to ariane-restarted/n-time, the saved commit on top
   end
   L->>G: refuse leftovers (next: --restart), add the ticket working tree
   F->>F: journal ticket.restarted first when it started over

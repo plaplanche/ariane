@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ariane import git, process
+from ariane import git, process, restart
 from ariane.stop import Stop
 
 FOLDER = "runs"
@@ -243,7 +243,9 @@ def during(where: Path, since: str, witnessed: dict[int, Run]) -> set[int]:
     with _locked(where):
         _reclaim(where)
         live = {number: run for number, run in _live(where).items() if genuine(run)}
-        witnessed.update(live)
+        for number, run in live.items():  # an entry is written once: a rewrite is not its run's
+            if number not in witnessed or witnessed[number].pid != run.pid:
+                witnessed[number] = run
         gone = _ended(where, since)
     return set(live) | {run.number for run in gone if witnessed.get(run.number) == run}
 
@@ -256,6 +258,18 @@ def _ended(where: Path, since: str) -> set[Run]:
                 ended = json.loads(line)
                 if ended.pop("ended") >= since:
                     found.add(Run(**ended))
+    return found
+
+
+def kept_branches(witnessed: dict[int, Run], numbers: Iterable[int]) -> set[str]:
+    """The kept branches of the runs in `numbers` that the guard tolerates: only a name a
+    restart of that very ticket chose when it started (`restart.is_kept_name`), as first
+    witnessed. The entry is agent-writable: any other name, `main` included, is never exempt."""
+    found = set()
+    for m in numbers:
+        run = witnessed.get(m)
+        if run is not None and restart.is_kept_name(run.kept, run.number, run.started):
+            found.add(run.kept)
     return found
 
 

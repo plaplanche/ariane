@@ -6,9 +6,11 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import shutil
 import stat
 import sys
+import tempfile
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -22,6 +24,7 @@ from ariane.stop import Stop
 REMOTE = "origin"
 LOCKS = "locks"
 KEPT_PREFIX = "ariane-restarted"
+_STAMP = "%Y%m%dT%H%M%SZ"
 
 
 def lock_path(repo_root: Path, number: int) -> Path:
@@ -82,6 +85,7 @@ class Restarted:
     removed: tuple[Path, ...]
     kept_branch: str  # "" when there was no local branch
     kept_head: str
+    saved: str  # the commit holding the uncommitted work of the ticket's tree, "" when none
     last_action: str  # "" when the kept branch has no readable status
     stopped_at: str | None  # the previous run's last step, None when unreadable
 
@@ -91,6 +95,11 @@ class Restarted:
             branch = f"Previous branch kept as `{self.kept_branch}` at `{self.kept_head}`."
         else:
             branch = "No previous local branch."
+        if self.saved:
+            branch += (
+                f" The uncommitted work of the ticket's working tree is saved in commit"
+                f" `{self.saved}`, the kept branch's head."
+            )
         status = f"work/{number}/{ticket.STATUS}"
         last = self.last_action or f"unknown (no readable `{status}` on the kept branch)"
         return (
@@ -105,7 +114,24 @@ class Restarted:
 
 def kept_name(number: int) -> str:
     """`ariane-restarted/<n>-<UTC time as YYYYMMDDTHHMMSSZ>`, where a restart keeps the branch."""
-    return f"{KEPT_PREFIX}/{number}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    return f"{KEPT_PREFIX}/{number}-{datetime.now(UTC).strftime(_STAMP)}"
+
+
+def is_kept_name(name: str, number: int, started: str) -> bool:
+    """Whether `name` is the kept name a restart of ticket `number` started at `started` chose:
+    `ariane-restarted/<number>-<stamp>`, the stamp at most a minute before `started` (it is
+    chosen just before the run registers) and never after it. The registry is a file an agent
+    can write, so the guard exempts only such a name, never any other branch (ADR 0047)."""
+    found = re.fullmatch(rf"{KEPT_PREFIX}/{number}-(\d{{8}}T\d{{6}}Z)", name)
+    if found is None:
+        return False
+    try:
+        stamp = datetime.strptime(found[1], _STAMP).replace(tzinfo=UTC)
+        start = datetime.fromisoformat(started.replace("Z", "+00:00"))
+        lag = (start - stamp).total_seconds()
+    except (ValueError, TypeError):
+        return False
+    return 0 <= lag < 60
 
 
 def prepare(
@@ -144,29 +170,58 @@ def leftovers(worktree: Path, number: int) -> list[Path]:
 
 
 def clear(repo_root: Path, worktree: Path, number: int, branch: str, kept: str) -> Restarted | None:
-    """Remove the ticket's working trees and rename its local branch to `kept`; None when
-    there was nothing to clear (a plain start)."""
+    """Save the uncommitted work of the ticket's tree, remove the ticket's working trees and
+    keep its local branch as `kept`, the saved work on top; None when there was nothing to
+    clear (a plain start). Nothing is removed until the work is saved: if saving fails, the
+    restart stops with every tree in place."""
     removed = leftovers(worktree, number)
     has_branch = git.local_branch_exists(repo_root, branch)
     if not removed and not has_branch:
         return None
     git.git(["worktree", "prune"], repo_root)  # a tree whose folder is gone is not registered
     registered = _worktree_paths(repo_root)
+    previous = git.out(["rev-parse", f"refs/heads/{branch}"], repo_root) if has_branch else ""
+    saved = _save(worktree, previous) if worktree.resolve() in registered else ""
     for tree in removed:
         _remove_tree(repo_root, tree, registered)
     git.git(["worktree", "prune"], repo_root)
-    if not has_branch:
-        return Restarted(tuple(removed), "", "", "", None)
-    git.git(["branch", "-m", branch, kept], repo_root)
-    head = git.out(["rev-parse", f"refs/heads/{kept}"], repo_root)
+    if has_branch:
+        git.git(["branch", "-m", branch, kept], repo_root)
+    if saved:
+        git.git(["update-ref", f"refs/heads/{kept}", saved, previous], repo_root)
+    if not has_branch and not saved:
+        return Restarted(tuple(removed), "", "", "", "", None)
     folder = ticket.relative_folder(number)
+    records = previous or saved  # Ariane's records, not the files an agent left uncommitted
     return Restarted(
         tuple(removed),
         kept,
-        head,
-        _last_action(_show(repo_root, kept, f"{folder}/{ticket.STATUS}")),
-        _stopped_at(_show(repo_root, kept, f"{folder}/{METRICS}")),
+        saved or previous,
+        saved,
+        _last_action(_show(repo_root, records, f"{folder}/{ticket.STATUS}")),
+        _stopped_at(_show(repo_root, records, f"{folder}/{METRICS}")),
     )
+
+
+def _save(tree: Path, branch_head: str) -> str:
+    """A commit of everything in `tree` that is not ignored, tracked or not, on top of
+    `branch_head` (and of the tree's own HEAD when it differs, so both stay reachable); "" when
+    the tree holds nothing beyond its HEAD and that HEAD is on the branch. Built in a temporary
+    index: the tree, its index and its refs are untouched."""
+    tree_head = git.out(["rev-parse", "HEAD"], tree)
+    with tempfile.TemporaryDirectory(prefix="ariane-restart-") as scratch:
+        env = {**git.token_free_environment(), "GIT_INDEX_FILE": str(Path(scratch) / "index")}
+        git.git(["read-tree", tree_head], tree, env=env)
+        git.git(["add", "--all"], tree, env=env)
+        snapshot = git.out(["write-tree"], tree, env=env)
+    clean = snapshot == git.out(["rev-parse", f"{tree_head}^{{tree}}"], tree)
+    if clean and branch_head and git.is_ancestor(tree, tree_head, branch_head):
+        return ""
+    parents = list(dict.fromkeys(h for h in (branch_head, tree_head) if h))
+    message = "Work left uncommitted in the working tree when the run stopped (ariane --restart)"
+    args = ["commit-tree", snapshot, *(a for h in parents for a in ("-p", h)), "-m", message]
+    identity = git._identity(os.environ)  # Ariane's own, as on its other commits
+    return git.out(args, tree, env={**git.token_free_environment(), **identity})
 
 
 def _worktree_paths(repo_root: Path) -> set[Path]:
@@ -196,8 +251,8 @@ def _writable_then_retry(function: Callable[[str], object], path: str, _: object
     function(path)
 
 
-def _show(repo_root: Path, branch: str, path: str) -> str:
-    done = git.git(["show", f"refs/heads/{branch}:{path}"], repo_root, check=False)
+def _show(repo_root: Path, commit: str, path: str) -> str:
+    done = git.git(["show", f"{commit}:{path}"], repo_root, check=False)
     return done.stdout if done.ok else ""
 
 

@@ -32,8 +32,15 @@ removes.
   read; a shadow ticket starts over by removing its clone.
 - **Nothing is deleted.** The previous branch is renamed, never deleted: what the previous run
   committed (its records, the agent's work) stays reachable under a name that sorts by time and
-  cannot collide with a ticket branch `ariane/<m>`. Only the trees go; files left uncommitted in
-  them are lost, as the README says.
+  cannot collide with a ticket branch `ariane/<m>`. Before any tree is removed, the files left
+  uncommitted in the ticket's tree `<n>` (modified or untracked, not ignored: a run killed during
+  its implementer session has its work only there) are saved: `git add --all` into a temporary
+  index, `write-tree`, then `commit-tree` on top of the branch's head (and of the tree's own HEAD
+  when it is not on the branch, so both stay reachable); the kept branch points at that commit.
+  The tree, its index and its refs are not touched, so if saving fails the restart stops with
+  everything in place. The `<n>-review` and `<n>-replay*` trees are Ariane's checkouts of
+  committed work and are removed as they are. Ignored files (build output, environments) are not
+  saved.
 - **Records.** The new run's journal opens with `ticket.restarted`: the trees removed, the kept
   branch and its head, and the previous run's last action read from `work/<n>/status.md` on the
   kept branch. `metrics.json` gets `restarted_from: {"branch", "stopped_at"}`, `stopped_at` being
@@ -47,7 +54,11 @@ removes.
   push (the delivery calls `on_pushed`) and a shadow run's stops do not name it.
 - **Concurrent tickets.** The kept name is chosen before the run registers and stored in its
   registry entry (`runs.Run.kept`); another ticket's push guard tolerates exactly that branch for
-  a run it can vouch for, as it tolerates `ariane/<m>` (ADR 0017). Any other branch is still a
+  a run it can vouch for. The entry is a file an agent can write, so the name is checked
+  (`restart.is_kept_name`): it must be `ariane-restarted/<m>-<stamp>` for that run's own ticket
+  `m`, the stamp at most a minute before, and never after, the run's start; and a run's entry
+  counts as first witnessed, a later rewrite with the same process ignored. A forged `kept`
+  (`main`, another ticket's or an older kept branch) exempts nothing, as it tolerates `ariane/<m>` (ADR 0017). Any other branch is still a
   change that stops it.
 - The lock and the preparation live in a new module, `restart`, so that ticket #142 can reuse the lock
   helper and `flow` stays within the file length limit.
