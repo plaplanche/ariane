@@ -10,12 +10,12 @@ import sys
 import threading
 import time
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ariane import git, process
+from ariane import git, process, restart
 from ariane.stop import Stop
 
 FOLDER = "runs"
@@ -31,6 +31,7 @@ class Run:
     branch: str
     pid: int
     started: str  # ISO 8601, UTC
+    kept: str = ""  # with `--restart`, the name its previous branch is kept under (ADR 0047)
 
 
 def now() -> str:
@@ -108,12 +109,13 @@ def _locked(where: Path) -> Iterator[None]:
 
 
 @contextlib.contextmanager
-def registered(where: Path, number: int, branch: str) -> Iterator[Run]:
+def registered(where: Path, number: int, branch: str, kept: str = "") -> Iterator[Run]:
     """Record ticket `number` as running in `where/<number>` for the time of the block, then
     append the run to `ended.jsonl` and remove the entry, however the block ends. A live entry
-    for the same ticket is another run of it: `Stop`. A stale one (dead process) is replaced."""
+    for the same ticket is another run of it: `Stop`. A stale one (dead process) is replaced.
+    `kept` is the branch a restart renames the previous `branch` to, registered before it."""
     entry = where / str(number)
-    run = Run(number, branch, os.getpid(), now())
+    run = Run(number, branch, os.getpid(), now(), kept)
     with _locked(where):
         other = _read(entry)
         if other is not None and alive(other.pid):
@@ -241,7 +243,9 @@ def during(where: Path, since: str, witnessed: dict[int, Run]) -> set[int]:
     with _locked(where):
         _reclaim(where)
         live = {number: run for number, run in _live(where).items() if genuine(run)}
-        witnessed.update(live)
+        for number, run in live.items():  # an entry is written once: a rewrite is not its run's
+            if number not in witnessed or witnessed[number].pid != run.pid:
+                witnessed[number] = run
         gone = _ended(where, since)
     return set(live) | {run.number for run in gone if witnessed.get(run.number) == run}
 
@@ -257,6 +261,18 @@ def _ended(where: Path, since: str) -> set[Run]:
     return found
 
 
+def kept_branches(witnessed: dict[int, Run], numbers: Iterable[int]) -> set[str]:
+    """The kept branches of the runs in `numbers` that the guard tolerates: only a name a
+    restart of that very ticket chose when it started (`restart.is_kept_name`), as first
+    witnessed. The entry is agent-writable: any other name, `main` included, is never exempt."""
+    found = set()
+    for m in numbers:
+        run = witnessed.get(m)
+        if run is not None and restart.is_kept_name(run.kept, run.number, run.started):
+            found.add(run.kept)
+    return found
+
+
 def _bookkeeping(numbers: set[int]) -> set[str]:
     """The `key=value` entries git writes for another run's branch `ariane/<m>`, and no other."""
     allowed = set()
@@ -269,12 +285,20 @@ def _bookkeeping(numbers: set[int]) -> set[str]:
     return allowed
 
 
-def foreign_changes(before: dict[str, str], after: dict[str, str], numbers: set[int]) -> list[str]:
+def foreign_changes(
+    before: dict[str, str],
+    after: dict[str, str],
+    numbers: set[int],
+    kept: Iterable[str] = (),
+) -> list[str]:
     """`git.snapshot_changes(before, after)` without those that are another run's own: the
-    branch `ariane/<m>` of a ticket in `numbers`, and its `remote` and `merge` keys added to or
-    removed from the shared config. Anything else is kept, so the guard still stops on it."""
+    branch `ariane/<m>` of a ticket in `numbers`, the branches in `kept` (the names other runs
+    registered for their previous branch when restarting, `Run.kept`), and the `remote` and
+    `merge` keys of `ariane/<m>` added to or removed from the shared config. Anything else is
+    kept, so the guard still stops on it."""
     allowed = _bookkeeping(numbers)
     refs = {f"ref refs/heads/ariane/{m}" for m in numbers}
+    refs |= {f"ref refs/heads/{name}" for name in kept if name}
     keys = next((k for k in {*before, *after} if k.startswith("keys ")), None)
     shared = keys.removeprefix("keys ") if keys else None
     config_ok = False

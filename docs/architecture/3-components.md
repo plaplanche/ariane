@@ -53,6 +53,7 @@ flowchart TD
   flow --> process
   flow --> redact
   flow --> replay
+  flow --> restart
   flow --> review
   flow --> review_session
   flow --> runs
@@ -79,6 +80,7 @@ flowchart TD
   replay --> delivery
   replay -.-> flow
   replay --> git
+  replay --> restart
   replay --> review
   replay --> review_session
   replay --> stop
@@ -88,6 +90,10 @@ flowchart TD
   report --> shadow
   report --> ticket
   report --> tracker
+  restart --> git
+  restart --> metrics
+  restart --> stop
+  restart --> ticket
   review --> checks
   review --> config
   review --> context
@@ -103,6 +109,7 @@ flowchart TD
   review_session --> tracker
   runs --> git
   runs --> process
+  runs --> restart
   runs --> stop
   runtime --> attempts
   runtime --> config
@@ -144,6 +151,7 @@ sequenceDiagram
   participant CLI as cli
   participant F as flow
   participant T as tracker (github)
+  participant L as restart
   participant N as runs
   participant G as git
   participant R as runtime (claude_code, opencode or codex)
@@ -152,11 +160,19 @@ sequenceDiagram
   participant S as review_session
   participant M as metrics
   participant D as delivery
-  U->>CLI: ariane start n
+  U->>CLI: ariane start n [--restart]
   CLI->>F: start
   F->>T: read the issue
-  F->>N: register the run in repo.ariane/runs/n (refused if a live run has it)
-  F->>G: add the ticket working tree
+  F->>L: hold repo.ariane/locks/n.lock until the end (refused if another process holds it)
+  F->>N: register the run in repo.ariane/runs/n, with --restart the kept branch name (refused if a live run has it)
+  F->>L: prepare
+  L->>G: fetch; refuse if ariane/n is on the remote
+  opt --restart
+    L->>G: save the uncommitted work of tree n in a commit (temporary index)
+    L->>G: remove the trees n, n-review, n-replay* (unknown folders as folders); rename ariane/n to ariane-restarted/n-time, the saved commit on top
+  end
+  L->>G: refuse leftovers (next: --restart), add the ticket working tree
+  F->>F: journal ticket.restarted first when it started over
   F->>F: setup command, ticket folder brief
   F->>R: run the implementer session
   R-->>F: SessionResult

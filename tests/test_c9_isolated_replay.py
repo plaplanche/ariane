@@ -129,7 +129,8 @@ def test_c9_isolated_replay_leftover_tree_is_refused(
     (worktree(project).with_name("7-replay-1")).mkdir(parents=True)
     outcome = start(project, tracker, FakeRuntime())
     assert outcome.exit_code == 1
-    assert "remove it, then retry" in outcome.line
+    assert "7-replay-1" in outcome.line
+    assert "run `ariane start 7 --restart`" in outcome.line
 
 
 def test_c9_isolated_replay_verify_uses_one_tree_per_check(

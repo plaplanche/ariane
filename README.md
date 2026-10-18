@@ -147,6 +147,33 @@ Each agent session stops at its limits, set per role in `[agents.<role>]`: its c
 last event ([ADR 0045](docs/adr/0045-idle-limit-of-agent-sessions.md)). Its work is kept on the
 branch.
 
+**Restarting a stopped ticket.** A ticket that stopped (a blocking check, a budget stop, a
+reviewer failure) or whose process died (Ctrl-C, a machine restart) leaves its working trees and
+its branch, so `ariane start 12` refuses it and names `--restart`. `ariane start 12 --restart`
+removes the ticket's working trees (`12`, `12-review`, `12-replay-*`), keeps the branch
+`ariane/12` as `ariane-restarted/12-<UTC time>` (kept, never deleted: what the previous run
+committed stays there) and starts the ticket as a new run, whose journal opens with what was
+removed and kept. Files the previous run left uncommitted in its working tree `12`, modified or
+untracked (not ignored), and staged content, are first saved in commits on top of the kept
+branch, written before any tree is removed. It refuses while
+another `ariane start 12` runs (each run holds `<repo>.ariane/locks/12.lock`), when `ariane/12` is
+already on the remote, and with `--shadow` (remove the clone instead). `ariane report` counts the
+time from the previous stop to the restart in the human time
+([ADR 0047](docs/adr/0047-restart-a-stopped-ticket.md)).
+
+PowerShell:
+
+```powershell
+ariane start 12 --restart
+if ($LASTEXITCODE -ne 0) { ariane status 12 }
+```
+
+bash:
+
+```bash
+ariane start 12 --restart || ariane status 12
+```
+
 `work/12/metrics.json` also counts, in `attempts`, the `git push` and `gh pr create` commands the agent tried and the guard violations ([ADR 0036](docs/adr/0036-shadow-mode-and-attempts.md)).
 
 **Shadow mode** measures Ariane while your current process does the real work. `ariane start --shadow 12`

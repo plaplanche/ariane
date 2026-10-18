@@ -3,6 +3,7 @@ ADR 0038)."""
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -38,8 +39,17 @@ class Human:
 
 
 def restart_seconds(data: dict[str, Any], restarts: list[dict[str, Any]]) -> float:
-    """Each stop (from `steps`) to the next `verify` record of the same ticket or branch."""
+    """Each stop (from `steps`) to the next `verify` record of the same ticket or branch, and
+    the previous run's last step to this run's start when it started over (ADR 0047)."""
     total = 0.0
+    previous = data.get("restarted_from")
+    stopped_at = previous.get("stopped_at") if isinstance(previous, dict) else None
+    earlier = previous.get("earlier_s") if isinstance(previous, dict) else None
+    if isinstance(earlier, int | float) and earlier > 0:  # the earlier restarts of a chain
+        total += float(earlier)
+    if isinstance(stopped_at, str):
+        with contextlib.suppress(ValueError):
+            total += max(0.0, (moment(data["started"]) - moment(stopped_at)).total_seconds())
     for step in data.get("steps") or []:
         name = step.get("name", "")
         if not name.startswith("outcome: ") or name.removeprefix("outcome: ") in _NOT_STOPS:

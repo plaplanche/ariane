@@ -43,6 +43,11 @@ def _declare(kind: str, rows: Iterable[tuple[str, str, str]]) -> dict[str, LogTy
 FUNCTIONAL_TYPES = _declare(
     FUNCTIONAL,
     [
+        (
+            "ticket.restarted",
+            "info",
+            "The ticket started over: trees removed, previous branch kept, its last action.",
+        ),
         ("ticket.started", "info", "The ticket folder was opened for an issue."),
         ("ticket.setup", "info", "The setup command ran, or there was none."),
         (

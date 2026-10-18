@@ -50,6 +50,7 @@ class Delivery:
     review_round: int = 0
     guard: Callable[[], None] = lambda: None
     truncated: Sequence[str] = ()  # the files whose hunks the reviewed diff lacked
+    on_pushed: Callable[[], None] = lambda: None  # once the branch is on the remote
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
@@ -78,6 +79,7 @@ class Delivery:
         way = git.push(
             self.worktree, self.url, pushed, self.branch, token=self.token, environ=self.environ
         )
+        self.on_pushed()
         self.folder.log("ticket.pushed", "Pushed", f"Pushed `{self.branch}` {way}.")
         # The pushed commit is the one CI runs on: what follows is committed locally only.
         try:

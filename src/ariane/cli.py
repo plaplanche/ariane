@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import functools
 import os
 import sys
 from collections.abc import Sequence
@@ -61,7 +62,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     logs.configure(level, logs.log_path(root, args.issue))
     if args.command == "status":
         return _status(root, args.issue)
-    return _start(root, args.issue, args.shadow)
+    if args.shadow and args.restart:
+        return _say(
+            EXIT_USAGE,
+            f"Did not start #{args.issue}: --restart does not apply to shadow tickets. Next:"
+            f" remove the clone at {shadow.clone_path(root, args.issue)}, then run"
+            f" ariane start {args.issue} --shadow.",
+        )
+    return _start(root, args.issue, args.shadow, args.restart)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -85,6 +93,12 @@ def _parser() -> argparse.ArgumentParser:
         "--shadow",
         action="store_true",
         help="run the ticket in a separate clone, without push or pull request",
+    )
+    start.add_argument(
+        "--restart",
+        action="store_true",
+        help="start a stopped or interrupted ticket over: remove its working trees and keep its"
+        " branch as ariane-restarted/<issue>-<time>",
     )
     status = sub.add_parser(
         "status", parents=[common], help="show a ticket's state, read from its folder"
@@ -218,7 +232,7 @@ def _report_tracker(root: Path) -> GitHubTracker | None:
     )
 
 
-def _start(root: Path, number: int, shadowed: bool = False) -> int:
+def _start(root: Path, number: int, shadowed: bool = False, restarting: bool = False) -> int:
     try:
         cfg = config.load(root)
     except config.ConfigError as exc:
@@ -237,7 +251,8 @@ def _start(root: Path, number: int, shadowed: bool = False) -> int:
         api_url=cfg.tracker.api_url,
         ready_label=cfg.tracker.ready_label,
     )
-    outcome = (shadow.start if shadowed else flow.start)(
+    run = shadow.start if shadowed else functools.partial(flow.start, restarting=restarting)
+    outcome = run(
         number,
         repo_root=root,
         config=cfg,

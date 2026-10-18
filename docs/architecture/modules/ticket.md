@@ -101,6 +101,7 @@ flowchart LR
   metrics --> ticket
   replay --> ticket
   report --> ticket
+  restart --> ticket
   review --> ticket
   review_session --> ticket
   shadow --> ticket

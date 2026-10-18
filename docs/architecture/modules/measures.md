@@ -12,7 +12,7 @@ The success measure of `ariane report` (C19, ADR 0038): human time, gates bypass
 | `moment(text)` | function | An ISO 8601 time (a trailing `Z` allowed) as a `datetime`. |
 | `clock(seconds)` | function | Seconds as `<h>h<mm>m`. |
 | `Human` | class | Human time of one ticket: `waiting_s` (None when the tracker could not tell), `restart_s`, `merged`; `text()` words it. |
-| `restart_seconds(data, restarts)` | function | Each stop in `steps` to the next `verify` record of the same ticket or branch, in seconds. |
+| `restart_seconds(data, restarts)` | function | Each stop in `steps` to the next `verify` record of the same ticket or branch, plus the previous run's stop to this run's start when it started over, in seconds. |
 | `waiting(tracker, branch)` | function | Seconds from the pull request's opening to its merge or close, and whether it merged. |
 | `human(data, tracker, takeovers)` | function | A delivered ticket's `Human` time. |
 | `bypassed(data, takeovers, merged)` | function | The gates bypassed on one delivered ticket. |
@@ -24,7 +24,7 @@ The success measure of `ariane report` (C19, ADR 0038): human time, gates bypass
 
 - Reads and writes no file; it works on the parsed metrics and asks the tracker for the pull request's state.
 - `waiting` is None when the tracker is missing or fails (`TrackerError`, `ValueError`, `OSError`); 0 while the pull request is open or absent.
-- `restart_seconds` adds each stop (an `outcome: ` step that is not `delivered`, `needs a human` or `running`) to the next `verify` start.
+- `restart_seconds` adds each stop (an `outcome: ` step that is not `delivered`, `needs a human` or `running`) to the next `verify` start, and, for a run that started over with `ariane start --restart`, `restarted_from.stopped_at` to the run's `started`, plus `restarted_from.earlier_s` for the earlier restarts of a chain (ADR 0047; never negative, an unreadable time adds nothing).
 - `bypassed`: a hand takeover per `verify` record of the branch, blocking checks red at delivery, and a merge while the last review on the branch is no-go (the last `verify` go cancels it).
 - `shadow_lines`: tickets, accept rate, not yet judged, agent push and pull-request attempts, guard violations, then `shadow pass: yes|no` over the last `SHADOW_WINDOW` tickets of `recent` (all the shadow tickets, whatever `--since`): ten required, no attempt, no violation, at least `SHADOW_ACCEPTED` accepted. No shadow ticket gives no line.
 
@@ -81,4 +81,4 @@ flowchart LR
 
 ## Serves
 
-C19; ADR 0030, ADR 0038. See [the component view](../3-components.md).
+C19; ADR 0030, ADR 0038, ADR 0047. See [the component view](../3-components.md).

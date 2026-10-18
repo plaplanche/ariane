@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from ariane import checks, git, review, ticket
 from ariane.config import CheckConfig
 from ariane.delivery import FAILURES
+from ariane.restart import command
 from ariane.review_session import ReviewFailed, ReviewSession
 from ariane.stop import Stop
 
@@ -71,7 +72,7 @@ def replay(
     def tree_for(k: int) -> Path:
         tree = run.worktree.with_name(f"{run.number}-replay-{k}")
         if tree.exists():
-            raise Stop(f"the replay working tree already exists at {tree}", "remove it, then retry")
+            raise Stop(f"the replay working tree already exists at {tree}", _leftover(run))
         return tree
 
     def set_up(check: CheckConfig, tree: Path) -> None:
@@ -124,7 +125,7 @@ def review_round(
     """C10, C26: review `round_` in the replay tree; the record is `review-<round>.md`."""
     tree = run.worktree.with_name(f"{run.number}-review")
     if tree.exists():
-        raise Stop(f"the reviewer working tree already exists at {tree}", "remove it, then retry")
+        raise Stop(f"the reviewer working tree already exists at {tree}", _leftover(run))
     git.add_reviewer_worktree(run.worktree, tree, checked)
     try:
         diff = git.diff(run.worktree, start_commit, checked, ticket.WORK_DIR)
@@ -172,6 +173,11 @@ def review_round(
         return settled
     finally:
         remove(run, tree)
+
+
+def _leftover(run: _TicketRun) -> str:
+    """The next action for a tree a killed run left (ADR 0047): a shadow clone has no restart."""
+    return f"run {command(run.number)}" if run.restartable else "remove it, then retry"
 
 
 def truncation_note(diff: str) -> str:

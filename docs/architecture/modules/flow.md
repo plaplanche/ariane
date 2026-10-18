@@ -17,15 +17,16 @@
 | `worktree_path(repo_root, number)` | function | Where the ticket's working tree lives. |
 | `stopped_metrics_path(worktree, number)` | function | `<repo>.ariane/stopped/<n>/metrics.json`: where a ticket stopped before its folder exists (Ctrl-C or an error in the first setup) keeps its metrics, survivors included (ADR 0031). |
 | `branch_name(number)` | function | The ticket's branch, `ariane/<n>`. |
-| `start(number, ...)` | function | The whole flow for one ticket number; returns an `Outcome`. |
+| `start(number, ..., restarting=False)` | function | The whole flow for one ticket number; `restarting` is `ariane start --restart` (ADR 0047); returns an `Outcome`. |
 
 ## Behaviour and errors
 
 - `start`: the whole flow for one ticket number.
 - `Outcome`: the result reported to the command line.
 - The push guard's remote check (C11, ADR 0017) is `git.remote_changes`, called after the agent session with the ticket's branch.
-- Parallel tickets (C11, ADR 0017): `start` registers the run with `runs.registered` in `<repo>.ariane/runs/<n>` before preparing the branch and removes the entry however the run ends (a live run of the same ticket: "Did not start ticket #n: ticket #n is already running"). `_unchanged` takes the new snapshot first, then reads the registry (a run registers before it writes to git, so every run whose changes the snapshot shows is known), and compares the guard's snapshots through `runs.foreign_changes`, with the tickets other than this one that were running at any time since the guard's first snapshot and that Ariane can vouch for (`runs.during`, from `guard_since`, with the runs `runs.watching` saw live during the whole run): another run's branch `ariane/<m>` and its `remote` and `merge` keys are ignored; anything else stops the ticket, and the journal lists only what is not another run's own.
+- Parallel tickets (C11, ADR 0017): `start` registers the run with `runs.registered` in `<repo>.ariane/runs/<n>` before preparing the branch and removes the entry however the run ends (a live run of the same ticket: "Did not start ticket #n: ticket #n is already running"). `_unchanged` takes the new snapshot first, then reads the registry (a run registers before it writes to git, so every run whose changes the snapshot shows is known), and compares the guard's snapshots through `runs.foreign_changes`, with the tickets other than this one that were running at any time since the guard's first snapshot and that Ariane can vouch for (`runs.during`, from `guard_since`, with the runs `runs.watching` saw live during the whole run): another run's branch `ariane/<m>`, its `remote` and `merge` keys, and the branch its restart keeps (`runs.kept_branches`: `Run.kept`, registered before the rename, accepted only as that ticket's own `ariane-restarted/<m>-<stamp>`) are ignored; anything else stops the ticket, and the journal lists only what is not another run's own.
 - `Stop` (module `stop`): ends the flow early with a recorded reason.
+- Ticket lock and restart (C5, C23, ADR 0047): `start` first holds `restart.locked` on `<repo>.ariane/locks/<n>.lock` until it returns (held by another process: "Did not start ticket #n: ticket #n is running in another Ariane process", nothing removed). The preparation is `restart.prepare`: a pushed `ariane/<n>` refuses; with `restarting`, `start` registers the kept name `restart.kept_name(n)` with the run, then `restart.clear` saves the uncommitted work of the tree `<n>` in a commit, removes the ticket's trees (registered ones with git, unknown folders as folders) and keeps the branch, the saved commit on top, under that name, `ariane-restarted/<n>-<UTC time>`; leftover trees or a local branch refuse with "run `ariane start <n> --restart`", and an interruption or failure of the preparation that is not one of its refusals (a `Stop`) names `--restart` when the ticket's tree or local branch exists. A run that started over sets `restarted_from` in the metrics before its first setup and opens its journal with `ticket.restarted`, before `ticket.started`. Every stop of a ticket not pushed (`_stopped`, unless `on_pushed` was called or the run is a shadow run, `restartable = False`) ends its next action with "to start over, run `ariane start <n> --restart`" (`restart.with_restart`).
 - The replay of the checks and the review round are in [replay](replay.md) (ADR 0034).
 - Metrics (C19): `work/<n>/metrics.json` is rewritten after the folder is opened, each session, the checks replayed, and the delivery or stop ([metrics](metrics.md)); delivery also records `blocking_red_at_delivery`, the number of blocking checks red at that point (C19, ADR 0038).
 - Issue gate (C21, ADR 0032): the start exit code comes from `TrackerError.exit_code`; an issue refused by the tracker gate (no label, labelled by someone without write access, or changed after the label) gives exit 2 before any branch, worktree or agent.
@@ -49,8 +50,9 @@
 ```mermaid
 flowchart TD
   A[start number] --> B[read the issue: TrackerError gives its exit code]
-  B --> R[register the run in runs/n, removed however it ends]
-  R --> C[prepare branch and working tree]
+  B --> LK[hold locks/n.lock: held elsewhere refuses]
+  LK --> R[register the run in runs/n, removed however it ends]
+  R --> C[prepare: refuse a pushed branch, clear with --restart or refuse leftovers, create branch and tree]
   C --> D[open the ticket folder]
   D --> E[setup command]
   E --> F[implementer session]
@@ -88,6 +90,8 @@ class Outcome {
 class _TicketRun {
   registry Path
   guard_since str
+  restarted Restarted
+  pushed bool
   execute(refs_before) Outcome
   setup(cwd, command, guard) Stop
   verify(after, start_commit, guard, refs_before, expected_head)
@@ -96,7 +100,7 @@ class flow {
   <<module>>
   worktree_path(repo_root, number) Path
   branch_name(number) str
-  start(number, repo_root, config, tracker, runtime, environ) Outcome
+  start(number, repo_root, config, tracker, runtime, environ, restarting) Outcome
 }
 flow ..> _TicketRun
 _TicketRun ..> Outcome
@@ -120,6 +124,7 @@ flowchart LR
   flow --> process
   flow --> redact
   flow --> replay
+  flow --> restart
   flow --> review
   flow --> review_session
   flow --> runs
@@ -135,4 +140,4 @@ flowchart LR
 
 ## Serves
 
-C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026, ADR 0027, ADR 0034, ADR 0036, C19. See [the component view](../3-components.md).
+C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026, ADR 0027, ADR 0034, ADR 0036, ADR 0047, C19, C23. See [the component view](../3-components.md).

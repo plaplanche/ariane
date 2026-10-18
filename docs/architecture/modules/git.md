@@ -153,6 +153,7 @@ flowchart LR
   git --> process
   git --> redact
   replay --> git
+  restart --> git
   review_session --> git
   runs --> git
   shadow --> git
