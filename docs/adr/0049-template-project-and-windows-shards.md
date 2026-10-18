@@ -257,12 +257,12 @@ the acceptance criteria on CI durations and on the serial suite are not shown.
 | Linux sandbox, 4 CPUs, git processes | 20,638 | 18,924 | (unchanged) |
 | Linux sandbox, summed set-up phase | 17.0 s | 4.7 s | (unchanged) |
 | Linux sandbox, `uv run pytest -n 0` | (not run) | 720 passed, 2 skipped, 400 s | (unchanged) |
-| Linux CI, tests step (3.13 / 3.11) | 123 s / 124 s (#205) | 125 s / 95 s | pending |
-| macOS CI, tests step | 242 s (#205) | 217 s | pending |
-| Windows CI, tests step | 949 s (#205) | 905 s (869 s on the run before commit 1) | pending (per shard) |
-| Windows CI, job | 16.3 min (#205) | 15 min | pending (per shard) |
+| Linux CI, tests step (3.13 / 3.11) | 123 s / 124 s (#205) | 125 s / 95 s | 106 s / 98 s |
+| macOS CI, tests step | 242 s (#205) | 217 s | 175 s |
+| Windows CI, tests step | 949 s (#205) | 905 s (869 s on the run before commit 1) | 369 s / 305 s (shard 1 / 2) |
+| Windows CI, job | 16.3 min (#205) | 15 min | 6.6 min / 5.7 min |
 | Serial job, Linux / macOS / Windows | (no such job) | passed: 276 s / 473 s / 1,755 s | removed |
-| Run URL | #205 | https://github.com/plaplanche/ariane/actions/runs/39153818737 | pending |
+| Run URL | #205 | https://github.com/plaplanche/ariane/actions/runs/39153818737 | https://github.com/plaplanche/ariane/actions/runs/39162324189 |
 
 Wall time in the implementer's sandbox is not a usable measure: the same suite took 100 to
 150 s from run to run, with the change or without it, because of the sandbox's load. The CI
@@ -314,9 +314,10 @@ Each test that uses `project` starts no git process to get it, on every system, 
 Ariane's replay and on the owner's machine; most of the gain is on Windows. A new fixture that
 needs a commit on another branch uses `commit_on_branch` rather than a temporary worktree. The
 template is shared within a worker: a test must never write to `project_template`, only copy
-it. CI also runs the whole suite serially on the three systems, in jobs nobody waits for. With
-shards, if the measurement asks for them, CI reports five required jobs and the longest Windows
-job is about half as long; the durations file grows stale as tests are added, which only
+it. The suite ran serially on the three systems once, on this pull request, and passed; no CI job
+runs it serially any more (after the merge, #208). With
+shards, CI reports five required jobs and the longest job of a pull request went from 15 to 6.6
+minutes; the durations file grows stale as tests are added, which only
 unbalances the shards (new tests count with the average), and is refreshed with
 `uv run pytest --store-durations`. Ariane's own replay
 does not shard: it runs `uv run pytest` as before.
