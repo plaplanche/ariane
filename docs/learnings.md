@@ -12,6 +12,9 @@ Each entry: what happened, then the rule, test, check or probe it calls for (C18
   ticket's checks, and it grows with every flow test.
 - **Proposal (check):** record each check's duration per OS (C19) and flag a check whose
   duration grows past a threshold, so the slowdown is seen before it blocks tickets.
+- **Update (2026-10-18):** by October the suite took about 4 minutes on Linux CI and 23 to 26
+  minutes on Windows CI. The tests now run in parallel (`pytest-xdist`, `-n auto`) and CI runs
+  Python 3.11 on Linux only (ADR 0047).
 
 ## 2. The push guard stops a ticket when anyone touches git during it
 

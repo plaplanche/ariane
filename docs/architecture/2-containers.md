@@ -36,7 +36,8 @@ flowchart TB
   ci -->|publishes statuses from the committed report| github
 ```
 
-- `ci.yml` runs the checks on Windows, macOS and Linux (ADR 0005).
+- `ci.yml` runs the checks on Windows, macOS and Linux with Python 3.13, and on Linux with
+  Python 3.11 too; the tests run in parallel (ADR 0005, ADR 0047).
 - `check-statuses.yml` publishes the statuses from the committed report when Ariane cannot.
 - The reviewer session is read-only: its tools are an allow list (`Read`, `Glob`, `Grep`). It reads a
   separate reviewer tree with no `CLAUDE.md`, `AGENTS.md` or `.claude/` (ADR 0031); Claude Code starts
