@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from collections.abc import Iterator
 from dataclasses import asdict
 from pathlib import Path
@@ -14,6 +15,7 @@ import pytest
 
 from ariane import flow, git, measures, report, restart, runs
 from ariane.runtime import Session
+from ariane.stop import Stop
 from ariane.tracker import InMemoryTracker
 
 from conftest import PY, FakeRuntime, Project, edit_app, make_config, sh
@@ -162,7 +164,22 @@ def test_c23_restart_lock_is_free_once_the_holder_died(
 ) -> None:
     holder.kill()
     holder.wait()
+    wait_until_free(restart.lock_path(project.root, 7))
     assert start(project, tracker, FakeRuntime(), restarting=True).exit_code == 0
+
+
+def wait_until_free(path: Path, limit_s: float = 10.0) -> None:
+    """Windows frees a killed process's file locks asynchronously, later under load: a restart
+    comes seconds after a crash, so the test waits as long, never longer than `limit_s`."""
+    deadline = time.monotonic() + limit_s
+    while True:
+        try:
+            with restart.locked(path, 7):
+                return
+        except Stop:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(0.1)
 
 
 def test_c23_restart_refused_when_the_branch_is_on_the_remote(
