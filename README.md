@@ -7,8 +7,8 @@ never lose the thread of your own code.
 
 What Ariane does with a labelled issue:
 
-- **Runs a coding agent in an isolated git worktree**, with the tracker token and Ariane's own
-  settings withheld, and pushing blocked.
+- **Runs a coding agent in an isolated git worktree**, with an allow list of environment
+  variables (no tracker token, no credentials the project did not declare) and pushing blocked.
 - **Replays your checks itself** (lint, types, tests), each in its own clean tree: Ariane never
   takes the agent's word that the tests pass.
 - **Has the change reviewed by a different model**: an independent, read-only AI code reviewer
