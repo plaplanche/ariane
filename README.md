@@ -299,7 +299,7 @@ From a clone, `uv sync` installs the development tools; the checks are listed in
 [`CLAUDE.md`](CLAUDE.md) ("Checks"). `uv run pytest` runs the tests in parallel, one worker per
 CPU (`pytest-xdist`, `-n auto`); `uv run pytest -n 0` runs them serially, for example to debug
 one test with `pdb`. CI runs the checks with Python 3.13 on Windows, macOS and Linux, and with
-Python 3.11, the minimum, on Linux only ([ADR 0047](docs/adr/0047-parallel-tests-and-ci-matrix.md)).
+Python 3.11, the minimum, on Linux only ([ADR 0048](docs/adr/0048-parallel-tests-and-ci-matrix.md)).
 
 ## License
 

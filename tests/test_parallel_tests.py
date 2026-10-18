@@ -1,4 +1,4 @@
-"""The tests run in parallel by default, and serially with `-n 0` (C9, ADR 0047)."""
+"""The tests run in parallel by default, and serially with `-n 0` (C9, ADR 0048)."""
 
 from __future__ import annotations
 

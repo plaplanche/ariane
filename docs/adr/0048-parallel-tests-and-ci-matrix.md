@@ -1,4 +1,4 @@
-# 0047. Parallel tests and a smaller CI matrix
+# 0048. Parallel tests and a smaller CI matrix
 
 - Status: accepted
 - Date: 2026-10-18
