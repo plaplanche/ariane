@@ -11,7 +11,7 @@ opencode as an agent runtime, for the reviewer role: it starts `opencode run --p
 | `login_variables(model)` | function | The provider keys a `<provider>/<model>` needs in the agent's environment. |
 | `agent_name(role)` | function | The opencode agent of a role: `ariane-<role>`. |
 | `inline_config(role, tools)` | function | The `OPENCODE_CONFIG_CONTENT` text. |
-| `OpenCodeRuntime` | class | `OpenCodeRuntime(executable=("opencode",), model=None)` implements `AgentRuntime`; its login variables are the provider keys of its model; `command`, `environment`, `describe` and `run(session)`. |
+| `OpenCodeRuntime` | class | `OpenCodeRuntime(executable=("opencode",), model=None)` implements `AgentRuntime`; its login variables are the provider keys of its model, and `login_for(model)` those of another model (a small reviewer, ADR 0046); `command`, `environment`, `describe` and `run(session)`. |
 | `Events` | class | `Events(max_tokens, max_budget_usd)`: the running totals of a stream and the final answer; `add_line(line)` reads one event. |
 
 ## Behaviour and errors
@@ -45,6 +45,7 @@ classDiagram
 class OpenCodeRuntime {
   name str
   login_variables tuple
+  login_for(model) tuple
   command(session) list
   environment(session) dict
   describe() str

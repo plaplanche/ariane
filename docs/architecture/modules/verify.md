@@ -1,6 +1,6 @@
 # Module `ariane.verify`
 
-`ariane verify`: checks and reviews a local branch finished by hand (C10, C23). It replays each check in its own clean working tree at the branch's head, after the setup (`verify-<slug>-<k>`, ADR 0041), runs one read-only review on a separate tree without instruction files or `.claude/` (ADR 0031), and commits `work/verify/<branch>/review.md` and `checks.md` (redacted) on top of the branch. It never pushes. It also compares the remote's refs before and after the checks and the reviewer, with the rule of ADR 0017 (the branch, the base branch and tags are watched; other branches are ignored), and refuses when one changed. The agent environment is the allow list of `context.untrusted_environment` with the `[project] env` entries and the reviewer runtime's login variables; the setup and the checks get the same without the login variables (ADR 0024). Just before committing it checks again that the branch has not moved and is checked out where it was, in a clean tree; otherwise it refuses without committing. When nothing is committed (for example `work/` is ignored) it exits 1 with "nothing was recorded".
+`ariane verify`: checks and reviews a local branch finished by hand (C10, C23). It replays each check in its own clean working tree at the branch's head, after the setup (`verify-<slug>-<k>`, ADR 0041), runs one read-only review on a separate tree without instruction files or `.claude/` (ADR 0031), and commits `work/verify/<branch>/review.md` and `checks.md` (redacted) on top of the branch. It never pushes. It also compares the remote's refs before and after the checks and the reviewer, with the rule of ADR 0017 (the branch, the base branch and tags are watched; other branches are ignored), and refuses when one changed. The agent environment is the allow list of `context.untrusted_environment` with the `[project] env` entries and the login variables of the reviewer's model, or of the small reviewer's model for a small change (`review_session.agent_logins`, ADR 0046); the setup and the checks get the same without the login variables (ADR 0024). Just before committing it checks again that the branch has not moved and is checked out where it was, in a clean tree; otherwise it refuses without committing. When nothing is committed (for example `work/` is ignored) it exits 1 with "nothing was recorded".
 
 ## Public API
 
@@ -22,6 +22,7 @@
 - `Refused`: carries the exit code and next action; a tracker refusal (`TrackerError`, `IssueRefused`) passes its own through, so an issue refused by the issue gate (C21, ADR 0032) gives exit 2 before any checkout or review. The branch cannot be verified (unknown branch, uncommitted changes in the working tree that holds it, failed setup or reviewer).
 - Metrics (C19): the records also hold `metrics.json` (mode `verify`, the reviewer sessions, survivors and guard violations, outcome `delivered` when green, else `stopped`); a refused or interrupted run writes it to `stopped_metrics_path` instead.
 - Git guard (C11, ADR 0017, ADR 0028): a snapshot of git (as `ariane start` takes) is taken before the first check and compared after every check and the reviewer, before any other git command; a change is refused with the wording of `start`. The base branch's instructions are read once, before the first check. The remote-tracking ref of the base branch is part of the snapshot, and so are the instruction files the reviewer can load from outside its tree (`git.instruction_snapshot`; a change is refused as "changed instruction files the reviewer can load"). Each command's teardown kills what it left running (`process.kill_survivors`); the snapshot is compared right after each setup, before its check runs; after each setup (before a failing setup is refused), check and reviewer session, what was killed (`process.take_killed`) is counted in `metrics.json` and refused as a guard violation, and on any end of `run` (a refusal, Ctrl-C) the survivors are killed again and counted. A run that commits nothing (a refusal, Ctrl-C) writes its `metrics.json` (outcome `stopped`) to `stopped_metrics_path` before the temporary records folder is removed (ADR 0031). The review prompt gets the untruncated `git diff --name-status` of the branch, and a cut diff is journaled with the missing files; since that journal is temporary, the committed `review.md` ends with a `Diff given to the reviewer` section naming them (ADR 0031).
+- Review size (C10, ADR 0046): before the review it counts the changed lines from the base to the head (`git.changed_lines`, without `work/`, a binary file counting 0) and passes the count to `ReviewSession`, which uses `[agents.reviewer.small]` and the narrower prompt when the count is at most `max_lines` and records `changed_lines` with the reviewer session in `metrics.json`; `review.md` names the model of the selected reviewer.
 - Records: written with `ticket.ensure_folder` and `ticket.write_file` (a symlink is replaced, never followed) and committed as regular files: each record path leaves the index first.
 - `replay_path`, `relative_folder`: where the replay tree and the records are.
 
@@ -34,7 +35,8 @@ flowchart TD
   B -- yes --> C[refs before]
   C --> D[per check: add replay tree at head, setup, run, remove]
   D --> E[run_checks]
-  E --> F[add reviewer tree, ReviewSession.run]
+  E --> E2[git.changed_lines base..head, without work/]
+  E2 --> F[add reviewer tree, ReviewSession.run with changed_lines]
   F --> G[remote_changes against refs before]
   G -- changed --> X
   G -- ok --> H[branch moved or tree dirty?]
@@ -95,4 +97,4 @@ flowchart LR
 
 ## Serves
 
-C10, C23; ADR 0016, ADR 0020, ADR 0028, ADR 0034, C19. See [the component view](../3-components.md).
+C10, C23; ADR 0016, ADR 0020, ADR 0028, ADR 0034, ADR 0046, C19. See [the component view](../3-components.md).

@@ -22,8 +22,8 @@ from ariane.flow import (
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
 from ariane.replay import record_truncation, replay_each, truncation_note
-from ariane.review_session import ReviewFailed, ReviewSession, instruction_dirs
-from ariane.runtime import AgentRuntime, for_role
+from ariane.review_session import ReviewFailed, ReviewSession, agent_logins, instruction_dirs
+from ariane.runtime import AgentRuntime
 from ariane.tracker import Issue, Tracker, TrackerError
 
 VERIFY_DIR = f"{ticket.WORK_DIR}/verify"
@@ -138,7 +138,9 @@ class _Verification:
             remotes=remotes,
             declared=config.env,
         )
-        self.reviewer_env = untrusted(login_variables=for_role(runtime, "reviewer").login_variables)
+        logins = agent_logins(runtime, config.implementer, config.reviewer)
+        self.reviewer_env = untrusted(login_variables=logins["reviewer"])
+        self.small_reviewer_env = untrusted(login_variables=logins["reviewer.small"])
         self.untrusted_env = untrusted()
         self.url = git.push_url(repo_root, REMOTE) if REMOTE in remotes else None
         self.refs_before = git.remote_refs(repo_root, self.url) if self.url else {}
@@ -280,6 +282,8 @@ class _Verification:
             self.config.definition_of_done,
             self.base_instructions,
             metrics=self.metrics,
+            small_env=self.small_reviewer_env,
+            changed_lines=git.changed_lines(self.repo_root, self.base, self.head, ticket.WORK_DIR),
         )
         try:
             answer = sessions.run(
@@ -296,7 +300,7 @@ class _Verification:
             raise Refused(exc.reason, "read the error, then run verify again") from None
         settled = review.settle(answer, self.config.definition_of_done, results)
         self.metrics.reviewed(settled.go)
-        model = self.config.reviewer.model
+        model = sessions.reviewer.model
         texts = {
             REVIEW: review.record(settled, self.head, model) + _truncation_section(self.truncation),
             ticket.CHECKS: checks.report(results, self.head, changed),

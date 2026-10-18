@@ -23,12 +23,13 @@ The agent runtime interface (C5): one fresh session per stage, whatever the agen
 | `json_object(line)` | function | The JSON object a line holds, or `None`. |
 | `as_int(value)` | function | The value if it is an int, not a bool; else `None`. |
 | `as_number(value)` | function | The value as a float if it is an int or float, not a bool; else `None`. |
+| `login_for(runtime, role, model)` | function | The login variables of `role`'s sessions on `model`: the served runtime's `login_for(model)` when it has one (opencode, whose login depends on the model's provider), else its `login_variables`. |
 | `session_for(agent, role, *, cwd, prompt, env, **extra)` | function | The `Session` of `role` from an `AgentConfig`; `extra` is `json_schema` or `add_dirs`; `idle_timeout_s` is `idle_minutes` in seconds, or `None`. |
 
 ## Behaviour and errors
 
 - Reads and writes no file and raises nothing of its own, except `KeyError` from `RoutedRuntime` for a role without a runtime.
-- Each session's environment is built from `for_role(role).login_variables`.
+- Each session's environment is built from `login_for(runtime, role, model)` with the session's model (ADR 0046).
 
 ## Workflow
 

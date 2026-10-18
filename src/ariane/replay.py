@@ -147,6 +147,8 @@ def review_round(
             run.base_instructions,
             metrics=run.metrics,
             round=round_,
+            small_env=run.agent_envs["reviewer.small"],
+            changed_lines=git.changed_lines(run.worktree, start_commit, checked, ticket.WORK_DIR),
         )
         try:
             answer = sessions.run(
@@ -163,7 +165,7 @@ def review_round(
             raise Stop(exc.reason, exc.next_action, exc.detail, status="needs a human") from None
         settled = review.settle(answer, run.config.definition_of_done, results)
         run.metrics.reviewed(settled.go)
-        model = run.config.reviewer.model
+        model = sessions.reviewer.model
         run.folder.write(ticket.review_file(round_), review.record(settled, checked, model, round_))
         verdict = f"Review {round_}: {settled.verdict}"
         run.folder.log("ticket.review.verdict", verdict, review.findings_table(settled))

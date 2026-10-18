@@ -1,0 +1,153 @@
+{
+  "attempts": {
+    "guard_violations": 0,
+    "pull_request": 0,
+    "push": 0
+  },
+  "blocking_red_at_delivery": 0,
+  "first_pass_verdict": "no-go",
+  "mode": "delivered",
+  "outcome": "delivered",
+  "rounds": 2,
+  "sessions": [
+    {
+      "cache_read_tokens": 2656487,
+      "cache_write_tokens": 104844,
+      "cost_usd": 1.9406854000000002,
+      "duration_s": 689.068,
+      "input_tokens": 74,
+      "model": "claude-opus-5-5",
+      "output_tokens": 28517,
+      "role": "implementer",
+      "round": 0,
+      "runtime": "claude-code",
+      "stop_reason": "finished"
+    },
+    {
+      "billing": "plan",
+      "cache_read_tokens": 137216,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.0,
+      "duration_s": 36.394,
+      "input_tokens": 41734,
+      "model": "gpt-6-astra",
+      "output_tokens": 1090,
+      "role": "reviewer",
+      "round": 0,
+      "runtime": "codex",
+      "stop_reason": "finished"
+    },
+    {
+      "cache_read_tokens": 96115,
+      "cache_write_tokens": 17194,
+      "cost_usd": 0.200303,
+      "duration_s": 309.617,
+      "input_tokens": 12,
+      "model": "claude-opus-5-5",
+      "output_tokens": 2174,
+      "role": "implementer",
+      "round": 1,
+      "runtime": "claude-code",
+      "stop_reason": "finished"
+    },
+    {
+      "billing": "plan",
+      "cache_read_tokens": 300800,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.0,
+      "duration_s": 52.366,
+      "input_tokens": 45026,
+      "model": "gpt-6-astra",
+      "output_tokens": 1430,
+      "role": "reviewer",
+      "round": 1,
+      "runtime": "codex",
+      "stop_reason": "finished"
+    },
+    {
+      "cache_read_tokens": 876942,
+      "cache_write_tokens": 46856,
+      "cost_usd": 0.8268763999999998,
+      "duration_s": 447.339,
+      "input_tokens": 50,
+      "model": "claude-opus-5-5",
+      "output_tokens": 13822,
+      "role": "implementer",
+      "round": 2,
+      "runtime": "claude-code",
+      "stop_reason": "finished"
+    },
+    {
+      "billing": "plan",
+      "cache_read_tokens": 208896,
+      "cache_write_tokens": 0,
+      "cost_usd": 0.0,
+      "duration_s": 42.908,
+      "input_tokens": 49257,
+      "model": "gpt-6-astra",
+      "output_tokens": 1240,
+      "role": "reviewer",
+      "round": 2,
+      "runtime": "codex",
+      "stop_reason": "finished"
+    }
+  ],
+  "started": "2026-10-18T01:13:37Z",
+  "steps": [
+    {
+      "at": "2026-10-18T01:13:38Z",
+      "name": "folder opened"
+    },
+    {
+      "at": "2026-10-18T01:25:07Z",
+      "name": "implementer session 1 stopped"
+    },
+    {
+      "at": "2026-10-18T01:29:45Z",
+      "name": "checks replayed"
+    },
+    {
+      "at": "2026-10-18T01:30:21Z",
+      "name": "reviewer session 2 stopped"
+    },
+    {
+      "at": "2026-10-18T01:30:22Z",
+      "name": "fix round 1 began"
+    },
+    {
+      "at": "2026-10-18T01:35:32Z",
+      "name": "implementer session 3 stopped"
+    },
+    {
+      "at": "2026-10-18T01:40:24Z",
+      "name": "checks replayed"
+    },
+    {
+      "at": "2026-10-18T01:41:16Z",
+      "name": "reviewer session 4 stopped"
+    },
+    {
+      "at": "2026-10-18T01:41:17Z",
+      "name": "fix round 2 began"
+    },
+    {
+      "at": "2026-10-18T01:48:45Z",
+      "name": "implementer session 5 stopped"
+    },
+    {
+      "at": "2026-10-18T01:53:20Z",
+      "name": "checks replayed"
+    },
+    {
+      "at": "2026-10-18T01:54:03Z",
+      "name": "reviewer session 6 stopped"
+    },
+    {
+      "at": "2026-10-18T01:54:04Z",
+      "name": "outcome: delivered"
+    }
+  ],
+  "surviving_processes": 0,
+  "ticket": 137,
+  "unchanged_fix_rounds": 0
+}

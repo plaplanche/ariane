@@ -155,10 +155,8 @@ class _TicketRun:
             remotes=git.remotes(worktree),
             declared=config.env,
         )
-        self.agent_envs = {
-            role: untrusted(login_variables=for_role(runtime, role).login_variables)
-            for role in ("implementer", "reviewer")
-        }
+        logins = review_session.agent_logins(runtime, config.implementer, config.reviewer)
+        self.agent_envs = {kind: untrusted(login_variables=names) for kind, names in logins.items()}
         self.untrusted_env = untrusted()
 
     def execute(self, refs_before: dict[str, str]) -> Outcome:

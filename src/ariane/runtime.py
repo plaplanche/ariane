@@ -195,6 +195,14 @@ def for_role(runtime: AgentRuntime, role: str) -> AgentRuntime:
     return runtime.for_role(role) if isinstance(runtime, RoutedRuntime) else runtime
 
 
+def login_for(runtime: AgentRuntime, role: str, model: str) -> tuple[str, ...]:
+    """The login variables of `role`'s sessions on `model`: a runtime whose login depends on the
+    model (opencode: the model's provider) says so with `login_for`."""
+    served = for_role(runtime, role)
+    by_model = getattr(served, "login_for", None)
+    return tuple(by_model(model)) if callable(by_model) else served.login_variables
+
+
 def describe(runtime: AgentRuntime) -> str:
     """The runtime as the journal words it: its name, plus its own description if it has one."""
     describer = getattr(runtime, "describe", None)

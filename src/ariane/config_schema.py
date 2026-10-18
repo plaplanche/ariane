@@ -46,6 +46,23 @@ _AGENT: dict[str, Any] = {
     },
 }
 
+# A small change's reviewer settings (ADR 0046): runtime and tools stay the reviewer's.
+_SMALL: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["max_lines"],
+    "description": "Settings replacing the reviewer's for a change of at most max_lines changed"
+    " lines (added plus deleted, without work/; a binary file counts 0); the prompt asks for a"
+    " narrower review. The model, when given, differs from the implementer's (C10).",
+    "properties": {
+        "max_lines": {"type": "integer", "exclusiveMinimum": 0},
+        "model": _STR,
+        "max_budget_usd": _POSITIVE,
+        "max_tokens": {"type": "integer", "exclusiveMinimum": 0},
+        "timeout_minutes": _POSITIVE,
+    },
+}
+
 # Only a role that may run on opencode requires `max_tokens` for it.
 _OPENCODE_NEEDS_TOKENS: dict[str, Any] = {
     "if": {
@@ -137,6 +154,7 @@ SCHEMA: dict[str, Any] = {
                 },
                 "reviewer": {
                     **_AGENT,
+                    "properties": {**_AGENT["properties"], "small": _SMALL},
                     "allOf": [_OPENCODE_NEEDS_TOKENS, _CLAUDE_REVIEWER_TOOLS],
                     "description": "Read-only reviewer (C10); model differs from the implementer.",
                 },

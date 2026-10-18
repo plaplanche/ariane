@@ -75,6 +75,11 @@ class OpenCodeRuntime:
         self.executable = tuple(executable)
         self.login_variables: tuple[str, ...] = login_variables(model) if model else ()
 
+    def login_for(self, model: str) -> tuple[str, ...]:
+        """The login variables of a session on `model`, whose provider may differ from the
+        default model's (a small reviewer, ADR 0046)."""
+        return login_variables(model)
+
     def command(self, session: Session) -> list[str]:
         return [
             *self.executable,

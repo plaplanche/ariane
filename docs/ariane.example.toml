@@ -51,6 +51,17 @@ tools = ["Read", "Glob", "Grep"]
 max_budget_usd = 3.0
 timeout_minutes = 20
 
+# Optional: lighter settings for a small change. When the reviewed diff has at most max_lines
+# changed lines (added plus deleted, without work/), these values replace the reviewer's and the
+# reviewer is told not to survey the rest of the repository. The runtime and tools stay the
+# reviewer's; model, if given, must still differ from the implementer's (C10). Choose your values.
+# [agents.reviewer.small]
+# max_lines = 40
+# model = "claude-haiku-5-5"
+# max_budget_usd = 1.0
+# max_tokens = 400000
+# timeout_minutes = 10
+
 # Each [[checks]] entry is a check Ariane replays on the result before opening the pull request.
 [[checks]]
 # Name of the check, shown in the pull request statuses.
