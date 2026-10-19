@@ -344,7 +344,7 @@ class _Verification:
         self._survivors(after)
         self._guard_unchanged(after)
         moved = git.out(["rev-parse", f"refs/heads/{self.branch}"], self.repo_root) != self.head
-        if git.current_branch(replay) or git.head(replay) != self.head or moved:
+        if git.detached_head(replay) != self.head or moved:
             raise Refused(f"{after} moved a head", "inspect the branch and the replay tree")
         if git.status(replay) != tree_before:
             raise Refused(f"{after} changed files in the replay tree", "inspect the session")

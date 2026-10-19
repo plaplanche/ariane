@@ -293,12 +293,13 @@ def test_c11_parallel_guard_a_wrong_value_or_a_bare_edit_is_not_tolerated(
     assert [c for c in changes if c.startswith("changed: file ")]
 
 
-@pytest.mark.parametrize("between", ["--file", "--show-scope"])
+@pytest.mark.parametrize("between", ["--git-common-dir", "--show-scope"])
 def test_c11_parallel_guard_another_run_writing_during_the_baseline_is_tolerated(
     project: Project, monkeypatch: pytest.MonkeyPatch, between: str
 ) -> None:
     """Run 8 writes its branch and keys while the first run's baseline is being read, just
-    before the read of the shared config's keys or of the settings: the baseline stays coherent."""
+    before the read of the shared config (its digest and keys, from the same bytes) or of the
+    settings: the baseline stays coherent."""
     real_git = git.git
     wrote: list[bool] = []
 

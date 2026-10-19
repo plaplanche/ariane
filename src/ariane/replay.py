@@ -194,9 +194,10 @@ def replay(
             )
 
     def verify_tree(tree: Path) -> None:
-        if git.current_branch(tree) or git.head(tree) != checked:
+        if git.detached_head(tree) != checked:
             raise Stop("the checks moved the replay working tree's head", "inspect it")
-        run.verify("the checks", start_commit, guard, refs_before, expected_head=checked)
+        # The remote is listed once, after the last check (ADR 0053).
+        run.verify("the checks", start_commit, guard, refs_before, checked, remote=False)
 
     all_checks = run.all_checks()
     wanted = min(run.config.parallel_checks, len(all_checks))
@@ -206,7 +207,7 @@ def replay(
             if wanted > 1:
                 note = parallel_note(workers, wanted)
                 run.folder.log("ticket.checks.parallel", "Checks in parallel", note)
-            return replay_each(
+            results = replay_each(
                 all_checks,
                 tree_for,
                 create=lambda tree: git.add_detached_worktree(run.worktree, tree, checked),
@@ -217,6 +218,8 @@ def replay(
                 trees=trees,
                 slots=workers,
             )
+        run.verify_remote("the checks", refs_before)
+        return results
     finally:
         if trees:
             lines = "\n".join(
@@ -323,7 +326,7 @@ def record_truncation(folder: ticket.TicketFolder, diff: str) -> list[str]:
 
 def _verify_replay(replay: Path, checked: str, tree_before: str) -> None:
     """The reviewer reads only: the replay tree has the same head and no edited file."""
-    if git.current_branch(replay) or git.head(replay) != checked:
+    if git.detached_head(replay) != checked:
         raise Stop("the reviewer moved the replay working tree's head", "inspect it")
     if git.status(replay) != tree_before:
         raise Stop(

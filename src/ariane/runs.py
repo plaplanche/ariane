@@ -301,9 +301,11 @@ def foreign_changes(
     refs |= {f"ref refs/heads/{name}" for name in kept if name}
     keys = next((k for k in {*before, *after} if k.startswith("keys ")), None)
     shared = keys.removeprefix("keys ") if keys else None
-    config_ok = False
-    if keys is not None:
-        old, new = _entries(before.get(keys, "")), _entries(after.get(keys, ""))
+    config_ok = same_keys = False
+    if keys is not None and before.get(keys) != after.get(keys):  # listed only when it changed
+        where = Path(keys.removeprefix("keys ")).parent
+        old, new = (_entries(git.config_keys(where, s.get(keys, ""))) for s in (before, after))
+        same_keys = old == new  # a comment only: the file's digest says it
         delta = Counter(new)
         delta.subtract(old)
         moved = {entry for entry, count in delta.items() if count}
@@ -318,7 +320,7 @@ def foreign_changes(
         part = line.partition(": ")[2]
         if part in refs:
             continue
-        if config_ok and part in (f"file {shared}", keys):
+        if (config_ok and part in (f"file {shared}", keys)) or (same_keys and part == keys):
             continue
         if _shared_setting(part, shared, allowed):  # the `keys` part decides for that file
             continue
@@ -326,8 +328,36 @@ def foreign_changes(
     return kept
 
 
+def guard_stop(after: str, changes: list[str], quiet: str) -> Stop | None:
+    """The stop of a run whose guard found `changes` (`foreign_changes`) after `after`, or None;
+    `quiet` is the advice that ends its next action."""
+    written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
+    if written:
+        return Stop(
+            f"{after} changed instruction files the reviewer can load",
+            "inspect and remove them (they are outside the repository); Ariane pushed"
+            f" nothing; {quiet}",
+            "\n".join(f"- {line}" for line in written),
+        )
+    if changes:
+        return Stop(
+            f"{after} changed git configuration, hooks or local branches",
+            f"inspect .git/config, .git/hooks and the branches; Ariane pushed nothing; {quiet}",
+            "\n".join(f"- {line}" for line in changes),
+        )
+    return None
+
+
+def remote_stop(after: str, changed: list[str], quiet: str) -> Stop:
+    """The stop of a run whose remote refs `changed` (`git.remote_changes`) during `after`."""
+    return Stop(
+        f"the remote changed during {after} ({', '.join(changed)})",
+        f"check it was not the agent; if a person pushed, start the ticket again; {quiet}",
+    )
+
+
 def _entries(listing: str) -> list[str]:
-    """`key=value` entries of a `git config --list --null` listing kept in the snapshot."""
+    """`key=value` entries of a `git config --list --null` listing (`git.config_keys`)."""
     return [e.replace("\n", "=", 1) for e in listing.split("\0") if e]
 
 
