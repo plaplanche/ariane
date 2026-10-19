@@ -29,6 +29,7 @@
 - `Stop` (module `stop`): ends the flow early with a recorded reason.
 - Ticket lock and restart (C5, C23, ADR 0047): `start` first holds `restart.locked` on `<repo>.ariane/locks/<n>.lock` until it returns (held by another process: "Did not start ticket #n: ticket #n is running in another Ariane process", nothing removed). Right after, before any branch, tree or setup, it holds the run's machine-wide slot (`slots.held`, ADR 0050) until it returns; with all 16 held: "Did not start ticket #n: 16 Ariane runs already hold a slot on this machine. Next: wait for one to end.", nothing created. `ticket.started` names the slot. The preparation is `restart.prepare`: a pushed `ariane/<n>` refuses; with `restarting`, `start` registers the kept name `restart.kept_name(n)` with the run, then `restart.clear` saves the uncommitted work of the tree `<n>` in a commit, removes the ticket's trees (registered ones with git, unknown folders as folders) and keeps the branch, the saved commit on top, under that name, `ariane-restarted/<n>-<UTC time>`; leftover trees or a local branch refuse with "run `ariane start <n> --restart`", and an interruption or failure of the preparation that is not one of its refusals (a `Stop`) names `--restart` when the ticket's tree or local branch exists. A run that started over sets `restarted_from` in the metrics before its first setup and opens its journal with `ticket.restarted`, before `ticket.started`. Every stop of a ticket not pushed (`_stopped`, unless `on_pushed` was called or the run is a shadow run, `restartable = False`) ends its next action with "to start over, run `ariane start <n> --restart`" (`restart.with_restart`).
 - The replay of the checks and the review round are in [replay](replay.md) (ADR 0034).
+- Dependency caches (C9, ADR 0054): the first setup is `replay.set_up_ticket_tree`: old cache entries pruned, the ticket's tree given its `[[project.cache]]` folders (copied from the store or built, never stored), then `project.setup`; `ticket.setup` names what each cache did.
 - Metrics (C19): `work/<n>/metrics.json` is rewritten after the folder is opened, each session, the checks replayed, and the delivery or stop ([metrics](metrics.md)); delivery also records `blocking_red_at_delivery`, the number of blocking checks red at that point (C19, ADR 0038).
 - Issue gate (C21, ADR 0032): the start exit code comes from `TrackerError.exit_code`; an issue refused by the tracker gate (no label, labelled by someone without write access, or changed after the label) gives exit 2 before any branch, worktree or agent.
 - Environments (C21, ADR 0029, ADR 0024): every environment is the allow list of `context.untrusted_environment` with the `[project] env` entries; the implementer and fix sessions add the implementer runtime's login variables, the reviewer those of the reviewer's model, and a small reviewer round those of the small model (`review_session.agent_logins`, ADR 0046); the setup and the checks get none. Every one of them, and the commits' hooks, gets the run's slot as `ARIANE_SLOT` (`slot=`, ADR 0050), except the setup and check of a parallel replay worker, which get that worker's slot (`setup(cwd, command, guard, env)`, ADR 0052). When a declared name looks like a secret, the journal says so once, after `ticket.started`, as `ticket.env.declared_secret` (names only).
@@ -55,7 +56,7 @@ flowchart TD
   LK --> R[register the run in runs/n, removed however it ends]
   R --> C[prepare: refuse a pushed branch, clear with --restart or refuse leftovers, create branch and tree]
   C --> D[open the ticket folder]
-  D --> E[setup command]
+  D --> E[prune the cache store; caches, never stored; setup command]
   E --> F[implementer session]
   F --> G[guards: config snapshot, remote changes]
   G --> H[commit the agent's work]
@@ -143,4 +144,4 @@ flowchart LR
 
 ## Serves
 
-C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026, ADR 0027, ADR 0034, ADR 0036, ADR 0047, ADR 0053, C19, C23. See [the component view](../3-components.md).
+C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026, ADR 0027, ADR 0034, ADR 0036, ADR 0047, ADR 0053, ADR 0054, C19, C23. See [the component view](../3-components.md).

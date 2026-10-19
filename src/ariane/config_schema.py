@@ -234,6 +234,41 @@ SCHEMA: dict[str, Any] = {
                     "description": "Checks replayed at the same time, each in its own tree and"
                     " run slot (ADR 0052); 1 replays them one by one.",
                 },
+                "cache": {
+                    "type": "array",
+                    "description": "Dependency folders kept by the content of their key files"
+                    " (ADR 0054): a replay tree copies a stored folder instead of running its"
+                    " setup; project.setup then runs for what the caches do not cover.",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["path", "key", "setup"],
+                        "properties": {
+                            "path": {
+                                **_STR,
+                                "description": "Folder relative to the tree, such as"
+                                " node_modules or .venv; git must ignore it.",
+                            },
+                            "key": {
+                                **_ARGV,
+                                "description": "Files whose content identifies the folder,"
+                                " such as the lock file; with setup, they make the key.",
+                            },
+                            "setup": {
+                                **_ARGV,
+                                "description": "Command that builds that folder alone (list of"
+                                " arguments), run on a miss.",
+                            },
+                            "keep": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "default": 5,
+                                "description": "Most recently used entries of this path kept;"
+                                " older ones are removed at the start of a ticket.",
+                            },
+                        },
+                    },
+                },
             },
         },
         "tracker": {

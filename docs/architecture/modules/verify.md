@@ -23,6 +23,7 @@
 - Metrics (C19): the records also hold `metrics.json` (mode `verify`, the reviewer sessions, survivors and guard violations, outcome `delivered` when green, else `stopped`); a refused or interrupted run writes it to `stopped_metrics_path` instead.
 - Git guard (C11, ADR 0017, ADR 0028): a snapshot of git (as `ariane start` takes) is taken before the first check and compared after every check and the reviewer, before any other git command; a change is refused with the wording of `start`. The base branch's instructions are read once, before the first check. The remote-tracking ref of the base branch is part of the snapshot, and so are the instruction files the reviewer can load from outside its tree (`git.instruction_snapshot`; a change is refused as "changed instruction files the reviewer can load"). After every check and the reviewer, the replay tree must still be detached at the branch's head: one `git.detached_head` (one git process, `rev-parse HEAD --symbolic-full-name HEAD`, instead of `symbolic-ref` and `rev-parse HEAD`, ADR 0053), with the branch's ref read separately; a moved head is refused as "<step> moved a head". Each command's teardown kills what it left running (`process.kill_survivors`); the snapshot is compared right after each setup, before its check runs; after each setup (before a failing setup is refused), check and reviewer session, what was killed (`process.take_killed`) is counted in `metrics.json` and refused as a guard violation, and on any end of `run` (a refusal, Ctrl-C) the survivors are killed again and counted. A run that commits nothing (a refusal, Ctrl-C) writes its `metrics.json` (outcome `stopped`) to `stopped_metrics_path` before the temporary records folder is removed (ADR 0031). The review prompt gets the untruncated `git diff --name-status` of the branch, and a cut diff is journaled with the missing files; since that journal is temporary, the committed `review.md` ends with a `Diff given to the reviewer` section naming them (ADR 0031).
 - Review size (C10, ADR 0046): before the review it reads the diff, its name status and the changed lines from the base to the head in one git process (`git.changes`, without `work/`, a binary file counting 0, ADR 0053) and passes the count to `ReviewSession`, which uses `[agents.reviewer.small]` and the narrower prompt when the count is at most `max_lines` and records `changed_lines` with the reviewer session in `metrics.json`; `review.md` names the model of the selected reviewer.
+- Dependency caches (C9, ADR 0054): each replay tree gets its `[[project.cache]]` folders before its setup (`cache.prepare` on `<repo>.ariane/cache` with `fill=True`: copied from the store, else built by the cache's own setup, guarded like the setup, and stored); `review.md` then has a `Dependency caches` section, one line per check with each cache hit or built. `verify` does not prune the store.
 - Records: written with `ticket.ensure_folder` and `ticket.write_file` (a symlink is replaced, never followed) and committed as regular files: each record path leaves the index first.
 - `replay_path`, `relative_folder`: where the replay tree and the records are.
 
@@ -33,7 +34,7 @@ flowchart TD
   A[verify branch] --> B{branch known, tree clean?}
   B -- no --> X[Refused: exit 1, or the tracker's exit code]
   B -- yes --> C[refs before]
-  C --> D[per check: add replay tree at head, setup, run, remove]
+  C --> D[per check: add replay tree at head, caches, setup, run, remove]
   D --> E[run_checks]
   E --> E2[git.changes base..head, without work/]
   E2 --> F[add reviewer tree, ReviewSession.run with changed_lines]
@@ -78,6 +79,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 ```mermaid
 flowchart LR
   cli --> verify
+  verify --> cache
   verify --> checks
   verify --> config
   verify --> context
@@ -99,4 +101,4 @@ flowchart LR
 
 ## Serves
 
-C10, C23; ADR 0016, ADR 0020, ADR 0028, ADR 0034, ADR 0046, ADR 0053, C19. See [the component view](../3-components.md).
+C10, C23; ADR 0016, ADR 0020, ADR 0028, ADR 0034, ADR 0046, ADR 0053, ADR 0054, C19. See [the component view](../3-components.md).

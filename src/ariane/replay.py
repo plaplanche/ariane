@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ariane import checks, context, git, process, review, slots, ticket
+from ariane import cache, checks, context, git, process, review, slots, ticket
 from ariane.config import CheckConfig
 from ariane.delivery import FAILURES
 from ariane.restart import command
@@ -24,12 +24,14 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ReplayTree:
-    """One check's tree: where it was, how long its setup took, and the slot it ran in."""
+    """One check's tree: where it was, how long its setup took, the slot it ran in, and what its
+    dependency caches did."""
 
     check: str
     path: Path
     setup_s: float
     slot: int | None = None  # None: the run's own slot, checks replayed one by one
+    caches: str = ""  # `cache.lines`: each cache hit or built; "" without `[[project.cache]]`
 
 
 def replay_each(
@@ -37,7 +39,7 @@ def replay_each(
     tree_for: Callable[[int], Path],
     *,
     create: Callable[[Path], None],
-    setup: Callable[[CheckConfig, Path, Mapping[str, str] | None], None],
+    setup: Callable[[CheckConfig, Path, Mapping[str, str] | None], str],
     verify: Callable[[Path], None],
     remove: Callable[[Path], None],
     env: Mapping[str, str] | None,
@@ -45,7 +47,8 @@ def replay_each(
     slots: Sequence[int] = (),
 ) -> list[checks.CheckResult]:
     """C9: each check in its own fresh tree: create, set up, run that check only, verify, then
-    remove the tree, also on a stop or Ctrl-C. `trees` fills as the trees are made.
+    remove the tree, also on a stop or Ctrl-C. `trees` fills as the trees are made; `setup`
+    returns what the tree's dependency caches did (`cache.lines`, ADR 0054).
 
     With several `slots`, as many worker threads replay the checks at the same time, each giving
     its slot as `ARIANE_SLOT` to its setup and check (ADR 0052); the results keep the declared
@@ -72,8 +75,8 @@ def replay_each(
             create(tree)
         try:
             started = time.monotonic()
-            setup(check, tree, env_k)
-            trees.append(ReplayTree(check.name, tree, time.monotonic() - started, slot))
+            used = setup(check, tree, env_k)
+            trees.append(ReplayTree(check.name, tree, time.monotonic() - started, slot, used))
             results[k] = checks.run_check(check, tree, env_k)
             verify(tree)
         except BaseException as exc:
@@ -182,9 +185,9 @@ def replay(
             raise Stop(f"the replay working tree already exists at {tree}", _leftover(run))
         return tree
 
-    def set_up(check: CheckConfig, tree: Path, env: Mapping[str, str] | None) -> None:
+    def set_up(check: CheckConfig, tree: Path, env: Mapping[str, str] | None) -> str:
         command = check.setup if check.setup is not None else run.config.setup
-        error = run.setup(tree, command, guard, env)
+        used, error = set_up_tree(run, tree, command, guard, env, fill=True)
         if error is not None:
             raise Stop(
                 f"{error.reason} (in the working tree of check {check.name!r})",
@@ -192,6 +195,7 @@ def replay(
                 error.detail,
                 status=error.status,
             )
+        return cache.lines(used)
 
     def verify_tree(tree: Path) -> None:
         if git.detached_head(tree) != checked:
@@ -229,6 +233,51 @@ def replay(
                 f"Each check was replayed in its own clean working tree at `{checked}`, not in"
                 f" `{run.worktree}`:\n\n{lines}",
             )
+            if run.config.caches:
+                used = "\n".join(f"- {t.check}: {t.caches}" for t in trees)
+                run.folder.log("ticket.checks.cache", "Dependency caches", used)
+
+
+def set_up_ticket_tree(run: _TicketRun, guard: dict[str, str]) -> tuple[str, Stop | None]:
+    """The ticket's own tree at the start of the ticket: old cache entries pruned, then the caches
+    copied from the store or built, never stored (the agent works there), then `project.setup`.
+    Returns the journal's note on the caches ("" without any) and the setup's stop, or None."""
+    pruned = cache.prune(_store(run), run.config.caches)
+    used, error = set_up_tree(run, run.worktree, run.config.setup, guard, fill=False)
+    note = f"\n\nDependency caches: {cache.lines(used)}." if used else ""
+    if pruned:
+        note += f"\n\nOld cache entries removed: {', '.join(f'`{p}`' for p in pruned)}."
+    return note, error
+
+
+def _store(run: _TicketRun) -> Path:
+    """`cache.store_path` of the repository: `<repo>.ariane/cache`, next to `worktrees/`."""
+    return run.worktree.parent.parent / cache.FOLDER
+
+
+def set_up_tree(
+    run: _TicketRun,
+    tree: Path,
+    command: tuple[str, ...] | None,
+    guard: dict[str, str],
+    env: Mapping[str, str] | None = None,
+    *,
+    fill: bool,
+) -> tuple[list[cache.Used], Stop | None]:
+    """The declared dependency caches (copied from the store, else built by their own setup and,
+    when `fill`, stored: ADR 0054), then `command` for whatever they do not cover; each setup
+    guarded by `run.setup`. Returns what the caches did and the first setup's stop, or None."""
+
+    def build(setup: tuple[str, ...]) -> None:
+        error = run.setup(tree, setup, guard, env)
+        if error is not None:
+            raise error
+
+    try:
+        used = cache.prepare(run.config.caches, tree, _store(run), build, fill=fill)
+    except Stop as exc:
+        return [], exc
+    return used, run.setup(tree, command, guard, env)
 
 
 def review_round(

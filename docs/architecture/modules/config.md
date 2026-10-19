@@ -21,7 +21,7 @@ Loads and validates `ariane.toml` (C22). Every error names the faulty key.
 | `Documentation` | dataclass | The optional `[documentation]` table (C25, ADR 0026): `paths`, `map`, `generated`; `documents_for(path)`, `not_updated(changed)`, `checks()`. |
 | `NO_DOCUMENTATION` | constant | The empty `Documentation`, used without the table. |
 | `DEFAULT_DEFINITION_OF_DONE` | constant | The definition of done when the table is absent (C26). |
-| `Config` | dataclass | The validated settings: base branch, setup, tracker, implementer, reviewer, checks, definition of done, documentation, `env` (the `[project] env` entries, default empty, ADR 0024) and `parallel_checks` (default 1, ADR 0052). |
+| `Config` | dataclass | The validated settings: base branch, setup, tracker, implementer, reviewer, checks, definition of done, documentation, `env` (the `[project] env` entries, default empty, ADR 0024) `parallel_checks` (default 1, ADR 0052) and `caches` (the `[[project.cache]]` tables as `cache.CacheConfig`, default none, ADR 0054). |
 | `load(repo_root, environ=None)` | function | Read `ariane.toml`, or the file `ARIANE_CONFIG` names, and validate it (C22). |
 | `parse(data)` | function | Validate a parsed TOML mapping and return a `Config`. |
 
@@ -37,6 +37,7 @@ Loads and validates `ariane.toml` (C22). Every error names the faulty key.
 - Idle limit (C5, ADR 0045): `agents.<role>.idle_minutes` is optional, for both roles and every runtime; a value that is not a positive number, or is at or above `timeout_minutes`, is refused naming `agents.<role>.idle_minutes`. `DEFAULT_IDLE_MINUTES` (10) applies when it is absent and `timeout_minutes` is above 10.
 - `[project] env` is an optional list of variable names or prefixes ending in `_` (C21, ADR 0024): the variables agents, checks and setup commands receive beyond the base set. Anything but a list of non-empty strings is refused, naming `project.env`.
 - `[project] parallel_checks` is an optional positive integer, default 1 (C9, ADR 0052): the number of checks replayed at the same time. Anything else (0, a negative or fractional number, a boolean, a string) is refused, naming `project.parallel_checks`.
+- `[[project.cache]]` is an optional list of tables (C9, ADR 0054), parsed by `cache.parse`: `path` (a folder relative to the tree: not absolute, no `..`, not under `.git`, not overlapping another cache's path), `key` (a non-empty list of files relative to the tree), `setup` (an argument list) and `keep` (a positive integer, default 5); any other key, or a wrong value, is refused naming `project.cache[<index>].<key>`.
 - `SCHEMA` is re-exported from `config_schema`.
 
 ## Workflow
@@ -168,6 +169,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 flowchart LR
   checks --> config
   cli --> config
+  config --> cache
   config --> config_schema
   context --> config
   flow --> config
@@ -186,4 +188,4 @@ See the generated [JSON Schema of `ariane.toml`](../../reference/ariane.toml.sch
 
 ## Serves
 
-C10, C22, C25, C26; ADR 0003, ADR 0023, ADR 0016, ADR 0026. See [the component view](../3-components.md).
+C10, C22, C25, C26; ADR 0003, ADR 0023, ADR 0016, ADR 0026, ADR 0054. See [the component view](../3-components.md).

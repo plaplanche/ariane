@@ -75,7 +75,7 @@ def test_c9_parallel_checks_three_one_second_checks_take_one_second_at_three_at_
         all_checks,
         lambda k: tmp_path / f"tree-{k}",
         create=lambda tree: tree.mkdir(),
-        setup=lambda check, tree, env: None,
+        setup=lambda check, tree, env: "",
         verify=lambda tree: None,
         remove=shutil.rmtree,
         env=None,
@@ -325,11 +325,12 @@ def test_c9_parallel_checks_ctrl_c_waits_for_the_workers_cleanup(tmp_path: Path)
         else:
             _thread.interrupt_main()
 
-    def setup(check: CheckConfig, tree: Path, env: Any) -> None:
+    def setup(check: CheckConfig, tree: Path, env: Any) -> str:
         if check.name == "a":
             time.sleep(0.3)  # the caller is waiting for the workers by now
             ctrl_c()
             time.sleep(0.5)  # Ctrl-C reaches the waiting caller meanwhile
+        return ""
 
     def create(tree: Path) -> None:
         tree.mkdir()
@@ -374,9 +375,10 @@ def test_c9_parallel_checks_a_worker_that_fails_to_start_stops_and_waits_for_the
             raise RuntimeError("can't start new thread")
         real_start(self)
 
-    def setup(check: CheckConfig, tree: Path, env: Any) -> None:
+    def setup(check: CheckConfig, tree: Path, env: Any) -> str:
         running.set()
         time.sleep(0.5)
+        return ""
 
     def create(tree: Path) -> None:
         tree.mkdir()
