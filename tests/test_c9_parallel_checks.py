@@ -7,6 +7,7 @@ import _thread
 import dataclasses
 import json
 import shutil
+import signal
 import sys
 import threading
 import time
@@ -308,3 +309,48 @@ def test_c9_parallel_checks_config_key() -> None:
     for bad in (0, -1, 1.5, True, "2"):
         with pytest.raises(config.ConfigError, match=r"project\.parallel_checks"):
             config.parse(with_change("project.parallel_checks", bad))
+
+
+def test_c9_parallel_checks_ctrl_c_waits_for_the_workers_cleanup(tmp_path: Path) -> None:
+    """Ctrl-C returns only once every worker has removed its tree, even when that is slow: on
+    Python 3.11 a `Thread.join` interrupted by Ctrl-C took a running thread for stopped."""
+    created: list[Path] = []
+    removed: list[Path] = []
+    main = threading.main_thread().ident
+    assert main is not None
+
+    def ctrl_c() -> None:  # a real SIGINT to the waiting thread, which wakes a blocked join
+        if hasattr(signal, "pthread_kill"):
+            signal.pthread_kill(main, signal.SIGINT)
+        else:
+            _thread.interrupt_main()
+
+    def setup(check: CheckConfig, tree: Path, env: Any) -> None:
+        if check.name == "a":
+            time.sleep(0.3)  # the caller is waiting for the workers by now
+            ctrl_c()
+            time.sleep(0.5)  # Ctrl-C reaches the waiting caller meanwhile
+
+    def create(tree: Path) -> None:
+        tree.mkdir()
+        created.append(tree)
+
+    def remove(tree: Path) -> None:
+        time.sleep(0.5)
+        tree.rmdir()
+        removed.append(tree)
+
+    with pytest.raises(KeyboardInterrupt):
+        replay.replay_each(
+            [CheckConfig(name, (PY, "-c", "pass"), True, 1) for name in ("a", "b")],
+            lambda k: tmp_path / f"tree-{k}",
+            create=create,
+            setup=setup,
+            verify=lambda tree: None,
+            remove=remove,
+            env=None,
+            trees=[],
+            slots=(1, 2),
+        )
+    assert tmp_path / "tree-1" in created
+    assert sorted(removed) == sorted(created)

@@ -46,7 +46,9 @@ summary; the non-functional "Cost" requirement asks Ariane not to waste the owne
   calling thread stops the others: no worker takes a new check, the process trees of their running
   commands are killed and their next commands refused (`process.cancel`), except creating and
   removing a tree (`process.shielded`), so every tree is removed before the replay raises the
-  first stop, as it does for one check.
+  first stop, as it does for one check. The calling thread waits for an event each worker sets
+  once its tree is removed, not for `Thread.join`: on Python 3.11, Ctrl-C during a join can mark a
+  thread stopped while it still runs, which would release the slots before the trees are removed.
 
 ## Consequences
 - With `parallel_checks = N`, the replay takes about as long as its slowest group of checks

@@ -98,17 +98,33 @@ def replay_each(
                     raise
                 return
 
+    def worker(slot: int, done: threading.Event) -> None:
+        try:
+            work(slot)
+        finally:
+            done.set()  # after its tree is removed: what the caller waits for
+
     if len(slots) <= 1:
         work(None)
         return [results[k] for k in sorted(results)]
-    workers += [threading.Thread(target=work, args=(slot,), daemon=True) for slot in slots]
+    finished = [threading.Event() for _ in slots]
+    workers += [
+        threading.Thread(target=worker, args=(slot, done), daemon=True)
+        for slot, done in zip(slots, finished, strict=True)
+    ]
+    started: list[threading.Event] = []
     try:
-        for thread in workers:
-            thread.start()
-        _join(workers)
+        for thread, done in zip(workers, finished, strict=True):
+            started.append(done)  # before start(): a Ctrl-C inside it still waits for it
+            try:
+                thread.start()
+            except Exception:
+                done.set()  # never ran
+                raise
+        _wait(started)
     except KeyboardInterrupt as exc:  # Ctrl-C reaches the calling thread only
         stop_all(exc)
-        _join(workers, interruptible=False)
+        _wait(started, interruptible=False)
     finally:
         process.resume({t.ident for t in workers if t.ident is not None})
         names = [c.name for c in all_checks]
@@ -118,13 +134,15 @@ def replay_each(
     return [results[k] for k in sorted(results)]
 
 
-def _join(threads: Sequence[threading.Thread], *, interruptible: bool = True) -> None:
-    """Wait for `threads`, in short waits so Ctrl-C reaches the calling thread on Windows too;
-    not `interruptible`, a second Ctrl-C is ignored while the stopped workers remove their trees."""
-    for thread in threads:
-        while thread.is_alive():
+def _wait(finished: Sequence[threading.Event], *, interruptible: bool = True) -> None:
+    """Wait until every worker has set its `finished` event, after removing its tree; in short
+    waits so Ctrl-C reaches the calling thread on Windows too. Not `Thread.join`: on Python 3.11,
+    Ctrl-C during a join can mark a thread stopped while it still runs. Not `interruptible`, a
+    second Ctrl-C is ignored while the stopped workers remove their trees."""
+    for done in finished:
+        while not done.is_set():
             try:
-                thread.join(0.1)
+                done.wait(0.1)
             except KeyboardInterrupt:
                 if interruptible:
                     raise
