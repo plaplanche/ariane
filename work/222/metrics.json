@@ -5,16 +5,105 @@
     "push": 0
   },
   "blocking_red_at_delivery": 0,
-  "first_pass_verdict": "not reviewed",
+  "first_pass_verdict": "no-go",
   "mode": "delivered",
-  "outcome": "running",
-  "rounds": 0,
-  "sessions": [],
+  "outcome": "delivered",
+  "rounds": 1,
+  "sessions": [
+    {
+      "cache_read_tokens": 75092,
+      "cache_write_tokens": 1712,
+      "cost_usd": 1.3179651000000001,
+      "duration_s": 1030.504,
+      "input_tokens": 2,
+      "model": "claude-opus-5-5",
+      "output_tokens": 70,
+      "role": "implementer",
+      "round": 0,
+      "runtime": "claude-code",
+      "stop_reason": "finished"
+    },
+    {
+      "billing": "plan",
+      "cache_read_tokens": 176128,
+      "cache_write_tokens": 0,
+      "changed_lines": 310,
+      "cost_usd": 0.0,
+      "duration_s": 59.342,
+      "input_tokens": 42491,
+      "model": "gpt-6-astra",
+      "output_tokens": 1420,
+      "role": "reviewer",
+      "round": 0,
+      "runtime": "codex",
+      "stop_reason": "finished"
+    },
+    {
+      "cache_read_tokens": 1108765,
+      "cache_write_tokens": 51562,
+      "cost_usd": 0.9429601999999996,
+      "duration_s": 413.459,
+      "input_tokens": 60,
+      "model": "claude-opus-5-5",
+      "output_tokens": 15405,
+      "role": "implementer",
+      "round": 1,
+      "runtime": "claude-code",
+      "stop_reason": "finished"
+    },
+    {
+      "billing": "plan",
+      "cache_read_tokens": 181376,
+      "cache_write_tokens": 0,
+      "changed_lines": 409,
+      "cost_usd": 0.0,
+      "duration_s": 61.587,
+      "input_tokens": 48086,
+      "model": "gpt-6-astra",
+      "output_tokens": 1820,
+      "role": "reviewer",
+      "round": 1,
+      "runtime": "codex",
+      "stop_reason": "finished"
+    }
+  ],
   "started": "2026-10-19T20:01:11Z",
   "steps": [
     {
       "at": "2026-10-19T20:01:12Z",
       "name": "folder opened"
+    },
+    {
+      "at": "2026-10-19T20:18:22Z",
+      "name": "implementer session 1 stopped"
+    },
+    {
+      "at": "2026-10-19T20:20:38Z",
+      "name": "checks replayed"
+    },
+    {
+      "at": "2026-10-19T20:21:44Z",
+      "name": "reviewer session 2 stopped"
+    },
+    {
+      "at": "2026-10-19T20:21:45Z",
+      "name": "fix round 1 began"
+    },
+    {
+      "at": "2026-10-19T20:28:39Z",
+      "name": "implementer session 3 stopped"
+    },
+    {
+      "at": "2026-10-19T20:30:57Z",
+      "name": "checks replayed"
+    },
+    {
+      "at": "2026-10-19T20:31:59Z",
+      "name": "reviewer session 4 stopped"
+    },
+    {
+      "at": "2026-10-19T20:31:59Z",
+      "name": "outcome: delivered"
     }
   ],
   "surviving_processes": 0,
