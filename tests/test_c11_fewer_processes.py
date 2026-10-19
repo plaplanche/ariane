@@ -15,15 +15,15 @@ from test_c23_restart import nothing
 from test_c23_restart import start as restart_start
 from test_fix_rounds import NO_GO
 
-from ariane import git
+from ariane import git, verify
 from ariane.config import CheckConfig, Config
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
 
-from conftest import PY, FakeRuntime, Project, edit_app, make_config, sh
-from test_flow import start, worktree
+from conftest import PY, FakeRuntime, Project, commit_on_branch, edit_app, make_config, sh
+from test_flow import environ, start, worktree
 
-CUT = ("guard verification", "remote listing", "record commits")
+CUT = ("guard verification", "session", "record commits")
 
 
 def _phases(*counts: int) -> dict[str, int]:
@@ -41,11 +41,12 @@ AFTER = {
     "go": _phases(11, 6, 22, 5, 3, 6, 9, 3),
     "three no-go": _phases(13, 26, 48, 11, 9, 18, 9, 3),
     "restart": _phases(29, 6, 22, 5, 3, 6, 9, 3),
-    "three checks": _phases(11, 6, 30, 5, 9, 6, 9, 3),
+    "three checks": _phases(11, 6, 30, 7, 9, 6, 9, 3),
 }
 
 
 def _within(run: str, count: Count) -> None:
+    print(f"{run}: {count.line()}")  # the figures of ADR 0053, with `pytest -s`
     over = {p: n for p, n in count.phases.items() if n > AFTER[run][p]}
     assert not over, f"{run}: {count.line()}; above the bound: {over}"
     assert set(count.phases) <= set(PHASES)
@@ -90,15 +91,15 @@ def test_c11_fewer_processes_a_restart(
     assert sum(BEFORE["restart"].values()) == 111 and count.total <= 83
 
 
-def test_c11_fewer_processes_the_replay_lists_the_remote_once_for_all_its_checks(
+def test_c11_fewer_processes_the_replay_lists_the_remote_after_each_check(
     project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     with counted(monkeypatch) as count:
         outcome = start(project, tracker, FakeRuntime(), _three_checks())
     assert outcome.exit_code == 0, outcome.line
     _within("three checks", count)
-    # The start, the agent session, the checks (once for three), the reviewer, the delivery.
-    assert count.of("remote listing", "ls-remote") == 5
+    # The start, the agent session, each of the three checks, the reviewer, the delivery.
+    assert count.of("remote listing", "ls-remote") == 7
 
 
 def test_c11_fewer_processes_a_snapshot_starts_three_git_processes(
@@ -214,13 +215,8 @@ def test_c11_fewer_processes_the_guard_still_stops_on_each_tampering(
 def test_c11_fewer_processes_a_check_that_changes_the_remote_still_stops_the_replay(
     project: Project, tracker: InMemoryTracker
 ) -> None:
-    sneak = (
-        PY,
-        "-c",
-        "import subprocess; subprocess.run(['git', 'push', '--quiet',"
-        f" {str(project.remote)!r}, 'HEAD:refs/tags/sneaky'], check=True)",
-    )
-    checks = (*_three_checks().checks[:2], CheckConfig("sneaky", sneak, True, 1))
+    sneak = CheckConfig("sneaky", _push(project.remote, "'HEAD:refs/tags/sneaky'"), True, 1)
+    checks = (*_three_checks().checks[:2], sneak)
     outcome = start(project, tracker, FakeRuntime(), make_config(checks=checks))
     assert outcome.exit_code == 1
     assert "the remote changed during the checks (refs/tags/sneaky)" in outcome.line
@@ -241,3 +237,53 @@ def test_c11_fewer_processes_a_reviewer_moving_the_ticket_branch_is_still_stoppe
     assert outcome.exit_code == 1
     assert "the reviewer moved the ticket branch" in outcome.line, outcome.line
     assert tracker.opened == [] and "ariane/7" not in project.remote_branches()
+
+
+def _push(remote: Path, argv: str) -> tuple[str, ...]:
+    return (
+        PY,
+        "-c",
+        f"import subprocess; subprocess.run(['git', 'push', '--quiet', {str(remote)!r}, {argv}],"
+        " check=True)",
+    )
+
+
+def test_c11_fewer_processes_a_later_check_undoing_a_remote_change_is_still_stopped(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    """The first check pushes a tag, the second deletes it: the remote is listed after each
+    check, so the first one stops the ticket before the second runs."""
+    first = CheckConfig("push", _push(project.remote, "'HEAD:refs/tags/sneaky'"), True, 1)
+    second = CheckConfig("undo", _push(project.remote, "':refs/tags/sneaky'"), True, 1)
+    outcome = start(project, tracker, FakeRuntime(), make_config(checks=(first, second)))
+    assert outcome.exit_code == 1
+    assert "the remote changed during the checks (refs/tags/sneaky)" in outcome.line
+    assert tracker.opened == [] and "ariane/7" not in project.remote_branches()
+    assert "refs/tags/sneaky" in sh(["git", "ls-remote", str(project.remote)], project.root)
+
+
+def test_c11_fewer_processes_verify_still_refuses_a_check_attaching_the_replay_head(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ariane verify` reads the replay tree's head in one process; HEAD put back on a branch
+    at the same commit is still a moved head."""
+    commit_on_branch(project.root, "hand/fix", "By hand", {"app.txt": "version 2\n"}, parent="main")
+    attach = (
+        PY,
+        "-c",
+        "import subprocess; subprocess.run(['git', 'symbolic-ref', 'HEAD',"
+        " 'refs/heads/hand/fix'], check=True)",
+    )
+    config = make_config(checks=(CheckConfig("attach", attach, True, 1),))
+    monkeypatch.setattr(git, "push", lambda *a, **k: pytest.fail("pushed"))
+    outcome = verify.verify(
+        "hand/fix",
+        repo_root=project.root,
+        config=config,
+        runtime=FakeRuntime(),
+        environ=environ(),
+        tracker=None,
+        issue_number=None,
+    )
+    assert outcome.exit_code == 1
+    assert "the checks moved a head" in outcome.line, outcome.line

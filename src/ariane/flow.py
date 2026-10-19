@@ -306,11 +306,9 @@ class _TicketRun:
         guard: dict[str, str],
         refs_before: dict[str, str],
         expected_head: str | None = None,
-        remote: bool = True,
     ) -> None:
         """C11: after untrusted code ran, nothing escaped the ticket branch (violations counted).
-        Git is read once (`state`). Not `remote`: the caller lists the remote once for the whole
-        phase, after its last verification (`verify_remote`, ADR 0053)."""
+        Git is read once (`state`, ADR 0053)."""
         try:
             keep = "inspect the working tree; Ariane pushed nothing"
             survived = self.survivors(after)
@@ -326,29 +324,19 @@ class _TicketRun:
             if expected_head is not None and now.head != expected_head:
                 raise Stop(f"{after} moved the ticket branch", keep)
             stopped = self._unchanged(after, guard, now.snapshot)
-            if stopped is None and remote:
+            if stopped is None:
                 stopped = self._remote_stop(after, refs_before)
             if stopped is not None:
                 raise stopped
         except Stop:
             self.metrics.guard_violation()
             raise
-        checked = "remote unchanged" if remote else "the remote is listed after the phase"
-        logs.emit("guard.verified", f"after {after}: branch, history, git and {checked}")
+        logs.emit("guard.verified", f"after {after}: branch, history, git and remote unchanged")
         self.folder.log(
             "ticket.guard.verified",
             f"Verified after {after}",
-            f"Same branch and history, git unchanged, {checked}.",
+            "Same branch and history, git unchanged, remote unchanged.",
         )
-
-    def verify_remote(self, after: str, refs_before: dict[str, str]) -> None:
-        """C11: the remote's watched refs are as at the start, once after a whole phase."""
-        stopped = self._remote_stop(after, refs_before)
-        if stopped is not None:
-            self.metrics.guard_violation()
-            raise stopped
-        logs.emit("guard.verified", f"after {after}: remote unchanged")
-        self.folder.log("ticket.guard.verified", f"Verified after {after}", "Remote unchanged.")
 
     def _remote_stop(self, after: str, refs_before: dict[str, str]) -> Stop | None:
         changed = self._remote_changes(refs_before)

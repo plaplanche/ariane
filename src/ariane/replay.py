@@ -196,8 +196,8 @@ def replay(
     def verify_tree(tree: Path) -> None:
         if git.detached_head(tree) != checked:
             raise Stop("the checks moved the replay working tree's head", "inspect it")
-        # The remote is listed once, after the last check (ADR 0053).
-        run.verify("the checks", start_commit, guard, refs_before, checked, remote=False)
+        # The remote is listed after each check: a later check could undo what one pushed.
+        run.verify("the checks", start_commit, guard, refs_before, expected_head=checked)
 
     all_checks = run.all_checks()
     wanted = min(run.config.parallel_checks, len(all_checks))
@@ -207,7 +207,7 @@ def replay(
             if wanted > 1:
                 note = parallel_note(workers, wanted)
                 run.folder.log("ticket.checks.parallel", "Checks in parallel", note)
-            results = replay_each(
+            return replay_each(
                 all_checks,
                 tree_for,
                 create=lambda tree: git.add_detached_worktree(run.worktree, tree, checked),
@@ -218,8 +218,6 @@ def replay(
                 trees=trees,
                 slots=workers,
             )
-        run.verify_remote("the checks", refs_before)
-        return results
     finally:
         if trees:
             lines = "\n".join(

@@ -8,6 +8,7 @@ runs. A call no such frame names (preparing the ticket's tree, opening its folde
 from __future__ import annotations
 
 import sys
+import time
 from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -33,7 +34,6 @@ _FRAMES = {
     ("git.py", "remote_refs"): "remote listing",
     ("flow.py", "_commit_record"): "record commits",
     ("flow.py", "verify"): "guard verification",
-    ("flow.py", "verify_remote"): "guard verification",
     ("flow.py", "_unchanged"): "guard verification",
     ("flow.py", "state"): "guard verification",
     ("flow.py", "snapshot"): "guard verification",  # its name before #214
@@ -56,6 +56,7 @@ class Count:
     """The processes started, by phase, and their command lines, in order."""
 
     phases: Counter[str] = field(default_factory=Counter)
+    seconds: dict[str, float] = field(default_factory=lambda: dict.fromkeys(PHASES, 0.0))
     commands: list[tuple[str, tuple[str, ...]]] = field(default_factory=list)
 
     @property
@@ -67,7 +68,9 @@ class Count:
         return sum(1 for p, argv in self.commands if p == phase and word in argv)
 
     def line(self) -> str:
-        return f"{self.total} processes: " + ", ".join(f"{p} {self.phases[p]}" for p in PHASES)
+        return f"{self.total} processes: " + ", ".join(
+            f"{p} {self.phases[p]} ({self.seconds[p]:.2f} s)" for p in PHASES
+        )
 
 
 def _phase(frame: object) -> str:
@@ -92,7 +95,11 @@ def counted(monkeypatch: pytest.MonkeyPatch) -> Iterator[Count]:
         phase = _phase(sys._getframe(1))
         count.phases[phase] += 1
         count.commands.append((phase, tuple(argv)))
-        return real(argv, **kwargs)  # type: ignore[arg-type]
+        began = time.perf_counter()
+        try:
+            return real(argv, **kwargs)  # type: ignore[arg-type]
+        finally:
+            count.seconds[phase] += time.perf_counter() - began
 
     monkeypatch.setattr(process, "run", counting)
     try:
