@@ -1,6 +1,6 @@
 # Status
 
-- Last action: implementing
-- At: 2026-10-19 04:29:49Z
-- Detail: implementer session running
-- Next: wait
+- Last action: needs a human
+- At: 2026-10-19 05:29:35Z
+- Detail: pushing ariane/214, then opening a draft pull request: the review is still no-go
+- Next: finish by hand, then run `ariane verify`
