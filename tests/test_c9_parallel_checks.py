@@ -195,7 +195,7 @@ def test_c9_parallel_checks_setup_failure_stops_the_others(
 ) -> None:
     slow = CheckConfig(
         "slow",
-        (PY, "-c", SLOW, str(tmp_path / "started"), str(tmp_path / "done"), "6"),
+        (PY, "-c", SLOW, str(tmp_path / "started"), str(tmp_path / "done"), "30"),
         True,
         1,
     )
@@ -208,7 +208,7 @@ def test_c9_parallel_checks_setup_failure_stops_the_others(
     )
     assert outcome.exit_code == 1
     assert "'broken'" in outcome.line
-    assert time.monotonic() - began < 6 + 5
+    assert time.monotonic() - began < 25  # the 30 s check was killed, with room for slow runners
     assert "-replay-" not in trees(project)
     time.sleep(1)
     assert not (tmp_path / "done").exists()
