@@ -1,14 +1,18 @@
 # Review 0
 
-- Reviewed commit: `9b760e1beeb40af5a08ef111f88ec61eea8f81a2`
+- Reviewed commit: `a709edfe518a8dc1d79f8fc0de654061dfdefc25`
 - Reviewer model: gpt-6-astra
-- Verdict: **no-go** (the reviewer answered no-go)
+- Verdict: **go**
 
 ## Findings
 
-- **blocking** (`src/ariane/cache.py:129`) Unreadable key files can select an unrelated cached dependency folder
+- **minor** (`src/ariane/replay.py:78`) A later setup failure loses the cache journal record
 
-  key_of treats every OSError as a missing file, including PermissionError, IsADirectoryError and I/O failures. A read-only probe confirmed these produce exactly the same digest as FileNotFoundError. If an entry was built with a missing key file, a later tree whose key file exists but cannot be read will restore that entry and skip setup, despite not establishing that its contents match. The sequence is: failed key read → missing-file digest → restore writes staging files → rename into the tree → touch entry metadata → validate only Git state → run the check. Neither validation checks the failed key read. Handle genuinely missing files separately; other read failures must stop or bypass caching without publishing under that digest. Add a regression proving an unreadable key cannot hit an entry built for a missing key.
+  Cache setup can build a folder, validate it, write the temporary store entry and metadata, and publish it by rename. The subsequent project.setup can then fail before trees.append runs. The finally block consequently omits this check from ticket.checks.cache, despite its persistent cache write. Similarly, successful hits preceding that failure are omitted. Preserve cache outcomes independently of the subsequent setup result and add a failing-project-setup regression test.
+
+- **minor** (`src/ariane/cache.py:321`) Directory permissions are not preserved by the copy
+
+  _copy creates directories using the current umask and never reads the source directory's mode; its final chmod also uses the destination's mode. For example, a dependency directory created with mode 0700 becomes 0755 under umask 022, both in the restored tree and, with write bits removed, in the store. This differs from ADR 0054's statement that modes are kept. Preserve source directory permissions, applying the intended write-bit adjustment, and test a nondefault directory mode.
 
 ## Definition of done
 
@@ -34,19 +38,20 @@
 
 - met: The change is covered by tests that fail without it.
 
-  The new test_c9_dependency_cache_* tests cover builds, hits, changed keys, copy isolation, incomplete entries, journaling, pruning, verify integration and unchanged behavior without caches. These depend on functionality absent from the base. Ariane reports the suite green; I did not rerun filesystem-writing tests in this read-only review. Unreadable key files remain uncovered.
+  The two new test files contain 30 named test functions, plus parametrized cases. They cover reuse, changed keys, copy isolation, incomplete entries, journaling, pruning, concurrent publication, both replay entry points and pre-publication validation. These depend on behavior absent before the change. Ariane reports the suite passing; I did not rerun tests because they write files and create worktrees.
 
 - met: The documentation the change affects is updated (C25).
 
-  README, Node/Python examples, the configuration schema, log catalogue and affected architecture modules are updated. Ariane reports the generated-reference check green.
+  README configuration guidance, Node and Python examples, all requested module documentation, the new cache module documentation, generated schema and log catalogue are updated. Ariane reports the generated-reference check passing.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0054 records key construction, copies, replay-only publication, locking, retention, relocation limitations and measured Node replay timings. Side-effect tracing: ticket startup locks and prunes entries, prepares caches without publication, runs project setup, then writes ticket records. Replay misses execute setup, validate, create temporary data, copy/chmod files, write metadata, acquire the publication lock, check the existing entry, rename any replacement aside, publish by rename, and clean up. Hits acquire the lock, create parents/staging, copy files, rename the destination, touch metadata, then validate before subsequent setup. Checks run afterward, followed by verification, tree removal and reporting. Restore/publication/pruning share the lock; concurrent publishers recheck entry identity before replacement. Verify uses the same cache publication path and records results in review.md without pruning.
+  ADR 0054 records key construction, copy mechanisms, replay-only publication, atomic staging, locking, replacement identity, destination checks, retention, journaling and virtual-environment limitations. It includes measured Node replay results before and after.
 
 ## Proposed learnings (not decided)
 
-- Proposed: distinguish a missing cache-key input from an unreadable input; never turn a failed content read into a reusable cache identity.
+- Proposed: record completed cache operations even when a later setup step fails.
+- Proposed: test directory permissions as well as executable-file permissions when implementing filesystem copies.
 
 ## Run
 
