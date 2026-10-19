@@ -256,6 +256,11 @@ def _store(run: _TicketRun) -> Path:
     return run.worktree.parent.parent / cache.FOLDER
 
 
+def tracked_changes(cwd: Path) -> list[str]:
+    """Tracked paths changed in the files or the index (`status`, untracked ones left out)."""
+    return [line[3:] for line in git.status(cwd).splitlines() if line and not line.startswith("??")]
+
+
 def set_up_tree(
     run: _TicketRun,
     tree: Path,
@@ -269,8 +274,9 @@ def set_up_tree(
     """The declared dependency caches (copied from the store, else built by their own setup and,
     when `fill`, stored: ADR 0054), then `command` for whatever they do not cover; each setup
     guarded by `run.setup`. Before a built folder is stored, and once the copied ones are in
-    place, the tree is checked: still at `head` (a replay tree's commit) and no file git does not
-    ignore. Returns what the caches did and the first setup's stop, or None."""
+    place, the tree is checked: still at `head` (a replay tree's commit), no tracked or staged
+    change and no file git does not ignore. Returns what the caches did and the first setup's
+    stop, or None."""
 
     def build(setup: tuple[str, ...]) -> None:
         error = run.setup(tree, setup, guard, env)
@@ -280,6 +286,12 @@ def set_up_tree(
     def validate() -> None:
         if head and git.detached_head(tree) != head:
             raise Stop("a cache setup moved the replay working tree's head", "inspect it")
+        if changed := tracked_changes(tree):
+            raise Stop(
+                "a cache setup changed files that git tracks",
+                "inspect the replay working tree",
+                "\n".join(f"- `{path}`" for path in changed),
+            )
         leftovers = git.untracked(tree)
         if leftovers:
             raise Stop(

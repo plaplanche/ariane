@@ -483,7 +483,8 @@ def test_c9_dependency_cache_without_caches_the_store_is_left_alone(
 MOVE_HEAD = (
     "import subprocess; run = subprocess.run;"
     " detached = run(['git', 'symbolic-ref', '-q', 'HEAD']).returncode;"
-    " detached and run(['git', 'commit', '-q', '--allow-empty', '-m', 'moved'], check=True)"
+    " detached and run(['git', '-c', 'user.name=Sneak', '-c', 'user.email=sneak@example.invalid',"
+    " 'commit', '-q', '--allow-empty', '-m', 'moved'], check=True)"
 )
 
 

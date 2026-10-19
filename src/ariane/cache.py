@@ -146,8 +146,8 @@ def prepare(
     (which raises on failure) and, when `fill` (a replay tree, never the agent's), stored. A path
     that crosses a symbolic link, or a folder the commit already has there, is never written by
     the cache: its setup builds it and nothing is stored. `validate` (which raises to stop) checks
-    the tree after each build, before anything is stored, and after the folders copied from the
-    store, before the caller runs anything else: a copy skips its setup, not the setup's checks."""
+    the tree after each build, before anything is stored, and after each folder copied from the
+    store, before any other setup runs: a copy skips its setup, not the setup's checks."""
     used: list[Used] = []
     for cache in caches:
         key = key_of(tree, cache)
@@ -161,6 +161,7 @@ def prepare(
             hit, failed = _restore(store, entry, cache, key, tree)
             if hit:
                 used.append(Used(cache.path, key, hit=True))
+                validate()  # before another cache's setup runs, which could hide what it left
                 continue
         build(cache.setup)
         validate()
@@ -176,8 +177,6 @@ def prepare(
         else:
             note = _store(target, store, entry, cache, key, failed)
         used.append(Used(cache.path, key, hit=False, note=note))
-    if any(u.hit for u in used):
-        validate()
     return used
 
 

@@ -30,14 +30,14 @@ behaviour; this ADR records it and the choices it left open.
   compared, survivors killed, untracked files refused, ADR 0024, 0031), then the folder is copied
   into `<key>.partial-<random>/data`, made read-only, `entry.json` written, and the temporary
   entry renamed to `<key>`. Before anything is stored, the replay tree must still be at its
-  commit and hold no file git does not ignore: the checks' own verification comes after the
+  commit, have no change to a tracked file or the index, and hold no file git does not ignore: the checks' own verification comes after the
   store, so a setup that moved the head would otherwise leave an entry built from another
   commit. On a hit, `data/` is copied into the fresh tree instead of running
   that setup, and `entry.json` is touched (its time is the entry's last use). `project.setup` (or
   the check's own `setup`) then runs as before, for whatever the caches do not cover. A hit skips
-  the cache's setup, not its checks: once the copies are in place the tree must hold no file git
-  does not ignore (a commit can drop the ignore rule and keep the key files), before any setup,
-  agent or check runs.
+  the cache's setup, not its checks: right after each copy, before the next cache's setup, the
+  tree must hold no file git does not ignore (a commit can drop the ignore rule and keep the key
+  files), so no later setup, agent or check runs first and can hide it.
 - **Copies, not links.** Each file is copied as a copy-on-write clone where the file system
   supports it (`FICLONE` on Linux: Btrfs, XFS; `clonefile` on macOS: APFS), else as a plain
   copy; after a first refusal the rest of the folder is copied plainly. Never hard links nor a

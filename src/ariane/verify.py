@@ -21,7 +21,14 @@ from ariane.flow import (
 )
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
-from ariane.replay import ReplayTree, parallel_note, record_truncation, replay_each, truncation_note
+from ariane.replay import (
+    ReplayTree,
+    parallel_note,
+    record_truncation,
+    replay_each,
+    tracked_changes,
+    truncation_note,
+)
 from ariane.review_session import ReviewFailed, ReviewSession, agent_logins, instruction_dirs
 from ariane.runtime import AgentRuntime
 from ariane.stop import Stop
@@ -234,10 +241,15 @@ class _Verification:
 
     def _cached(self, replay: Path, check: CheckConfig) -> None:
         """Before a built folder is stored and once the copied ones are in place: the replay
-        tree is still at the branch's head and has no file git does not ignore."""
+        tree is still at the branch's head, has no tracked or staged change and no file git does
+        not ignore."""
         where = f" (in the working tree of check {check.name!r})"
         if git.detached_head(replay) != self.head:
             raise Refused(f"a cache setup moved a head{where}", "inspect the replay tree")
+        if tracked_changes(replay):
+            raise Refused(
+                f"a cache setup changed files that git tracks{where}", "inspect the replay tree"
+            )
         if git.untracked(replay):
             raise Refused(
                 f"the dependency caches left files that git does not ignore{where}",
