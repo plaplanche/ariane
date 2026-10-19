@@ -119,16 +119,19 @@ def _overlap(a: str, b: str) -> bool:
 
 def key_of(tree: Path, cache: CacheConfig) -> str:
     """SHA-256 of the `setup` command and of each key file's name and content in `tree` (a
-    missing key file counts as missing, not as empty)."""
+    missing key file counts as missing, not as empty), or "" when a key file is there but
+    cannot be read: its content is unknown, so no entry may be chosen or stored for it."""
     digest = hashlib.sha256(b"ariane-cache-1\0")
     digest.update(json.dumps(list(cache.setup)).encode() + b"\0")
     for name in cache.key:
         digest.update(name.encode() + b"\0")
         try:
             content = (tree / name).read_bytes()
-        except OSError:
+        except (FileNotFoundError, NotADirectoryError):
             digest.update(b"missing\0")
             continue
+        except OSError:
+            return ""
         digest.update(f"{len(content)}\0".encode() + content)
     return digest.hexdigest()
 
@@ -154,7 +157,7 @@ def prepare(
         target = tree / cache.path
         entry = store / key
         failed: str | None = None  # the entry that could not be copied, replaced if rebuilt
-        blocked = _crossing(tree, cache.path)
+        blocked = "a key file cannot be read" if not key else _crossing(tree, cache.path)
         if not blocked and os.path.lexists(target):
             blocked = "the commit already has that path"
         if not blocked:

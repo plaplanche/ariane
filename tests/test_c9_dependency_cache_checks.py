@@ -7,7 +7,17 @@ import dataclasses
 from pathlib import Path
 
 import pytest
-from test_c9_dependency_cache import DEPS, PY, _builder_in, _tree, builder, cached, entries, store
+from test_c9_dependency_cache import (
+    DEPS,
+    PY,
+    _builder_in,
+    _tree,
+    builder,
+    builds,
+    cached,
+    entries,
+    store,
+)
 
 from ariane import cache, verify
 from ariane.cache import CacheConfig
@@ -84,3 +94,26 @@ def test_c9_dependency_cache_verify_refuses_a_setup_changing_a_tracked_file_befo
     assert outcome.exit_code != 0
     assert "changed files that git tracks" in outcome.line
     assert not store(project).exists() or entries(project) == []
+
+
+def test_c9_dependency_cache_an_unreadable_key_file_never_hits_an_entry_built_without_it(
+    tmp_path: Path,
+) -> None:
+    """An entry built while a key file was missing is never chosen for a tree where that file is
+    there but cannot be read (here a folder in its place): its content is unknown."""
+    log = tmp_path / "builds.txt"
+    deps = CacheConfig(DEPS, ("deps.lock",), builder(log))
+    store_ = tmp_path / "store"
+    first = _tree(tmp_path / "first")  # no deps.lock: built and stored under the missing key
+    assert [u.hit for u in cache.prepare([deps], first, store_, _builder_in(first), fill=True)] == [
+        False
+    ]
+    stored = sorted(p.name for p in store_.iterdir() if p.name != cache.LOCK)
+    tree = _tree(tmp_path / "tree")
+    (tree / "deps.lock").mkdir()  # there, but reading it fails
+    assert cache.key_of(tree, deps) == ""
+    [used] = cache.prepare([deps], tree, store_, _builder_in(tree), fill=True)
+    assert not used.hit
+    assert used.note == "not stored (a key file cannot be read)"
+    assert builds(log) == 2
+    assert sorted(p.name for p in store_.iterdir() if p.name != cache.LOCK) == stored

@@ -21,7 +21,9 @@ behaviour; this ADR records it and the choices it left open.
   owner. Without any table nothing changes: no store, no copy, no pruning, no journal entry.
 - **The key.** The SHA-256 of a version tag, of the `setup` argument list, and of each key file's
   name and content in the replayed tree, in the declared order; a missing key file counts as
-  missing, not as empty. The names are hashed with the contents so two files cannot trade
+  missing, not as empty. A key file that is there but cannot be read (a folder in its place, no
+  permission) gives no key: its content is unknown, so no entry is chosen or stored for that
+  tree and its setup builds the folder. The names are hashed with the contents so two files cannot trade
   content unseen. Any change to a key file or to the setup gives a new key, so the folder is
   built again; an old entry is never updated in place.
 - **The store.** `<repo>.ariane/cache/<key>/`, next to `worktrees/`, holding `data/` (the folder)
