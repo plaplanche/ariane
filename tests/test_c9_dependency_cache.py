@@ -7,11 +7,14 @@ import dataclasses
 import json
 import os
 import re
+import shutil
 import stat
 import sys
+import threading
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from test_config import VALID, with_change
@@ -61,7 +64,9 @@ def store(project: Project) -> Path:
 
 
 def entries(project: Project) -> list[Path]:
-    return sorted(p for p in store(project).iterdir() if cache.PARTIAL not in p.name)
+    return sorted(
+        p for p in store(project).iterdir() if cache.PARTIAL not in p.name and p.name != cache.LOCK
+    )
 
 
 def edit_key(session: Session) -> None:
@@ -121,7 +126,7 @@ def test_c9_dependency_cache_copies_are_never_links(tmp_path: Path) -> None:
     used = cache.prepare([deps], trees[1], store_, _builder_in(trees[1]), fill=True)
     assert [u.hit for u in used] == [True]
     copied = trees[1] / DEPS / "lib.txt"
-    [entry] = list(store_.iterdir())
+    [entry] = [p for p in store_.iterdir() if p.name != cache.LOCK]
     assert copied.stat().st_nlink == 1
     assert not os.path.samefile(copied, entry / cache.DATA / "lib.txt")
     copied.write_text("changed", encoding="utf-8")  # the copy is writable
@@ -255,7 +260,7 @@ def test_c9_dependency_cache_prune_keeps_the_most_recent_per_path(tmp_path: Path
     removed = cache.prune(tmp_path, caches, now=10**6)
     assert sorted(removed) == ["a0", "a1", "a2", "a3", "broken", f"x{cache.PARTIAL}old"]
     left = sorted(p.name for p in tmp_path.iterdir())
-    assert left == ["a4", "a5", "a6", "b0", f"y{cache.PARTIAL}new"]
+    assert left == [cache.LOCK, "a4", "a5", "a6", "b0", f"y{cache.PARTIAL}new"]
 
 
 def test_c9_dependency_cache_verify_uses_the_store_and_records_it(
@@ -335,3 +340,141 @@ def test_c9_dependency_cache_example_tables_validate() -> None:
     assert errors(data, config.SCHEMA) == []
     paths = [c.path for c in config.parse(data).caches]
     assert paths == ["worker/node_modules", ".venv"]
+
+
+def _warm(tmp_path: Path, log: Path) -> tuple[CacheConfig, Path]:
+    """A store holding the `DEPS` entry of a first tree, and the cache that filled it."""
+    deps = CacheConfig(DEPS, (".gitignore",), builder(log))
+    first = _tree(tmp_path / "first")
+    store_ = tmp_path / "store"
+    assert [u.hit for u in cache.prepare([deps], first, store_, _builder_in(first), fill=True)] == [
+        False
+    ]
+    return deps, store_
+
+
+def _tree(path: Path) -> Path:
+    path.mkdir()
+    (path / ".gitignore").write_text("ignored-by-git/\n", encoding="utf-8")
+    return path
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symbolic links need a privilege on Windows")
+@pytest.mark.parametrize("link", ["ignored-by-git", DEPS])
+def test_c9_dependency_cache_a_link_on_the_destination_is_never_followed(
+    tmp_path: Path, link: str
+) -> None:
+    log = tmp_path / "builds.txt"
+    deps, store_ = _warm(tmp_path, log)
+    [entry] = list(p for p in store_.iterdir() if p.name != cache.LOCK)
+    os.utime(entry / cache.ENTRY, (1, 1))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    tree = _tree(tmp_path / "next")  # a later commit with the same key files and a link
+    (tree / link).parent.mkdir(parents=True, exist_ok=True)
+    os.symlink(outside, tree / link, target_is_directory=True)
+    built: list[tuple[str, ...]] = []
+    [used] = cache.prepare([deps], tree, store_, built.append, fill=True)
+    assert not used.hit and used.note.startswith("not stored (")
+    assert built == [deps.setup]  # the setup runs as without a cache, the store writes nothing
+    assert list(outside.iterdir()) == []
+    assert (entry / cache.ENTRY).stat().st_mtime == 1  # not even its last use was written
+    assert [p.name for p in store_.iterdir() if p.name != cache.LOCK] == [entry.name]
+
+
+def test_c9_dependency_cache_a_folder_the_commit_has_is_never_merged(tmp_path: Path) -> None:
+    log = tmp_path / "builds.txt"
+    deps, store_ = _warm(tmp_path, log)
+    tree = _tree(tmp_path / "next")
+    (tree / DEPS).mkdir(parents=True)
+    (tree / DEPS / "marker").write_text("tracked", encoding="utf-8")
+    built: list[tuple[str, ...]] = []
+    [used] = cache.prepare([deps], tree, store_, built.append, fill=True)
+    assert not used.hit and "already has that path" in used.note
+    assert built == [deps.setup]
+    assert sorted(p.name for p in (tree / DEPS).iterdir()) == ["marker"]
+
+
+def test_c9_dependency_cache_a_copy_failing_half_way_leaves_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "builds.txt"
+    deps, store_ = _warm(tmp_path, log)
+    tree = _tree(tmp_path / "next")
+    (tree / "ignored-by-git").mkdir()
+    (tree / "ignored-by-git" / "other.txt").write_text("kept", encoding="utf-8")
+    copied: list[str] = []
+    plain = shutil.copyfile
+
+    def copy_once(source: str, target: Path) -> None:
+        if copied:
+            raise OSError("unreadable")
+        copied.append(source)
+        plain(source, target)
+
+    monkeypatch.setattr(cache, "_clone", lambda source, target: False)
+    monkeypatch.setattr(shutil, "copyfile", copy_once)
+    seen: list[list[str]] = []
+
+    def build(setup: tuple[str, ...]) -> None:
+        seen.append(sorted(p.name for p in (tree / "ignored-by-git").iterdir()))
+
+    [used] = cache.prepare([deps], tree, store_, build, fill=False)
+    assert copied and not used.hit
+    assert seen == [["other.txt"]]  # one file was copied, then removed before the setup ran
+
+
+def test_c9_dependency_cache_a_tree_never_removes_an_entry_another_just_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "builds.txt"
+    deps = CacheConfig(DEPS, (".gitignore",), builder(log))
+    store_ = tmp_path / "store"
+    a, b = _tree(tmp_path / "a"), _tree(tmp_path / "b")
+    key = cache.key_of(a, deps)
+    (store_ / key / cache.DATA).mkdir(parents=True)  # an unreadable entry: no entry.json
+    original = cache._copy
+    published: list[int] = []
+
+    def copy(source: Path, target: Path, **kwargs: Any) -> None:
+        original(source, target, **kwargs)
+        if not kwargs["writable"] and not published and source.is_relative_to(a):
+            # A has copied its build and not yet published: B replaces the entry meanwhile.
+            [used] = cache.prepare([deps], b, store_, _builder_in(b), fill=True)
+            assert not used.hit and used.note == ""
+            published.append((store_ / key / cache.ENTRY).stat().st_ino)
+
+    monkeypatch.setattr(cache, "_copy", copy)
+    [used] = cache.prepare([deps], a, store_, _builder_in(a), fill=True)
+    assert used.note == "stored by another tree at the same time"
+    assert published == [(store_ / key / cache.ENTRY).stat().st_ino]  # B's entry, intact
+    assert (store_ / key / cache.DATA / "lib.txt").read_text(encoding="utf-8") == "built"
+    assert [p.name for p in store_.iterdir() if p.name != cache.LOCK] == [key]
+
+
+def test_c9_dependency_cache_prune_waits_for_a_tree_using_the_store(tmp_path: Path) -> None:
+    (tmp_path / "broken").mkdir()  # removed by prune, but only once the store is free
+    done = threading.Event()
+
+    def prune() -> None:
+        cache.prune(tmp_path, [])
+        done.set()
+
+    with cache._locked(tmp_path):
+        worker = threading.Thread(target=prune)
+        worker.start()
+        assert not done.wait(0.3)
+        assert (tmp_path / "broken").exists()
+    worker.join(10)
+    assert done.is_set() and not (tmp_path / "broken").exists()
+
+
+def test_c9_dependency_cache_without_caches_the_store_is_left_alone(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    broken = store(project) / "broken"  # what prune would remove
+    broken.mkdir(parents=True)
+    outcome = start(project, tracker, FakeRuntime())
+    assert outcome.exit_code == 0, outcome.line
+    assert broken.exists()
+    assert "Old cache entries" not in journal(project)

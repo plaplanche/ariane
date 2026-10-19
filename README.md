@@ -371,7 +371,9 @@ The first replay tree with a given key (the SHA-256 of the key files and of `set
 the store unchanged) instead of running `setup`. `project.setup` (or a check's own `setup`) then
 runs as before, for the rest. Only Ariane's replay trees fill the store; the ticket's own tree,
 where the agent works, copies a stored folder or builds its own, never stores it. An entry not
-completely written is never used: it is built again. The journal lists, per check, which caches
+completely written is never used: it is built again. A cache path that the commit already has, or that
+goes through a symbolic link, is never written from the store: its `setup` runs as without a
+cache. The journal lists, per check, which caches
 were copied and which built (`ticket.checks.cache`). At the start of a ticket only the `keep`
 (default 5) most recently used entries of each path are kept. For a uv project, cache
 the dependencies (`setup = ["uv", "sync", "--frozen", "--no-install-project"]`, key `uv.lock`),

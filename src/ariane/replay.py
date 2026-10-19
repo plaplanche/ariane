@@ -239,10 +239,11 @@ def replay(
 
 
 def set_up_ticket_tree(run: _TicketRun, guard: dict[str, str]) -> tuple[str, Stop | None]:
-    """The ticket's own tree at the start of the ticket: old cache entries pruned, then the caches
+    """The ticket's own tree at the start of the ticket: old cache entries pruned (only with
+    `[[project.cache]]`: a store no longer declared is left alone), then the caches
     copied from the store or built, never stored (the agent works there), then `project.setup`.
     Returns the journal's note on the caches ("" without any) and the setup's stop, or None."""
-    pruned = cache.prune(_store(run), run.config.caches)
+    pruned = cache.prune(_store(run), run.config.caches) if run.config.caches else []
     used, error = set_up_tree(run, run.worktree, run.config.setup, guard, fill=False)
     note = f"\n\nDependency caches: {cache.lines(used)}." if used else ""
     if pruned:

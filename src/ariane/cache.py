@@ -13,7 +13,7 @@ import stat
 import sys
 import time
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -23,6 +23,7 @@ DEFAULT_KEEP = 5
 ENTRY = "entry.json"  # written last, inside the temporary entry: what makes an entry complete
 DATA = "data"
 PARTIAL = ".partial-"  # a temporary entry's name: `<key>.partial-<random>`
+LOCK = ".lock"  # `<store>/.lock`: held to restore, publish and prune (`_locked`)
 PARTIAL_AGE_S = 24 * 3600  # a temporary entry older than this was left by a killed run
 _FICLONE = 0x40049409  # Linux ioctl: clone a file's extents (Btrfs, XFS, ...)
 _WRITE = stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH
@@ -141,25 +142,75 @@ def prepare(
     fill: bool,
 ) -> list[Used]:
     """Each cache in `tree`: copied from a complete entry of `store`, else built by `build(setup)`
-    (which raises on failure) and, when `fill` (a replay tree, never the agent's), stored."""
+    (which raises on failure) and, when `fill` (a replay tree, never the agent's), stored. A path
+    that crosses a symbolic link, or a folder the commit already has there, is never written by
+    the cache: its setup builds it and nothing is stored."""
     used: list[Used] = []
     for cache in caches:
         key = key_of(tree, cache)
         target = tree / cache.path
         entry = store / key
-        if _restore(entry, cache, key, target):
+        blocked = _crossing(tree, cache.path)
+        if not blocked and os.path.lexists(target):
+            blocked = "the commit already has that path"
+        if not blocked and _restore(store, entry, cache, key, tree):
             used.append(Used(cache.path, key, hit=True))
             continue
         build(cache.setup)
         note = ""
         if not fill:
             note = "not stored (the agent's tree never fills the store)"
+        elif blocked or (blocked := _crossing(tree, cache.path)):
+            note = f"not stored ({blocked})"
         elif not target.is_dir() or target.is_symlink():
             note = "not stored (its setup made no folder there)"
         else:
             note = _store(target, store, entry, cache, key)
         used.append(Used(cache.path, key, hit=False, note=note))
     return used
+
+
+def _crossing(tree: Path, path: str) -> str:
+    """Why `path` cannot be written safely in `tree`: a folder on the way that is a symbolic link
+    or not a folder (the write would land elsewhere); "" when every existing one is a folder."""
+    here = tree
+    for part in path.split("/")[:-1]:
+        here = here / part
+        if here.is_symlink() or (os.path.lexists(here) and not here.is_dir()):
+            return f"`{here.relative_to(tree).as_posix()}` is a link or a file"
+    return ""
+
+
+@contextlib.contextmanager
+def _locked(store: Path) -> Iterator[None]:
+    """Hold `store/.lock` for the block: restoring an entry, publishing or replacing one and
+    pruning never interleave, so an entry is never removed while another tree reads or has just
+    published it. The system frees the lock when its process dies."""
+    store.mkdir(parents=True, exist_ok=True)
+    with (store / LOCK).open("a+b") as file:
+        if sys.platform == "win32":
+            import msvcrt
+
+            file.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(file.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    time.sleep(0.01)
+            try:
+                yield
+            finally:
+                file.seek(0)
+                msvcrt.locking(file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(file.fileno(), fcntl.LOCK_UN)
 
 
 def _read_entry(entry: Path, cache: CacheConfig, key: str) -> bool:
@@ -176,39 +227,59 @@ def _read_entry(entry: Path, cache: CacheConfig, key: str) -> bool:
     )
 
 
-def _restore(entry: Path, cache: CacheConfig, key: str, target: Path) -> bool:
-    """Copy the entry's folder to `target`; an entry that is incomplete or cannot be read is not
-    trusted, even partly: what was copied is removed and the caller builds the folder."""
-    if not _read_entry(entry, cache, key):
-        return False
-    existed = target.exists()
-    try:
-        _copy(entry / DATA, target, writable=True)
-    except OSError:
-        if not existed:
-            remove_tree(target)
-        return False
-    with contextlib.suppress(OSError):
-        os.utime(entry / ENTRY)  # its last use: what `prune` keeps
+def _restore(store: Path, entry: Path, cache: CacheConfig, key: str, tree: Path) -> bool:
+    """Copy the entry's folder to a hidden folder next to `cache.path`, then rename it there: the
+    tree sees the whole folder or nothing. An entry that is incomplete or cannot be read is not
+    trusted, even partly: what was written is removed and the caller builds the folder."""
+    parts = cache.path.split("/")
+    made: list[Path] = []  # the parent folders this restore created, removed if it fails
+    staging: Path | None = None
+    if not entry.is_dir():
+        return False  # no entry: the store is not even created (nor its lock)
+    with _locked(store):
+        if not _read_entry(entry, cache, key):
+            return False
+        try:
+            parent = tree
+            for part in parts[:-1]:
+                parent = parent / part
+                if not parent.exists():
+                    os.mkdir(parent)
+                    made.append(parent)
+            staging = parent / f".{parts[-1]}{PARTIAL}{uuid.uuid4().hex}"
+            _copy(entry / DATA, staging, writable=True)
+            os.rename(staging, tree / cache.path)
+        except OSError:
+            if staging is not None:
+                remove_tree(staging)
+            for folder in reversed(made):
+                with contextlib.suppress(OSError):
+                    os.rmdir(folder)
+            return False
+        with contextlib.suppress(OSError):
+            os.utime(entry / ENTRY)  # its last use: what `prune` keeps
     return True
 
 
 def _store(target: Path, store: Path, entry: Path, cache: CacheConfig, key: str) -> str:
-    """Copy `target` to a temporary entry, make it read-only, write its `entry.json`, then rename
-    it to `entry`: a reader sees a complete entry or none. Returns "" or why it was not stored."""
+    """Copy `target` to a temporary entry, make it read-only, write its `entry.json`, then, under
+    the store's lock, replace an unreadable entry of that key and rename the temporary entry to
+    `entry`: a reader sees a complete entry or none. Returns "" or why it was not stored."""
     temporary = store / f"{key}{PARTIAL}{uuid.uuid4().hex}"
     try:
-        temporary.mkdir(parents=True)
+        store.mkdir(parents=True, exist_ok=True)
+        temporary.mkdir()
         _copy(target, temporary / DATA, writable=False)
         meta = {"path": cache.path, "key": key, "setup": list(cache.setup)}
         (temporary / ENTRY).write_text(json.dumps(meta), encoding="utf-8")
-        if entry.exists() and not _read_entry(entry, cache, key):
+        with _locked(store):
+            if _read_entry(entry, cache, key):
+                remove_tree(temporary)
+                return "stored by another tree at the same time"
             remove_tree(entry)  # an unreadable entry is replaced, never trusted
-        os.rename(temporary, entry)
+            os.rename(temporary, entry)
     except OSError as exc:
         remove_tree(temporary)
-        if _read_entry(entry, cache, key):
-            return "stored by another tree at the same time"
         return f"not stored ({exc})"
     return ""
 
@@ -291,11 +362,17 @@ def prune(store: Path, caches: Sequence[CacheConfig], now: float | None = None) 
     killed run left. Returns the names removed."""
     if not store.is_dir():
         return []
-    now = time.time() if now is None else now
+    with _locked(store):
+        return _prune(store, caches, time.time() if now is None else now)
+
+
+def _prune(store: Path, caches: Sequence[CacheConfig], now: float) -> list[str]:
     keep = {c.path: c.keep for c in caches}
     by_path: dict[str, list[tuple[float, Path]]] = {}
     removed: list[str] = []
     for entry in sorted(store.iterdir()):
+        if entry.name == LOCK:
+            continue
         if PARTIAL in entry.name:
             if _age(entry, now) > PARTIAL_AGE_S:
                 remove_tree(entry)

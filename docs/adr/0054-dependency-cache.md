@@ -18,7 +18,7 @@ behaviour; this ADR records it and the choices it left open.
   tree, ignored by git), `key` (files whose content identifies the folder) and `setup` (the
   command that builds that folder alone), and `keep` (default 5). Paths stay inside the tree (no
   `..`, not absolute, not under `.git`) and two caches never overlap, so each folder has one
-  owner. Without any table nothing changes: no store, no copy, no journal entry.
+  owner. Without any table nothing changes: no store, no copy, no pruning, no journal entry.
 - **The key.** The SHA-256 of a version tag, of the `setup` argument list, and of each key file's
   name and content in the replayed tree, in the declared order; a missing key file counts as
   missing, not as empty. The names are hashed with the contents so two files cannot trade
@@ -40,9 +40,25 @@ behaviour; this ADR records it and the choices it left open.
   stay links, the copies are writable, modes are kept.
 - **Only complete entries.** An entry is used only when its `entry.json` reads, names the same
   path and key, and `data/` exists. A temporary entry (no completion rename) is never read; an
-  entry without a readable `entry.json` is rebuilt and replaced; a copy that fails half-way (an
-  entry removed meanwhile, a file that cannot be read) is undone and the cache built instead.
-  Two trees storing the same key at once: the first rename wins, the other drops its copy.
+  entry without a readable `entry.json` is rebuilt and replaced. A hit is copied into a hidden
+  folder next to the cache's path and renamed to it once complete; a copy that fails half-way (a
+  file that cannot be read) removes that folder and the parent folders it made, and the cache is
+  built instead: the tree never holds part of an entry.
+- **The destination is never followed.** The paths in `[[project.cache]]` are checked when read,
+  but the commit decides what is on disk: a folder on the way that is a symbolic link would send
+  the copy outside the tree. Before a restore, every existing folder on the way must be a real
+  folder and the path itself must not exist; otherwise the cache's setup runs as without a cache
+  and nothing is stored. A folder the commit already has at the path is not merged with an
+  entry either (a merge cannot be undone atomically). The check is repeated after the setup,
+  before storing.
+- **One lock for the store.** `<store>/.lock`, an operating-system lock freed when its process
+  dies, is held to restore an entry, to publish or replace one, and to prune. Publishing checks,
+  under the lock, whether a complete entry is already there: if so it is kept and the copy
+  dropped (two trees storing the same key: the first one wins), else an unreadable entry is
+  removed and the temporary entry renamed. Without the lock, a tree that had seen an unreadable
+  entry could remove the complete entry another tree had just published, and pruning could
+  remove an entry a tree was copying. The cost: trees restoring at the same time copy one after
+  the other; building and copying a build to its temporary entry run outside the lock.
 - **Only replay trees fill the store.** Ariane's replay trees are created from the commit and
   their caches are built before any check runs, so what is stored is what that commit's key
   files and setup produce. The ticket's own tree, where the agent works, gets the caches too
@@ -51,7 +67,7 @@ behaviour; this ADR records it and the choices it left open.
 - **Journal.** `ticket.checks.cache` lists, per check, each cache `hit` or `built` (stored, or
   why not), with the start of its key; `ticket.setup` says the same for the ticket's tree and
   names the entries pruned. `verify`'s `review.md` has a `Dependency caches` section.
-- **Limits.** At the start of a ticket (`ariane start`), the entries of each path beyond its
+- **Limits.** At the start of a ticket (`ariane start`) with at least one `[[project.cache]]`, the entries of each path beyond its
   `keep` most recently used ones are removed (5 for a path no longer declared), with the
   unreadable entries and the temporary entries older than a day (a killed run's). `verify` does
   not prune.
