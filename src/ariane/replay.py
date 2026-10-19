@@ -194,8 +194,9 @@ def replay(
             )
 
     def verify_tree(tree: Path) -> None:
-        if git.current_branch(tree) or git.head(tree) != checked:
+        if git.detached_head(tree) != checked:
             raise Stop("the checks moved the replay working tree's head", "inspect it")
+        # The remote is listed after each check: a later check could undo what one pushed.
         run.verify("the checks", start_commit, guard, refs_before, expected_head=checked)
 
     all_checks = run.all_checks()
@@ -245,8 +246,8 @@ def review_round(
         raise Stop(f"the reviewer working tree already exists at {tree}", _leftover(run))
     git.add_reviewer_worktree(run.worktree, tree, checked)
     try:
-        diff = git.diff(run.worktree, start_commit, checked, ticket.WORK_DIR)
-        name_status = git.name_status(run.worktree, start_commit, checked, ticket.WORK_DIR)
+        changes = git.changes(run.worktree, start_commit, checked, ticket.WORK_DIR)
+        diff, name_status = changes.diff, changes.name_status
         run.truncated = record_truncation(run.folder, diff)
         tree_before = git.status(tree)
 
@@ -266,7 +267,7 @@ def review_round(
             metrics=run.metrics,
             round=round_,
             small_env=run.agent_envs["reviewer.small"],
-            changed_lines=git.changed_lines(run.worktree, start_commit, checked, ticket.WORK_DIR),
+            changed_lines=changes.changed_lines,
         )
         try:
             answer = sessions.run(
@@ -323,7 +324,7 @@ def record_truncation(folder: ticket.TicketFolder, diff: str) -> list[str]:
 
 def _verify_replay(replay: Path, checked: str, tree_before: str) -> None:
     """The reviewer reads only: the replay tree has the same head and no edited file."""
-    if git.current_branch(replay) or git.head(replay) != checked:
+    if git.detached_head(replay) != checked:
         raise Stop("the reviewer moved the replay working tree's head", "inspect it")
     if git.status(replay) != tree_before:
         raise Stop(

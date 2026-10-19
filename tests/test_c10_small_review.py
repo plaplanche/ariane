@@ -168,8 +168,8 @@ def test_c10_small_review_lines_under_work_and_binary_files_do_not_count(
     (root / "image.bin").write_bytes(b"\x00\x01\x02\nline\n\x00" * 50)
     sh(["git", "add", "--all"], root)
     sh(["git", "commit", "--quiet", "-m", "change"], root)
-    assert git.changed_lines(root, base, git.head(root), "work") == 3
-    assert git.changed_lines(root, base, base, "work") == 0
+    assert git.changes(root, base, git.head(root), "work").changed_lines == 3
+    assert git.changes(root, base, base, "work").changed_lines == 0
 
 
 class CappedRuntime(FakeRuntime):

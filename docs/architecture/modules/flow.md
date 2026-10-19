@@ -23,7 +23,8 @@
 
 - `start`: the whole flow for one ticket number.
 - `Outcome`: the result reported to the command line.
-- The push guard's remote check (C11, ADR 0017) is `git.remote_changes`, called after the agent session with the ticket's branch.
+- The push guard's remote check (C11, ADR 0017) is `git.remote_changes`, called after the agent session with the ticket's branch; its stop is `runs.remote_stop`, a change to git or the instruction files is `runs.guard_stop`.
+- Fewer git processes per verification (C11, ADR 0053): `verify` reads git once (`state`: `git.state` with the instruction files, three git processes) and takes the branch and head the guard checks from that read, not from separate commands; the ancestry of the start commit (`git.is_ancestor`) and the head are checked every time: a commit id does not fix git's view of its history, which the shared `shallow` file or a replacement ref can change. Every verification still lists the remote once (`git.remote_changes`), after each check of the replay too: a later check could undo what an earlier one pushed.
 - Parallel tickets (C11, ADR 0017): `start` registers the run with `runs.registered` in `<repo>.ariane/runs/<n>` before preparing the branch and removes the entry however the run ends (a live run of the same ticket: "Did not start ticket #n: ticket #n is already running"). `_unchanged` takes the new snapshot first, then reads the registry (a run registers before it writes to git, so every run whose changes the snapshot shows is known), and compares the guard's snapshots through `runs.foreign_changes`, with the tickets other than this one that were running at any time since the guard's first snapshot and that Ariane can vouch for (`runs.during`, from `guard_since`, with the runs `runs.watching` saw live during the whole run): another run's branch `ariane/<m>`, its `remote` and `merge` keys, and the branch its restart keeps (`runs.kept_branches`: `Run.kept`, registered before the rename, accepted only as that ticket's own `ariane-restarted/<m>-<stamp>`) are ignored; anything else stops the ticket, and the journal lists only what is not another run's own.
 - `Stop` (module `stop`): ends the flow early with a recorded reason.
 - Ticket lock and restart (C5, C23, ADR 0047): `start` first holds `restart.locked` on `<repo>.ariane/locks/<n>.lock` until it returns (held by another process: "Did not start ticket #n: ticket #n is running in another Ariane process", nothing removed). Right after, before any branch, tree or setup, it holds the run's machine-wide slot (`slots.held`, ADR 0050) until it returns; with all 16 held: "Did not start ticket #n: 16 Ariane runs already hold a slot on this machine. Next: wait for one to end.", nothing created. `ticket.started` names the slot. The preparation is `restart.prepare`: a pushed `ariane/<n>` refuses; with `restarting`, `start` registers the kept name `restart.kept_name(n)` with the run, then `restart.clear` saves the uncommitted work of the tree `<n>` in a commit, removes the ticket's trees (registered ones with git, unknown folders as folders) and keeps the branch, the saved commit on top, under that name, `ariane-restarted/<n>-<UTC time>`; leftover trees or a local branch refuse with "run `ariane start <n> --restart`", and an interruption or failure of the preparation that is not one of its refusals (a `Stop`) names `--restart` when the ticket's tree or local branch exists. A run that started over sets `restarted_from` in the metrics before its first setup and opens its journal with `ticket.restarted`, before `ticket.started`. Every stop of a ticket not pushed (`_stopped`, unless `on_pushed` was called or the run is a shadow run, `restartable = False`) ends its next action with "to start over, run `ariane start <n> --restart`" (`restart.with_restart`).
@@ -93,6 +94,7 @@ class _TicketRun {
   restarted Restarted
   pushed bool
   execute(refs_before) Outcome
+  state() GitState
   setup(cwd, command, guard, env) Stop
   verify(after, start_commit, guard, refs_before, expected_head)
 }
@@ -141,4 +143,4 @@ flowchart LR
 
 ## Serves
 
-C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026, ADR 0027, ADR 0034, ADR 0036, ADR 0047, C19, C23. See [the component view](../3-components.md).
+C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026, ADR 0027, ADR 0034, ADR 0036, ADR 0047, ADR 0053, C19, C23. See [the component view](../3-components.md).

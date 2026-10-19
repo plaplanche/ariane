@@ -264,19 +264,16 @@ class _Verification:
         changed = git.changed_between(self.repo_root, self.base, self.head)
         folder = ticket.TicketFolder(records, self.issue.number, secrets=self.secrets)
         folder.create(self.issue)
-        diff = (
-            git.diff(self.repo_root, self.base, self.head, ticket.WORK_DIR),
-            git.name_status(self.repo_root, self.base, self.head, ticket.WORK_DIR),
-        )
-        record_truncation(folder, diff[0])
+        changes = git.changes(self.repo_root, self.base, self.head, ticket.WORK_DIR)
+        record_truncation(folder, changes.diff)
         # The temporary journal is not committed: review.md carries the note (ADR 0031).
-        self.truncation = truncation_note(diff[0])
+        self.truncation = truncation_note(changes.diff)
         tree = replay.with_name(replay.name + "-reviewer")
         if tree.exists():
             raise Refused(f"the reviewer working tree already exists at {tree}", "remove it")
         git.add_reviewer_worktree(self.repo_root, tree, self.head)
         try:
-            return self._review_in(tree, records, folder, all_checks, results, changed, diff)
+            return self._review_in(tree, records, folder, all_checks, results, changed, changes)
         finally:
             git.remove_worktree(self.repo_root, tree)
 
@@ -288,7 +285,7 @@ class _Verification:
         all_checks: Sequence[CheckConfig],
         results: list[checks.CheckResult],
         changed: list[str],
-        diff: tuple[str, str],
+        changes: git.Changes,
     ) -> Outcome:
         tree_before = git.status(tree)
         sessions = ReviewSession(
@@ -302,18 +299,18 @@ class _Verification:
             self.base_instructions,
             metrics=self.metrics,
             small_env=self.small_reviewer_env,
-            changed_lines=git.changed_lines(self.repo_root, self.base, self.head, ticket.WORK_DIR),
+            changed_lines=changes.changed_lines,
         )
         try:
             answer = sessions.run(
                 tree,
                 self.head,
-                diff[0],
+                changes.diff,
                 results,
                 self.config.documentation.not_updated(changed),
                 changed,
                 lambda: self._unchanged(tree, "the reviewer", tree_before),
-                diff[1],
+                changes.name_status,
             )
         except ReviewFailed as exc:
             raise Refused(exc.reason, "read the error, then run verify again") from None
@@ -344,7 +341,7 @@ class _Verification:
         self._survivors(after)
         self._guard_unchanged(after)
         moved = git.out(["rev-parse", f"refs/heads/{self.branch}"], self.repo_root) != self.head
-        if git.current_branch(replay) or git.head(replay) != self.head or moved:
+        if git.detached_head(replay) != self.head or moved:
             raise Refused(f"{after} moved a head", "inspect the branch and the replay tree")
         if git.status(replay) != tree_before:
             raise Refused(f"{after} changed files in the replay tree", "inspect the session")

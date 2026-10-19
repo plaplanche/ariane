@@ -199,7 +199,7 @@ sequenceDiagram
   loop for each check, in declared order, up to parallel_checks at the same time
     P->>G: add a clean replay tree (setup runs there, with the worker's ARIANE_SLOT)
     P->>C: run that check
-    P->>G: verify, remove the tree
+    P->>G: verify git, the trees and the remote, remove the tree
   end
   Note over P: a stop in one worker or Ctrl-C kills the others' commands; every tree is removed
   C-->>P: results

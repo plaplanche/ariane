@@ -9,6 +9,7 @@ import re
 import shutil
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from ariane import logs, pi, process
@@ -32,16 +33,10 @@ _SAFE_OPTIONS = [
 # Every diff Ariane runs: no external diff driver or textconv filter from the configuration.
 _PLAIN_DIFF = ["diff", "--no-ext-diff", "--no-textconv"]
 _URL_REWRITES = (".insteadof", ".pushinsteadof")
-# Listings `git update-server-info` regenerates for the dumb HTTP transport: not part of the guard.
 # Markers of a push refused for authentication, in git's output (lowercase).
 _AUTH_REFUSALS = (
-    "authentication failed",
-    "could not read username",
-    "invalid username or password",
-    "error: 401",
-    "error: 403",
-    "returned error: 401",
-    "returned error: 403",
+    *("authentication failed", "could not read username", "invalid username or password"),
+    *("error: 401", "error: 403", "returned error: 401", "returned error: 403"),
     "permission denied",
 )
 # Variables that can carry a credential; never given to an agent, to code it wrote, or to a git
@@ -55,6 +50,7 @@ CREDENTIAL_CHANNELS = ("SSH_AUTH_SOCK", "SSH_ASKPASS", "GIT_ASKPASS", "SUDO_ASKP
 _IDENTITY_VARIABLES = frozenset(
     f"GIT_{who}_{what}" for who in ("AUTHOR", "COMMITTER") for what in ("NAME", "EMAIL", "DATE")
 ) | {"EMAIL"}
+# Listings `git update-server-info` regenerates for the dumb HTTP transport: not part of the guard.
 _GENERATED_LISTINGS = frozenset({"info/refs", "info/packs"})
 
 
@@ -288,33 +284,42 @@ def remove_worktree(cwd: Path, path: Path) -> None:
     git(["worktree", "remove", "--force", str(path)], cwd)
 
 
+@dataclass(frozen=True)
+class GitState:
+    """`state`'s snapshot, and the branch checked out and its commit ("" when detached)."""
+
+    snapshot: dict[str, str]
+    branch: str
+    head: str
+
+
 def config_snapshot(
     worktree: Path, *, ignore_ref: str, watch_refs: Sequence[str] = ()
 ) -> dict[str, str]:
-    """Everything that makes git run code or reroute a push, by part.
+    """Everything that makes git run code or reroute a push, by part (`state`)."""
+    return state(worktree, ignore_ref=ignore_ref, watch_refs=watch_refs).snapshot
+
+
+def state(worktree: Path, *, ignore_ref: str, watch_refs: Sequence[str] = ()) -> GitState:
+    """Everything that makes git run code or reroute a push, by part, read by three git processes.
 
     Parts: each file of the shared configuration, hooks and info folders and of this working
-    tree's own configuration (as a digest), the shared `config`'s keys (`keys <path>`: its
-    `git config --list --null`, in file order, parsed from the very bytes its digest is taken
-    from, so that `runs.foreign_changes` compares it by key), every setting of every
-    configuration scope git reads (global included; its value is its positions among the
-    settings of the same key, so reordering them is a change), the local branches and tags except
-    branch `ignore_ref` (the ticket's own), and the refs in `watch_refs` (the remote-tracking ref
-    of the base branch).
-    Ariane compares two snapshots taken before and after untrusted code runs: a difference
-    means that code edited git itself, and `snapshot_changes` names what changed.
-    """
-    common = Path(out(["rev-parse", "--path-format=absolute", "--git-common-dir"], worktree))
-    private = Path(out(["rev-parse", "--path-format=absolute", "--git-dir"], worktree))
+    tree's own configuration (as a digest), the shared `config`'s text (`keys <path>`, the very
+    bytes of its digest: `runs.foreign_changes` lists both texts with `config_keys` when they
+    differ, to compare that file by key), every setting of every configuration scope git reads
+    (its value is its positions among the settings of the same key: reordering is a change),
+    the local branches and tags except `ignore_ref` (the ticket's own), and the full ref names
+    in `watch_refs`. A difference between two snapshots taken around untrusted code means that
+    code edited git itself; `snapshot_changes` names what changed."""
+    dirs = out(["rev-parse", "--path-format=absolute", "--git-common-dir", "--git-dir"], worktree)
+    common, private = (Path(line) for line in dirs.splitlines())
     files = [common / "config", private / "config.worktree"]
     for folder in (common / "hooks", common / "info"):
         if folder.is_dir():
-            files += sorted(
-                p
-                for p in folder.rglob("*")
-                if (p.is_file() or p.is_symlink())
-                and p.relative_to(common).as_posix() not in _GENERATED_LISTINGS
-            )
+            found = sorted(p for p in folder.rglob("*") if p.is_file() or p.is_symlink())
+            files += [
+                p for p in found if p.relative_to(common).as_posix() not in _GENERATED_LISTINGS
+            ]
     snapshot = {}
     shared = common / "config"
     for path in files:
@@ -326,7 +331,7 @@ def config_snapshot(
             continue
         snapshot[f"file {path.as_posix()}"] = hashlib.sha256(content).hexdigest()[:16]
         if path == shared:  # one read: the keys always match the digest, whoever writes
-            snapshot[f"keys {shared.as_posix()}"] = _listing(worktree, content)
+            snapshot[f"keys {shared.as_posix()}"] = content.decode("utf-8", errors="replace")
     scopes = out(["config", "--list", "--show-origin", "--show-scope"], worktree)
     positions: dict[str, list[str]] = {}
     seen: Counter[str] = Counter()
@@ -335,23 +340,27 @@ def config_snapshot(
         positions.setdefault(f"setting {line}", []).append(str(seen[name]))
         seen[name] += 1
     snapshot |= {part: ",".join(at) for part, at in positions.items()}
-    refs = out(
-        ["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags"], worktree
+    patterns = ["refs/heads", "refs/tags", *watch_refs]  # one process for the refs and HEAD
+    listing = out(
+        ["for-each-ref", "--format=%(refname) %(objectname) %(HEAD)", *patterns], worktree
     )
-    own = f"refs/heads/{ignore_ref} "
-    for line in refs.splitlines():
-        if not line.startswith(own):
-            ref, _, sha = line.partition(" ")
+    own = f"refs/heads/{ignore_ref}"
+    refs: dict[str, str] = {}
+    branch = ""
+    for line in listing.splitlines():
+        ref, sha, *current = line.split()  # `*` last when HEAD is this ref
+        refs[ref] = sha
+        if current == ["*"] and ref.startswith("refs/heads/"):
+            branch = ref.removeprefix("refs/heads/")
+        if ref != own and ref.startswith(("refs/heads/", "refs/tags/")):
             snapshot[f"ref {ref}"] = sha
     for ref in watch_refs:
-        found = git(["rev-parse", "--verify", "--quiet", ref], worktree, check=False)
-        snapshot[f"ref {ref}"] = found.stdout.strip() if found.ok else ""
-    return snapshot
+        snapshot[f"ref {ref}"] = refs.get(ref, "")
+    return GitState(snapshot, branch, refs.get(f"refs/heads/{branch}", "") if branch else "")
 
 
-def _listing(cwd: Path, content: bytes) -> str:
-    """`git config --list --null` of a configuration file's `content`, read from standard input."""
-    text = content.decode("utf-8", errors="replace")
+def config_keys(cwd: Path, text: str) -> str:
+    """`git config --list --null` of a configuration file's `text`, read from standard input."""
     listing = git(["config", "--file", "-", "--list", "--null"], cwd, check=False, input_text=text)
     return listing.stdout if listing.ok else "unreadable"
 
@@ -374,29 +383,19 @@ def blocked_push_env(base: Mapping[str, str], remote_names: list[str]) -> dict[s
 
     It is set through `GIT_CONFIG_*` variables, so no configuration file changes.
     """
-    env = dict(base)
-    try:
-        count = max(0, int(env.get("GIT_CONFIG_COUNT", "0") or "0"))
-    except ValueError:
-        count = 0
     pairs = [("credential.helper", "")]
     pairs += [(f"remote.{name}.pushurl", BLOCKED_PUSH_URL) for name in remote_names]
-    for key, value in pairs:
-        env[f"GIT_CONFIG_KEY_{count}"] = key
-        env[f"GIT_CONFIG_VALUE_{count}"] = value
-        count += 1
-    env["GIT_CONFIG_COUNT"] = str(count)
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    return env
+    return _with_config(base, pairs)
 
 
 def head(cwd: Path) -> str:
     return out(["rev-parse", "HEAD"], cwd)
 
 
-def current_branch(cwd: Path) -> str:
-    completed = git(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd, check=False)
-    return completed.stdout.strip() if completed.ok else ""
+def detached_head(cwd: Path) -> str:
+    """The commit of a detached HEAD, or "" when HEAD is a branch, read by one git process."""
+    sha, _, name = out(["rev-parse", "HEAD", "--symbolic-full-name", "HEAD"], cwd).partition("\n")
+    return sha if name == "HEAD" else ""
 
 
 def is_ancestor(cwd: Path, ancestor: str, descendant: str) -> bool:
@@ -421,24 +420,28 @@ def changed_paths(cwd: Path, since: str) -> list[str]:
     return sorted({*committed, *untracked(cwd)} - {""})
 
 
-def diff(cwd: Path, since: str, until: str, exclude: str) -> str:
-    """The diff from `since` to `until`, without the paths under `exclude`."""
-    return out([*_PLAIN_DIFF, since, until, "--", ".", f":(exclude){exclude}"], cwd)
+@dataclass(frozen=True)
+class Changes:
+    """What changed between two commits, as the reviewer is shown it."""
+
+    diff: str  # `git diff`
+    name_status: str  # `git diff --name-status`
+    changed_lines: int  # added plus deleted lines; a binary file counts 0 (ADR 0046)
 
 
-def name_status(cwd: Path, since: str, until: str, exclude: str) -> str:
-    """`git diff --name-status` from `since` to `until`, without the paths under `exclude`."""
-    return out(
-        [*_PLAIN_DIFF, "--name-status", since, until, "--", ".", f":(exclude){exclude}"], cwd
-    )
-
-
-def changed_lines(cwd: Path, since: str, until: str, exclude: str) -> int:
-    """Added plus deleted lines from `since` to `until`, without the paths under `exclude`; a
-    binary file counts 0 (ADR 0046)."""
-    listing = out([*_PLAIN_DIFF, "--numstat", since, until, "--", ".", f":(exclude){exclude}"], cwd)
-    counts = (line.split("\t", 2)[:2] for line in listing.splitlines() if line)
-    return sum(int(n) for pair in counts for n in pair if n.isdigit())
+def changes(cwd: Path, since: str, until: str, exclude: str) -> Changes:
+    """The changes from `since` to `until`, without the paths under `exclude`, read by one git
+    process (ADR 0053): `--raw` and `--numstat` lines, a blank line, then the patch."""
+    pathspec = ["--", ".", f":(exclude){exclude}"]
+    listing = out([*_PLAIN_DIFF, "--raw", "--numstat", "-p", since, until, *pathspec], cwd)
+    head, _, patch = listing.partition("\n\n")
+    raw = [line for line in head.splitlines() if line.startswith(":")]
+    # A raw line is ":<mode> <mode> <object> <object> <status>\t<paths>"; --name-status prints
+    # what follows the fourth space.
+    name_status = "\n".join(line.split(" ", 4)[4] for line in raw)
+    counts = (line.split("\t", 2)[:2] for line in head.splitlines() if not line.startswith(":"))
+    lines = sum(int(n) for pair in counts for n in pair if n.isdigit())
+    return Changes(patch, name_status, lines)
 
 
 def status(cwd: Path) -> str:
@@ -483,10 +486,14 @@ def commit(
         if tolerate_ignored and "ignored" in added.output:
             return False
         raise GitError(redact(f"git add failed:\n{added.output.strip()}"))
+    # No check that the index holds a change first: only a refused commit pays for it.
+    args = ["commit", "--quiet", "-m", message]
+    done = git(args, cwd, env={**env, **_identity(os.environ)}, check=False)
+    if done.ok:
+        return True
     if git([*_PLAIN_DIFF, "--cached", "--quiet"], cwd, env=env, check=False).ok:
         return False
-    git(["commit", "--quiet", "-m", message], cwd, env={**env, **_identity(os.environ)})
-    return True
+    raise GitError(redact(f"git commit failed:\n{done.output.strip()}"))
 
 
 def _identity(environ: Mapping[str, str]) -> dict[str, str]:
@@ -585,16 +592,9 @@ def remote_changes(
     refs = remote_refs(cwd, url)
     base = f"refs/heads/{base_branch}"
     own = f"refs/heads/{branch}"
-    changed = sorted(
-        r
-        for r in {*refs, *refs_before}
-        if (r in (own, base) or r.startswith("refs/tags/")) and refs.get(r) != refs_before.get(r)
-    )
-    if (
-        base in changed
-        and base in refs
-        and base in refs_before
-        and fast_forwarded(cwd, url, base_branch, refs_before[base], refs[base])
-    ):
+    watched = [r for r in {*refs, *refs_before} if r in (own, base) or r.startswith("refs/tags/")]
+    changed = sorted(r for r in watched if refs.get(r) != refs_before.get(r))
+    old, new = refs_before.get(base), refs.get(base)
+    if base in changed and old and new and fast_forwarded(cwd, url, base_branch, old, new):
         changed.remove(base)
     return changed

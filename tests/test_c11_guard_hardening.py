@@ -49,7 +49,7 @@ def test_c11_guard_hardening_verify_refuses_a_check_that_edits_git_config(
     code = f"import subprocess; subprocess.run({args!r})"
     config = make_config(checks=(_check_running(project, code),))
     monkeypatch.setattr(
-        git, "diff", lambda *a, **k: pytest.fail("a git command ran after the guard tripped")
+        git, "changes", lambda *a, **k: pytest.fail("a git command ran after the guard tripped")
     )
     runtime = FakeRuntime()
     outcome = _verify(project, runtime, config)
@@ -72,8 +72,9 @@ def test_c11_guard_hardening_diffs_ignore_external_and_textconv_drivers(project:
     sh(["git", "commit", "--quiet", "-m", "attributes"], project.root)
     (project.root / "app.txt").write_text("version 2\n", encoding="utf-8")
     sh(["git", "commit", "--quiet", "-am", "bump"], project.root)
-    shown = git.diff(project.root, "HEAD~1", "HEAD", "work")
-    assert "+version 2" in shown
+    read = git.changes(project.root, "HEAD~1", "HEAD", "work")
+    assert "+version 2" in read.diff
+    assert (read.name_status, read.changed_lines) == ("M\tapp.txt", 2)
     assert git.changed_between(project.root, "HEAD~1", "HEAD") == ["app.txt"]
     assert not marker.exists()
 

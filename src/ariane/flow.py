@@ -159,7 +159,7 @@ class _TicketRun:
                 self.metrics.restarted_from = self.restarted.metrics()
             # Taken before the setup: instruction files it writes are not part of the baseline.
             self.guard_since = runs.now()  # other runs active since may touch their branches
-            guard = self.snapshot()
+            guard = self.state().snapshot
             setup_error = self.setup(self.worktree, self.config.setup, guard)
             self.folder.create(self.issue)
             if self.restarted is not None:  # the journal opens with it (ADR 0047)
@@ -193,19 +193,22 @@ class _TicketRun:
         except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
             return self._stopped(exc)
 
-    def snapshot(self) -> dict[str, str]:
+    def state(self) -> git.GitState:
         """The guard's view of git (configuration, hooks, refs, and the base's tracking ref) and
-        of the instruction files the reviewer can load from outside its tree (ADR 0031)."""
+        of the instruction files the reviewer can load from outside its tree (ADR 0031), with
+        the ticket tree's branch and head."""
         reviewer_tree = self.worktree.with_name(f"{self.number}-review")
-        return git.config_snapshot(
+        read = git.state(
             self.worktree,
             ignore_ref=self.branch,
             watch_refs=[f"refs/remotes/{self.remote}/{self.config.base_branch}"],
-        ) | git.instruction_snapshot(
+        )
+        instructions = git.instruction_snapshot(
             review_session.instruction_dirs(reviewer_tree),
             self.config.reviewer.runtime,
             self.agent_envs["reviewer"],
         )
+        return git.GitState(read.snapshot | instructions, read.branch, read.head)
 
     def survivors(self, after: str) -> Stop | None:
         """Kill the processes `after` left running (C10, ADR 0031); they are counted in
@@ -303,63 +306,52 @@ class _TicketRun:
         refs_before: dict[str, str],
         expected_head: str | None = None,
     ) -> None:
-        """C11: after untrusted code ran, nothing escaped the ticket branch (violations counted)."""
+        """C11: after untrusted code ran, nothing escaped the ticket branch (violations counted).
+        Git is read once (`state`, ADR 0053)."""
         try:
             keep = "inspect the working tree; Ariane pushed nothing"
             survived = self.survivors(after)
             if survived is not None:
                 raise survived
-            branch = git.current_branch(self.worktree)
-            if branch != self.branch:
+            now = self.state()
+            if (branch := now.branch) != self.branch:
                 raise Stop(f"{after} left branch {self.branch} (now {branch or 'detached'})", keep)
-            if not git.is_ancestor(self.worktree, start_commit, "HEAD"):
+            # Every time: the shallow file or a replacement ref can change a commit's ancestry.
+            if not git.is_ancestor(self.worktree, start_commit, now.head):
                 raise Stop(f"{after} rewrote the ticket branch's history", keep)
-            if expected_head is not None and git.head(self.worktree) != expected_head:
+            if expected_head is not None and now.head != expected_head:
                 raise Stop(f"{after} moved the ticket branch", keep)
-            unchanged = self._unchanged(after, guard)
-            if unchanged is not None:
-                raise unchanged
-            changed = self._remote_changes(refs_before)
-            if changed:
-                raise Stop(
-                    f"the remote changed during {after} ({', '.join(changed)})",
-                    "check it was not the agent; if a person pushed, start the ticket again;"
-                    f" {QUIET}",
-                )
-            logs.emit("guard.verified", f"after {after}: branch, history, git and remote unchanged")
-            self.folder.log(
-                "ticket.guard.verified",
-                f"Verified after {after}",
-                "Same branch and history, git unchanged, remote unchanged.",
-            )
+            stopped = self._unchanged(after, guard, now.snapshot)
+            if stopped is None:
+                stopped = self._remote_stop(after, refs_before)
+            if stopped is not None:
+                raise stopped
         except Stop:
             self.metrics.guard_violation()
             raise
+        logs.emit("guard.verified", f"after {after}: branch, history, git and remote unchanged")
+        self.folder.log(
+            "ticket.guard.verified",
+            f"Verified after {after}",
+            "Same branch and history, git unchanged, remote unchanged.",
+        )
 
-    def _unchanged(self, after: str, guard: dict[str, str]) -> Stop | None:
+    def _remote_stop(self, after: str, refs_before: dict[str, str]) -> Stop | None:
+        changed = self._remote_changes(refs_before)
+        return runs.remote_stop(after, changed, QUIET) if changed else None
+
+    def _unchanged(
+        self, after: str, guard: dict[str, str], now: dict[str, str] | None = None
+    ) -> Stop | None:
         """The stop when git or the reviewer's instruction files differ from `guard`, apart from
         another run's own branch, its branch keys and its kept branch (C11, ADR 0017, ADR 0047).
         Git is read first: a run registers before its git writes, so any it shows is in `during`."""
-        now = self.snapshot()
+        now = self.state().snapshot if now is None else now
         others = runs.during(self.registry, self.guard_since, self.witnessed) - {self.number}
         changes = runs.foreign_changes(
             guard, now, others, runs.kept_branches(self.witnessed, others)
         )
-        written = [c for c in changes if c.partition(": ")[2].startswith("instructions ")]
-        if written:
-            return Stop(
-                f"{after} changed instruction files the reviewer can load",
-                "inspect and remove them (they are outside the repository); Ariane pushed"
-                f" nothing; {QUIET}",
-                "\n".join(f"- {line}" for line in written),
-            )
-        if changes:
-            return Stop(
-                f"{after} changed git configuration, hooks or local branches",
-                f"inspect .git/config, .git/hooks and the branches; Ariane pushed nothing; {QUIET}",
-                "\n".join(f"- {line}" for line in changes),
-            )
-        return None
+        return runs.guard_stop(after, changes, QUIET)
 
     def _remote_changes(self, refs_before: dict[str, str]) -> list[str]:
         return git.remote_changes(
@@ -434,17 +426,10 @@ class _TicketRun:
             if not p.startswith(ticket.WORK_DIR + "/")
         ]
         exclude = f":(exclude){ticket.WORK_DIR}"
-        if git.commit(
-            self.worktree,
-            [".", exclude],
-            redact(message or f"#{self.number}: {self.issue.title}", self.secrets),
-            env=self.untrusted_env,
-        ):
-            self.folder.log(
-                "ticket.work.committed",
-                "Agent work committed",
-                "\n".join(f"- `{p}`" for p in changed),
-            )
+        message = redact(message or f"#{self.number}: {self.issue.title}", self.secrets)
+        if git.commit(self.worktree, [".", exclude], message, env=self.untrusted_env):
+            listing = "\n".join(f"- `{p}`" for p in changed)
+            self.folder.log("ticket.work.committed", "Agent work committed", listing)
         self.changed = changed
         self._flag_untouched_docs(changed)
         if result.stop_reason is not StopReason.FINISHED:
