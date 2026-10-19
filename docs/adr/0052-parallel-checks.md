@@ -42,8 +42,8 @@ summary; the non-functional "Cost" requirement asks Ariane not to waste the owne
   waits. With more than one worker wanted, the journal's `ticket.checks.parallel` entry (and, for
   `ariane verify`, the `Run` section of `review.md`) says how many ran at once and in which slots,
   and that fewer slots were free when it is so; the journal's list of trees names each tree's slot.
-- **Stop.** A stop in one worker (a failing setup, a guard violation, any error) or Ctrl-C in the
-  calling thread stops the others: no worker takes a new check, the process trees of their running
+- **Stop.** A stop in one worker (a failing setup, a guard violation, any error), Ctrl-C in the
+  calling thread, or a worker thread that fails to start stops the others: no worker takes a new check, the process trees of their running
   commands are killed and their next commands refused (`process.cancel`), except creating and
   removing a tree (`process.shielded`), so every tree is removed before the replay raises the
   first stop, as it does for one check. The calling thread waits for an event each worker sets

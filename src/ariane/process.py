@@ -246,6 +246,8 @@ def kill_survivors(
 
 
 def _kill_survivors(before: Collection[int], left: Mapping[int, str] | None) -> dict[int, str]:
+    if not sys.platform.startswith("linux"):  # narrows the platform for the type check
+        return {}
     found: dict[int, str] = {}
     groups: set[int] = set()
     killed: set[int] = set()  # the groups already sent SIGKILL

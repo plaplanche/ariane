@@ -122,8 +122,8 @@ def replay_each(
                 done.set()  # never ran
                 raise
         _wait(started)
-    except KeyboardInterrupt as exc:  # Ctrl-C reaches the calling thread only
-        stop_all(exc)
+    except BaseException as exc:  # Ctrl-C reaches the calling thread only; or a start failed
+        stop_all(exc)  # the workers already started stop, and are waited for before the slots go
         _wait(started, interruptible=False)
     finally:
         process.resume({t.ident for t in workers if t.ident is not None})

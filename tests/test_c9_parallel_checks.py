@@ -354,3 +354,51 @@ def test_c9_parallel_checks_ctrl_c_waits_for_the_workers_cleanup(tmp_path: Path)
         )
     assert tmp_path / "tree-1" in created
     assert sorted(removed) == sorted(created)
+
+
+def test_c9_parallel_checks_a_worker_that_fails_to_start_stops_and_waits_for_the_others(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later `Thread.start` that raises stops the workers already started and waits until
+    they have removed their trees, before the slots are released: none still runs on return."""
+    created: list[Path] = []
+    removed: list[Path] = []
+    running = threading.Event()
+    real_start = threading.Thread.start
+    starts: list[int] = []
+
+    def start(self: threading.Thread) -> None:
+        starts.append(1)
+        if len(starts) == 2:
+            assert running.wait(10)  # the first worker is in its setup
+            raise RuntimeError("can't start new thread")
+        real_start(self)
+
+    def setup(check: CheckConfig, tree: Path, env: Any) -> None:
+        running.set()
+        time.sleep(0.5)
+
+    def create(tree: Path) -> None:
+        tree.mkdir()
+        created.append(tree)
+
+    def remove(tree: Path) -> None:
+        time.sleep(0.3)
+        tree.rmdir()
+        removed.append(tree)
+
+    monkeypatch.setattr(threading.Thread, "start", start)
+    with pytest.raises(RuntimeError, match="can't start new thread"):
+        replay.replay_each(
+            [CheckConfig(name, (PY, "-c", "pass"), True, 1) for name in ("a", "b", "c")],
+            lambda k: tmp_path / f"tree-{k}",
+            create=create,
+            setup=setup,
+            verify=lambda tree: None,
+            remove=remove,
+            env=None,
+            trees=[],
+            slots=(1, 2),
+        )
+    assert created == [tmp_path / "tree-1"]  # the first worker stopped: no other check began
+    assert removed == created
