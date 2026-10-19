@@ -343,6 +343,16 @@ $port = 8000 + $slot
 port=$((8000 + ${ARIANE_SLOT:-0}))
 ```
 
+**Parallel checks.** Each check is replayed in its own clean tree (setup, then that check), one
+after another by default. `project.parallel_checks = 3` replays up to three checks at the same
+time, as CI jobs do, for `ariane start` and `ariane verify` alike; the report and the statuses
+keep the declared order. Each check running at once has its own slot, so its `ARIANE_SLOT`
+differs from the others': the run's own slot, then the next free ones. When fewer slots are free,
+fewer checks run at once and the journal says how many (`ticket.checks.parallel`). A stop
+(a failing setup, Ctrl-C, a guard violation) kills the other checks and removes every tree
+([ADR 0052](docs/adr/0052-parallel-checks.md)). Declare it only for checks that do not depend on
+each other.
+
 Only Ariane runs git commands in the repository while a ticket runs. Several tickets may run at
 once on one repository (one `ariane start` each): each run is registered in
 `<repo>.ariane/runs/<n>` while it lasts. Ariane checks that the agent changed nothing outside the

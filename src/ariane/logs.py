@@ -73,6 +73,11 @@ FUNCTIONAL_TYPES = _declare(
             "info",
             "The clean working trees used to replay the checks, one per check.",
         ),
+        (
+            "ticket.checks.parallel",
+            "info",
+            "How many checks were replayed at the same time, and in which run slots.",
+        ),
         ("ticket.checks.replayed", "info", "The checks were replayed by Ariane, with the result."),
         ("ticket.review.started", "info", "A reviewer session started, with its model and limits."),
         (

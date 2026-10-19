@@ -71,3 +71,17 @@ def held(where: Path | None = None) -> Iterator[int]:
             return
         file.close()
     raise Stop(REASON, NEXT_ACTION)
+
+
+@contextlib.contextmanager
+def several(count: int, where: Path | None = None) -> Iterator[list[int]]:
+    """Hold up to `count` more slots for the block, as many as are free, lowest first: the
+    slots of the parallel checks beyond the run's own (ADR 0052). None free: an empty list."""
+    with contextlib.ExitStack() as stack:
+        taken: list[int] = []
+        for _ in range(count):
+            try:
+                taken.append(stack.enter_context(held(where)))
+            except Stop:
+                break
+        yield taken

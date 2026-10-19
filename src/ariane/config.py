@@ -187,6 +187,7 @@ class Config:
     definition_of_done: tuple[DoneItem, ...] = DEFAULT_DEFINITION_OF_DONE
     documentation: Documentation = NO_DOCUMENTATION
     env: tuple[str, ...] = ()  # variables the project's checks need (ADR 0024)
+    parallel_checks: int = 1  # checks replayed at the same time (ADR 0052)
 
 
 def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:
@@ -217,7 +218,7 @@ def parse(data: dict[str, Any]) -> Config:
         data, "", {"project", "tracker", "agents", "checks", "definition_of_done", "documentation"}
     )
     project = _table(data, "project")
-    _only(project, "project", {"base_branch", "setup", "env"})
+    _only(project, "project", {"base_branch", "setup", "env", "parallel_checks"})
     tracker = _table(data, "tracker")
     _only(tracker, "tracker", {"kind", "repository", "token_env", "api_url", "ready_label"})
     agents = _table(data, "agents")
@@ -280,7 +281,15 @@ def parse(data: dict[str, Any]) -> Config:
         definition_of_done=_definition_of_done(data, names),
         documentation=documentation,
         env=_env(project),
+        parallel_checks=_parallel_checks(project),
     )
+
+
+def _parallel_checks(project: dict[str, Any]) -> int:
+    value = project.get("parallel_checks", 1)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ConfigError(f"{CONFIG_FILE}: project.parallel_checks: expected a positive integer")
+    return value
 
 
 def _env(project: dict[str, Any]) -> tuple[str, ...]:

@@ -227,6 +227,13 @@ SCHEMA: dict[str, Any] = {
                     "description": "Variables agents, checks and setup commands receive beyond"
                     " the base set (ADR 0024); an entry ending in _ is a prefix.",
                 },
+                "parallel_checks": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "default": 1,
+                    "description": "Checks replayed at the same time, each in its own tree and"
+                    " run slot (ADR 0052); 1 replays them one by one.",
+                },
             },
         },
         "tracker": {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -121,3 +122,33 @@ def test_process_resolves_windows_cmd_shims_through_path(
     monkeypatch.setenv("PATH", f"{tmp_path};{os.environ['PATH']}")
     done = process.run(["ariane-shim", "hello"], cwd=tmp_path)
     assert done.ok and "shim says hello" in done.stdout
+
+
+class _RacingKilled(dict[int, str]):
+    """`_killed` that lets another worker record a survivor after its copy, before its clear."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.worker: threading.Thread | None = None
+
+    def clear(self) -> None:
+        if self.worker is None:
+            self.worker = threading.Thread(target=self._record)
+            self.worker.start()
+            self.worker.join(0.2)  # without the lock, the record lands between copy and clear
+        super().clear()
+
+    def _record(self) -> None:
+        with process._lock:  # as `kill_survivors` does
+            self[4242] = "survivor"
+
+
+def test_take_killed_never_clears_a_survivor_recorded_by_another_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    killed = _RacingKilled()
+    monkeypatch.setattr(process, "_killed", killed)
+    first = process.take_killed()
+    assert killed.worker is not None
+    killed.worker.join()
+    assert first | process.take_killed() == {4242: "survivor"}
