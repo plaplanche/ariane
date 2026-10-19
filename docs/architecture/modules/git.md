@@ -44,10 +44,9 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `untracked(cwd)` | function | Untracked paths. |
 | `ignored(cwd)` | function | Ignored paths. |
 | `changed_paths(cwd, since)` | function | Paths changed since a revision. |
-| `diff(cwd, since, until, exclude)` | function | The diff between two revisions, without the excluded pathspec and without external diff or textconv drivers. |
+| `Changes` | dataclass | `diff`, `name_status` and `changed_lines` of a range, as the reviewer is shown it. |
+| `changes(cwd, since, until, exclude)` | function | The `Changes` between two revisions, without the excluded pathspec and without external diff or textconv drivers, read by one git process (`git diff --raw --numstat -p`, ADR 0053): `name_status` is what `git diff --name-status` prints (the raw lines after their modes and objects), `changed_lines` the added plus deleted lines of `--numstat` (a binary file counts 0), `diff` the patch after them. The review and `ariane verify` use it; `changed_lines` sizes the review (ADR 0046). |
 | `changed_between(cwd, since, until)` | function | Paths that differ between two commits. |
-| `name_status(cwd, since, until, exclude)` | function | `git diff --name-status` between two revisions, without the excluded pathspec. |
-| `changed_lines(cwd, since, until, exclude)` | function | Added plus deleted lines between two revisions (`git diff --numstat`), without the excluded pathspec; a binary file counts 0. Sizes the review (ADR 0046). |
 | `status(cwd)` | function | The short status of the tree. |
 | `committed_paths(cwd, since, pathspec)` | function | Paths committed since a revision under a pathspec. |
 | `commit(cwd, pathspec, message, env, tolerate_ignored, unstage)` | function | Commits only the given paths (`reset`, `add`, `commit`: three git processes); False when they hold no change, which only a refused commit checks (ADR 0053); the `unstage` paths leave the index first; the `git commit` adds Ariane's own git identity variables (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `EMAIL`) to `env`, which the allow list withholds from untrusted code (ADR 0024). |
@@ -120,8 +119,7 @@ class git {
   untracked(cwd) list
   ignored(cwd) set
   changed_paths(cwd, since) list
-  diff(cwd, since, until, exclude) str
-  changed_lines(cwd, since, until, exclude) int
+  changes(cwd, since, until, exclude) Changes
   status(cwd) str
   committed_paths(cwd, since, pathspec) list
   fast_forwarded(cwd, url, branch, old, new) bool
@@ -147,8 +145,15 @@ class GitState {
   branch str
   head str
 }
+class Changes {
+  <<dataclass>>
+  diff str
+  name_status str
+  changed_lines int
+}
 git ..> GitError
 git ..> GitState
+git ..> Changes
 ```
 
 ## Collaborations

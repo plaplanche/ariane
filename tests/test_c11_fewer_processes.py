@@ -23,7 +23,7 @@ from ariane.tracker import InMemoryTracker
 from conftest import PY, FakeRuntime, Project, commit_on_branch, edit_app, make_config, sh
 from test_flow import environ, start, worktree
 
-CUT = ("guard verification", "session", "record commits")
+CUT = ("guard verification", "session", "review", "record commits")
 
 
 def _phases(*counts: int) -> dict[str, int]:
@@ -38,10 +38,10 @@ BEFORE = {
     "three checks": _phases(11, 7, 68, 7, 9, 6, 12, 3),
 }
 AFTER = {
-    "go": _phases(11, 6, 22, 5, 3, 6, 9, 3),
-    "three no-go": _phases(13, 26, 48, 11, 9, 18, 9, 3),
-    "restart": _phases(29, 6, 22, 5, 3, 6, 9, 3),
-    "three checks": _phases(11, 6, 30, 7, 9, 6, 9, 3),
+    "go": _phases(11, 6, 23, 5, 3, 4, 9, 3),
+    "three no-go": _phases(13, 26, 53, 11, 9, 12, 9, 3),
+    "restart": _phases(29, 6, 23, 5, 3, 4, 9, 3),
+    "three checks": _phases(11, 6, 33, 7, 9, 4, 9, 3),
 }
 
 
@@ -67,7 +67,7 @@ def test_c11_fewer_processes_a_go_on_the_first_round(
         outcome = start(project, tracker, FakeRuntime())
     assert outcome.exit_code == 0, outcome.line
     _within("go", count)
-    assert sum(BEFORE["go"].values()) == 93 and count.total <= 65
+    assert sum(BEFORE["go"].values()) == 93 and count.total <= 64
 
 
 def test_c11_fewer_processes_three_no_go_rounds_to_a_draft(
@@ -77,7 +77,7 @@ def test_c11_fewer_processes_three_no_go_rounds_to_a_draft(
         outcome = start(project, tracker, FakeRuntime(answers=[NO_GO]))
     assert outcome.exit_code == 1 and "draft pull request" in outcome.line, outcome.line
     _within("three no-go", count)
-    assert sum(BEFORE["three no-go"].values()) == 203 and count.total <= 137
+    assert sum(BEFORE["three no-go"].values()) == 203 and count.total <= 136
 
 
 def test_c11_fewer_processes_a_restart(
@@ -88,7 +88,7 @@ def test_c11_fewer_processes_a_restart(
         outcome = restart_start(project, tracker, FakeRuntime(), restarting=True)
     assert outcome.exit_code == 0, outcome.line
     _within("restart", count)
-    assert sum(BEFORE["restart"].values()) == 111 and count.total <= 83
+    assert sum(BEFORE["restart"].values()) == 111 and count.total <= 82
 
 
 def test_c11_fewer_processes_the_replay_lists_the_remote_after_each_check(
@@ -226,7 +226,7 @@ def test_c11_fewer_processes_a_check_that_changes_the_remote_still_stops_the_rep
 def test_c11_fewer_processes_a_reviewer_moving_the_ticket_branch_is_still_stopped(
     project: Project, tracker: InMemoryTracker
 ) -> None:
-    """The ancestry of a head already verified is not checked twice; its head still is."""
+    """The reviewer leaves the history intact but moves the head: still a stop."""
     tree = worktree(project)
     identity = ["-c", "user.name=Sneak", "-c", "user.email=sneak@example.invalid"]
 
@@ -287,3 +287,77 @@ def test_c11_fewer_processes_verify_still_refuses_a_check_attaching_the_replay_h
     )
     assert outcome.exit_code == 1
     assert "the checks moved a head" in outcome.line, outcome.line
+
+
+def _git_script(body: str) -> tuple[str, ...]:
+    """A check running `body` with `common` (the shared git folder) and `head` defined."""
+    return (
+        PY,
+        "-c",
+        "import pathlib, subprocess\n"
+        "def git(*a): return subprocess.run(['git', *a], capture_output=True, text=True,"
+        " check=True).stdout.strip()\n"
+        "common = pathlib.Path(git('rev-parse', '--path-format=absolute', '--git-common-dir'))\n"
+        "head = git('rev-parse', 'HEAD')\n" + body,
+    )
+
+
+def test_c11_fewer_processes_a_check_cutting_the_history_is_stopped_before_the_next_check(
+    project: Project, tracker: InMemoryTracker, tmp_path: Path
+) -> None:
+    """The commit ids stay the same, but a `shallow` file naming the checked commit cuts its
+    history: the ancestry is checked after every check, so the second check stops the ticket
+    and the third, which would delete the file and hide it, never runs."""
+    marker = tmp_path / "third-ran"
+    cut = _git_script("(common / 'shallow').write_text(head + '\\n')")
+    hide = _git_script(
+        f"(common / 'shallow').unlink()\npathlib.Path({str(marker)!r}).write_text('ran')"
+    )
+    checks = (
+        _three_checks().checks[0],
+        CheckConfig("cut", cut, True, 1),
+        CheckConfig("hide", hide, True, 1),
+    )
+    outcome = start(project, tracker, FakeRuntime(), make_config(checks=checks))
+    assert outcome.exit_code == 1
+    assert "rewrote the ticket branch's history" in outcome.line, outcome.line
+    assert not marker.exists()
+    assert tracker.opened == [] and "ariane/7" not in project.remote_branches()
+
+
+def test_c11_fewer_processes_the_reviewed_changes_are_read_by_one_git_process(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One `git diff` gives what three gave: the patch, `--name-status`, the `--numstat` sum."""
+    root = project.root
+    (root / "old.txt").write_text("old\n", encoding="utf-8")
+    (root / "moved.txt").write_text("".join(f"line {i}\n" for i in range(20)), encoding="utf-8")
+    (root / "run.sh").write_text("echo\n", encoding="utf-8")
+    (root / "work").mkdir(exist_ok=True)
+    (root / "work" / "record.md").write_text("record\n", encoding="utf-8")
+    sh(["git", "add", "-A"], root)
+    sh(["git", "commit", "-q", "-m", "before"], root)
+    sh(["git", "rm", "-q", "old.txt"], root)
+    sh(["git", "mv", "moved.txt", "renamed file.txt"], root)
+    (root / "data.bin").write_bytes(b"\x00\x01\x02")
+    (root / "app.txt").write_text("version 2\nmore\n", encoding="utf-8")
+    (root / "work" / "record.md").write_text("changed\n", encoding="utf-8")
+    sh(["git", "add", "-A"], root)
+    sh(["git", "update-index", "--chmod=+x", "run.sh"], root)
+    sh(["git", "commit", "-q", "-m", "after"], root)
+    plain = ["git", "-c", "core.quotepath=off", "diff", "--no-ext-diff", "--no-textconv"]
+    paths = ["HEAD~1", "HEAD", "--", ".", ":(exclude)work"]
+    numstat = sh([*plain, "--numstat", *paths], root).splitlines()
+    with counted(monkeypatch) as count:
+        read = git.changes(root, "HEAD~1", "HEAD", "work")
+    assert count.total == 1
+    assert read.diff == sh([*plain, *paths], root)
+    assert read.name_status == sh([*plain, "--name-status", *paths], root)
+    assert "R100\tmoved.txt\trenamed file.txt" in read.name_status
+    assert "M\trun.sh" in read.name_status and "new mode 100755" in read.diff
+    assert "work/" not in read.name_status + read.diff
+    assert read.changed_lines == sum(
+        int(n) for line in numstat for n in line.split("\t")[:2] if n.isdigit()
+    )
+    assert read.changed_lines == 4  # old.txt -1, app.txt -1 +2; the binary file counts 0
+    assert git.changes(root, "HEAD", "HEAD", "work") == git.Changes("", "", 0)

@@ -246,8 +246,8 @@ def review_round(
         raise Stop(f"the reviewer working tree already exists at {tree}", _leftover(run))
     git.add_reviewer_worktree(run.worktree, tree, checked)
     try:
-        diff = git.diff(run.worktree, start_commit, checked, ticket.WORK_DIR)
-        name_status = git.name_status(run.worktree, start_commit, checked, ticket.WORK_DIR)
+        changes = git.changes(run.worktree, start_commit, checked, ticket.WORK_DIR)
+        diff, name_status = changes.diff, changes.name_status
         run.truncated = record_truncation(run.folder, diff)
         tree_before = git.status(tree)
 
@@ -267,7 +267,7 @@ def review_round(
             metrics=run.metrics,
             round=round_,
             small_env=run.agent_envs["reviewer.small"],
-            changed_lines=git.changed_lines(run.worktree, start_commit, checked, ticket.WORK_DIR),
+            changed_lines=changes.changed_lines,
         )
         try:
             answer = sessions.run(

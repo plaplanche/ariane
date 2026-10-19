@@ -420,24 +420,28 @@ def changed_paths(cwd: Path, since: str) -> list[str]:
     return sorted({*committed, *untracked(cwd)} - {""})
 
 
-def diff(cwd: Path, since: str, until: str, exclude: str) -> str:
-    """The diff from `since` to `until`, without the paths under `exclude`."""
-    return out([*_PLAIN_DIFF, since, until, "--", ".", f":(exclude){exclude}"], cwd)
+@dataclass(frozen=True)
+class Changes:
+    """What changed between two commits, as the reviewer is shown it."""
+
+    diff: str  # `git diff`
+    name_status: str  # `git diff --name-status`
+    changed_lines: int  # added plus deleted lines; a binary file counts 0 (ADR 0046)
 
 
-def name_status(cwd: Path, since: str, until: str, exclude: str) -> str:
-    """`git diff --name-status` from `since` to `until`, without the paths under `exclude`."""
-    return out(
-        [*_PLAIN_DIFF, "--name-status", since, until, "--", ".", f":(exclude){exclude}"], cwd
-    )
-
-
-def changed_lines(cwd: Path, since: str, until: str, exclude: str) -> int:
-    """Added plus deleted lines from `since` to `until`, without the paths under `exclude`; a
-    binary file counts 0 (ADR 0046)."""
-    listing = out([*_PLAIN_DIFF, "--numstat", since, until, "--", ".", f":(exclude){exclude}"], cwd)
-    counts = (line.split("\t", 2)[:2] for line in listing.splitlines() if line)
-    return sum(int(n) for pair in counts for n in pair if n.isdigit())
+def changes(cwd: Path, since: str, until: str, exclude: str) -> Changes:
+    """The changes from `since` to `until`, without the paths under `exclude`, read by one git
+    process (ADR 0053): `--raw` and `--numstat` lines, a blank line, then the patch."""
+    pathspec = ["--", ".", f":(exclude){exclude}"]
+    listing = out([*_PLAIN_DIFF, "--raw", "--numstat", "-p", since, until, *pathspec], cwd)
+    head, _, patch = listing.partition("\n\n")
+    raw = [line for line in head.splitlines() if line.startswith(":")]
+    # A raw line is ":<mode> <mode> <object> <object> <status>\t<paths>"; --name-status prints
+    # what follows the fourth space.
+    name_status = "\n".join(line.split(" ", 4)[4] for line in raw)
+    counts = (line.split("\t", 2)[:2] for line in head.splitlines() if not line.startswith(":"))
+    lines = sum(int(n) for pair in counts for n in pair if n.isdigit())
+    return Changes(patch, name_status, lines)
 
 
 def status(cwd: Path) -> str:

@@ -134,7 +134,6 @@ class _TicketRun:
         self.changed: list[str] = []
         self.truncated: list[str] = []  # the files whose hunks the last reviewed diff lacked
         self.processes_before: set[int] = set()
-        self.descendants: set[tuple[str, str]] = set()  # (start, head): head descends from start
         self.registry = worktree.parent.parent / runs.FOLDER  # `runs.folder` of the repository
         self.witnessed: dict[int, runs.Run] = {}  # the other runs this run has seen live
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
@@ -317,10 +316,9 @@ class _TicketRun:
             now = self.state()
             if (branch := now.branch) != self.branch:
                 raise Stop(f"{after} left branch {self.branch} (now {branch or 'detached'})", keep)
-            known = (start_commit, now.head) in self.descendants  # a commit fixes its history
-            if not known and not git.is_ancestor(self.worktree, start_commit, now.head):
+            # Every time: the shallow file or a replacement ref can change a commit's ancestry.
+            if not git.is_ancestor(self.worktree, start_commit, now.head):
                 raise Stop(f"{after} rewrote the ticket branch's history", keep)
-            self.descendants.add((start_commit, now.head))
             if expected_head is not None and now.head != expected_head:
                 raise Stop(f"{after} moved the ticket branch", keep)
             stopped = self._unchanged(after, guard, now.snapshot)
