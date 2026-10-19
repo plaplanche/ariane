@@ -1,7 +1,7 @@
 # 0053. Fewer git processes per run: one read of git per verification, one diff per review, one process for a detached head, three processes per record commit
 
-- Status: accepted for the cuts below; the issue's Windows target is open: only the pull
-  request's CI can measure it, and the counts below predict it is missed (see "Durations")
+- Status: accepted. The issue's Windows target (60 % of ADR 0049) is missed at 69 %; the owner
+  accepted the measured result on 19 October 2026 and moved the target to #221 (see "Durations")
 - Date: 2026-10-19
 - Capabilities: C9, C11
 
@@ -145,25 +145,25 @@ shared config. Its assertion is the same.
 | Linux sandbox, git processes of a go run / three no-go rounds / a restart / three checks | 93 / 203 / 111 / 123 | 64 / 136 / 82 / 82 (69 / 67 / 74 / 67 %) |
 | Linux sandbox, time inside those processes (table above) | 1.46 / 2.62 / 1.45 / 1.66 s | 1.21 / 2.09 / 1.25 / 1.36 s |
 | Linux sandbox, sum of the 30 slowest tests (`--durations=30`, whole suite, `-n auto`) | 118.5 s | 106.8 s |
-| Windows CI, sum of the 30 slowest tests | ADR 0049's list (run 39153818737): between 845.0 and 984.0 s | not measured yet: the pull request's CI |
+| Windows CI, sum of the 30 slowest tests | 928.9 s (ADR 0049, run 39153818737, one job); 765.5 s (`main` at a768015, run 39199702035, two shards) | 641.0 s (run 39204844367, two shards): 69 % of ADR 0049, 84 % of `main` |
+| Windows CI, tests step per shard | 412 s / 355 s (run 39199702035) | 390 s / 346 s (run 39204844367) |
 
-ADR 0049 gives nine of its thirty Windows figures one by one (48.7, 40.4, 38.2, 37.7, 37.6,
-37.0, 33.6, 33.3, 33.0) and the others as ranges ("36.1 to 33.8" for four, "32.0 down to 22.4"
-for sixteen), so its sum is known only between 845.0 and 984.0 s; the exact sum is in the `--durations=30` report of run 39153818737. The target,
-60 % of it, is at most 507.0 s if the sum is at the low end, 590.4 s at the high end.
+The exact sum of ADR 0049's thirty Windows figures is 928.9 s (the `--durations=30` report of
+run 39153818737, `windows-latest / Python 3.13`, one job of four workers), so the target, 60 %
+of it, is 557.3 s. With two shards (ADR 0049, commit 2), each job reports its own thirty slowest;
+the figures here are the thirty slowest of both reports merged.
 
 The sandbox's sum of the 30 slowest includes tests that wait on purpose (process trees, idle
 limits, parallel checks), which this change does not touch, and its wall time varies from run to
 run (ADR 0049), so it says little about Windows.
 
-**The Windows target is not shown by this change, and is expected to be missed.** It cannot be
-measured before the branch is pushed: the implementer and Ariane run on Linux without access to
-the CI, and only the pull request's CI runs `windows-latest` (`--durations=30`, ADR 0049). The
-exact baseline (the `--durations=30` sum of run 39153818737) and the pull request's Windows sum
-and run id are therefore still to be recorded here by the owner, from those two CI runs, before
-merging. If the time of a whole run on Windows is about proportional to its git processes (ADR
-0049: 100 to 190 processes, 22 to 49 s), whole runs start 26 to 33 % fewer processes, so the sum
-is expected near 67 to 74 % of ADR 0049's, above the 60 % target.
+**The Windows target is missed: 641.0 s, 69 % of ADR 0049's 928.9 s, against at most 60 %.**
+The measurement is the pull request's own CI (run 39204844367, both Windows shards). It matches
+the prediction from the counts (whole runs start 26 to 33 % fewer git processes, so 67 to 74 %).
+Part of the gap to ADR 0049 is not this change: `main` just before it, with the same two shards,
+already summed 765.5 s (run 39199702035), and this change takes 16 % off that. The owner
+accepted the measured result for #214 on 19 October 2026; reaching 60 % is #221, after #184,
+#185 and #209, which cut the number and the cost of the trees a run makes.
 
 What is left to cut without weakening a guarantee is small. A verification is now four git
 processes and the remote listing, and each of them reads something the guard needs and no other
@@ -172,9 +172,8 @@ remote). The session's two diffs read two different ranges (what was committed u
 what changed in the tree), and its reset, add and commit are what keep a commit from carrying
 what an agent staged or a merge it left. Setup reads run once per run. The larger costs left are
 the trees themselves: one worktree added and removed per check and per review, with its
-checkout, which #184, #185 and #143 cover and the issue puts out of scope. If the pull request's
-CI confirms the miss, the 60 % criterion needs the owner's decision: those issues, or a lower
-target for this one.
+checkout, which #184, #185 and #143 cover and the issue puts out of scope. The pull request's CI
+confirmed the miss; the owner chose those issues, and #221 measures again after them.
 
 ## Consequences
 Every run, in tests and real tickets, starts fewer git processes per round, with the same
