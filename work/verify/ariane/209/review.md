@@ -1,18 +1,14 @@
 # Review 0
 
-- Reviewed commit: `5fd47df219c8656651c4f19bfbcd2fb09e939ead`
+- Reviewed commit: `9b760e1beeb40af5a08ef111f88ec61eea8f81a2`
 - Reviewer model: gpt-6-astra
 - Verdict: **no-go** (the reviewer answered no-go)
 
 ## Findings
 
-- **blocking** (`src/ariane/cache.py:162`) Validate restored caches before running another cache's setup
+- **blocking** (`src/ariane/cache.py:129`) Unreadable key files can select an unrelated cached dependency folder
 
-  With two caches, A can hit while B misses. If the commit stopped ignoring A without changing its key, the order is: restore A into a temporary folder, rename it into the tree, touch its entry metadata, run B's setup and its writes/external calls, then validate A. The continue delays validation until after another command has run. An in-memory probe confirmed restore A → restore B → run setup B → validation failure. B can also remove the offending files and conceal the violation. Validate each hit before proceeding to any subsequent setup. Add a two-cache regression test; the current unignored-hit tests exercise only one cache.
-
-- **blocking** (`src/ariane/verify.py:239`) Reject tracked setup mutations before publishing a cache
-
-  The pre-publication validation checks HEAD and untracked files, but not tracked working-tree or index changes. A cache setup can modify a tracked non-key file and build the dependency folder. The sequence is: setup writes both; validation passes; _store copies the folder to a temporary entry, changes permissions, writes entry.json, acquires the store lock and renames the entry into place; the check runs; only then _unchanged rejects the tracked mutation through git.status. The rejected verification leaves a reusable cache. Retrying the same commit restores it and skips the setup that caused the mutation, so the retry can pass. Check tracked and staged cleanliness before publishing in both replay integrations, and test that a rejected setup leaves no published entry and cannot become successful merely through a cache hit.
+  key_of treats every OSError as a missing file, including PermissionError, IsADirectoryError and I/O failures. A read-only probe confirmed these produce exactly the same digest as FileNotFoundError. If an entry was built with a missing key file, a later tree whose key file exists but cannot be read will restore that entry and skip setup, despite not establishing that its contents match. The sequence is: failed key read → missing-file digest → restore writes staging files → rename into the tree → touch entry metadata → validate only Git state → run the check. Neither validation checks the failed key read. Handle genuinely missing files separately; other read failures must stop or bypass caching without publishing under that digest. Add a regression proving an unreadable key cannot hit an entry built for a missing key.
 
 ## Definition of done
 
@@ -38,20 +34,19 @@
 
 - met: The change is covered by tests that fail without it.
 
-  26 named dependency-cache test functions cover build/hit/key changes, copy isolation, partial entries, journaling, pruning, verify integration and guards. These depend on the new implementation. Ariane reports the suite green; I did not rerun filesystem-writing tests in this read-only review. The two ordering cases identified above remain uncovered.
+  The new test_c9_dependency_cache_* tests cover builds, hits, changed keys, copy isolation, incomplete entries, journaling, pruning, verify integration and unchanged behavior without caches. These depend on functionality absent from the base. Ariane reports the suite green; I did not rerun filesystem-writing tests in this read-only review. Unreadable key files remain uncovered.
 
 - met: The documentation the change affects is updated (C25).
 
-  README, Node/Python configuration examples, affected architecture modules, the configuration schema and log catalogue are updated. Ariane reports the generated-reference check passed.
+  README, Node/Python examples, the configuration schema, log catalogue and affected architecture modules are updated. Ariane reports the generated-reference check green.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0054 records key framing, copy mechanisms, locking, publication/replacement, destination protection, retention, agent-tree behavior and portability limitations, with measured Node replay timings before and after.
+  ADR 0054 records key construction, copies, replay-only publication, locking, retention, relocation limitations and measured Node replay timings. Side-effect tracing: ticket startup locks and prunes entries, prepares caches without publication, runs project setup, then writes ticket records. Replay misses execute setup, validate, create temporary data, copy/chmod files, write metadata, acquire the publication lock, check the existing entry, rename any replacement aside, publish by rename, and clean up. Hits acquire the lock, create parents/staging, copy files, rename the destination, touch metadata, then validate before subsequent setup. Checks run afterward, followed by verification, tree removal and reporting. Restore/publication/pruning share the lock; concurrent publishers recheck entry identity before replacement. Verify uses the same cache publication path and records results in review.md without pruning.
 
 ## Proposed learnings (not decided)
 
-- Proposed: validate every restored cache before any subsequent setup can consume or alter it.
-- Proposed: perform replay-integrity checks before publishing reusable artifacts; test that a failed cold run cannot pass on retry solely because it populated the cache.
+- Proposed: distinguish a missing cache-key input from an unreadable input; never turn a failed content read into a reusable cache identity.
 
 ## Run
 
