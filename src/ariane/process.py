@@ -211,9 +211,13 @@ def _busy(table: Mapping[int, _Proc], own: int | None = None) -> set[int]:
 
 
 def take_killed() -> dict[int, str]:
-    """The processes killed for outliving their command since the last call, then forgets them."""
-    taken = dict(_killed)
-    _killed.clear()
+    """The processes killed for outliving their command since the last call, then forgets them.
+
+    Under the lock of the survivor scans: a record another worker adds is either taken here or
+    left for the next call, never cleared unseen."""
+    with _lock:
+        taken = dict(_killed)
+        _killed.clear()
     return taken
 
 
