@@ -176,6 +176,6 @@ agent runs as the same user, so nothing a run writes or shows can prove it is an
   its branch stops the other run (the safe side), although it ran during the session.
 Only a sandbox that runs agents as another user or in another namespace closes these.
 
-Not covered: the base branch's remote-tracking ref, part of the snapshot, moves when another run
-fetches a base branch that advanced; that still stops the ticket. `ariane verify` and shadow runs
-do not use the registry.
+The base branch's remote-tracking ref, part of the snapshot, moves when another run fetches a base
+branch that advanced: a fast-forward to the remote's base is tolerated, see ADR 0055. `ariane
+verify` and shadow runs do not use the registry.

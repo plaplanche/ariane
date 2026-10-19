@@ -343,14 +343,24 @@ class _TicketRun:
         self, after: str, guard: dict[str, str], now: dict[str, str] | None = None
     ) -> Stop | None:
         """The stop when git or the reviewer's instruction files differ from `guard`, apart from
-        another run's own branch, its branch keys and its kept branch (C11, ADR 0017, ADR 0047).
+        another run's own branch, its branch keys and its kept branch (C11, ADR 0017, ADR 0047),
+        and a fast-forward of the base's tracking ref to the remote's base (ADR 0055).
         Git is read first: a run registers before its git writes, so any it shows is in `during`."""
         now = self.state().snapshot if now is None else now
         others = runs.during(self.registry, self.guard_since, self.witnessed) - {self.number}
         changes = runs.foreign_changes(
             guard, now, others, runs.kept_branches(self.witnessed, others)
         )
+        tracking = f"refs/remotes/{self.remote}/{self.config.base_branch}"
+        changes = runs.tracking_fast_forward(
+            self.worktree, guard, now, changes, tracking, self._remote_base
+        )
         return runs.guard_stop(after, changes, QUIET)
+
+    def _remote_base(self) -> str:
+        """The commit the remote's base branch points to now ("" when it has none)."""
+        refs = git.remote_refs(self.worktree, self.url)
+        return refs.get(f"refs/heads/{self.config.base_branch}", "")
 
     def _remote_changes(self, refs_before: dict[str, str]) -> list[str]:
         return git.remote_changes(
