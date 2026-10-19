@@ -50,6 +50,7 @@ flowchart LR
 <!-- generated: modules -->
 - [`__main__`](modules/__main__.md)
 - [`attempts`](modules/attempts.md)
+- [`cache`](modules/cache.md)
 - [`checks`](modules/checks.md)
 - [`claude_code`](modules/claude_code.md)
 - [`cli`](modules/cli.md)

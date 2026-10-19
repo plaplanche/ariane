@@ -29,6 +29,7 @@ The description of `ariane.toml` as a JSON Schema, and the runtimes each role ma
 - `checks[].setup` is an optional argument list.
 - `project.env` is an optional list of non-empty strings, default `[]` (ADR 0024).
 - `project.parallel_checks` is an optional integer above 0, default 1 (ADR 0052).
+- `project.cache` is an optional array of objects (`[[project.cache]]`, ADR 0054): required `path`, `key` (an argument list of files) and `setup` (an argument list), optional `keep` (integer above 0, default 5), no other key; that paths stay inside the tree and do not overlap is checked by `config.parse` only.
 - Raises nothing.
 
 ## Workflow
@@ -74,4 +75,4 @@ flowchart LR
 
 ## Serves
 
-C22, C5; ADR 0003, ADR 0022, ADR 0029, ADR 0031. See [the component view](../3-components.md).
+C22, C5; ADR 0003, ADR 0022, ADR 0029, ADR 0031, ADR 0054. See [the component view](../3-components.md).

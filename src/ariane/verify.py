@@ -9,7 +9,7 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from ariane import checks, context, git, process, review, slots, ticket
+from ariane import cache, checks, context, git, process, review, slots, ticket
 from ariane.config import CheckConfig, Config
 from ariane.flow import (
     EXIT_INTERRUPTED,
@@ -21,7 +21,14 @@ from ariane.flow import (
 )
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
-from ariane.replay import parallel_note, record_truncation, replay_each, truncation_note
+from ariane.replay import (
+    ReplayTree,
+    parallel_note,
+    record_truncation,
+    replay_each,
+    tracked_changes,
+    truncation_note,
+)
 from ariane.review_session import ReviewFailed, ReviewSession, agent_logins, instruction_dirs
 from ariane.runtime import AgentRuntime
 from ariane.stop import Stop
@@ -161,6 +168,7 @@ class _Verification:
         self.processes_before = set(process.descendants(exited=True))
         self.truncation = ""  # where the reviewer's diff was cut, if it was
         self.parallel = ""  # how many checks ran at once, when more than one could (ADR 0052)
+        self.trees: list[ReplayTree] = []  # with what each tree's caches did (ADR 0054)
         self.guard = self._snapshot()
         self.metrics = Metrics(issue.number if issue else 0, "verify", lambda text: None)
         self.issue = issue or Issue(
@@ -217,8 +225,44 @@ class _Verification:
             raise Refused(f"the replay working tree already exists at {tree}", "remove it")
         return tree
 
-    def _setup(self, check: CheckConfig, replay: Path, env: Mapping[str, str] | None) -> None:
+    def _setup(self, check: CheckConfig, replay: Path, env: Mapping[str, str] | None) -> str:
+        """The dependency caches (ADR 0054), then the check's setup or `project.setup`."""
+        used = cache.prepare(
+            self.config.caches,
+            replay,
+            cache.store_path(self.repo_root),
+            lambda command: self._run_setup(command, check, replay, env),
+            fill=True,
+            validate=lambda: self._cached(replay, check),
+        )
         command = check.setup if check.setup is not None else self.config.setup
+        self._run_setup(command, check, replay, env)
+        return cache.lines(used)
+
+    def _cached(self, replay: Path, check: CheckConfig) -> None:
+        """Before a built folder is stored and once the copied ones are in place: the replay
+        tree is still at the branch's head, has no tracked or staged change and no file git does
+        not ignore."""
+        where = f" (in the working tree of check {check.name!r})"
+        if git.detached_head(replay) != self.head:
+            raise Refused(f"a cache setup moved a head{where}", "inspect the replay tree")
+        if tracked_changes(replay):
+            raise Refused(
+                f"a cache setup changed files that git tracks{where}", "inspect the replay tree"
+            )
+        if git.untracked(replay):
+            raise Refused(
+                f"the dependency caches left files that git does not ignore{where}",
+                "add them to .gitignore, then run verify again",
+            )
+
+    def _run_setup(
+        self,
+        command: tuple[str, ...] | None,
+        check: CheckConfig,
+        replay: Path,
+        env: Mapping[str, str] | None,
+    ) -> None:
         if not command:
             return
         where = f" (in the working tree of check {check.name!r})"
@@ -258,7 +302,7 @@ class _Verification:
                 verify=lambda tree: self._unchanged(tree, "the checks", ""),
                 remove=lambda tree: git.remove_worktree(self.repo_root, tree),
                 env=self.untrusted_env,
-                trees=[],
+                trees=self.trees,
                 slots=workers,
             )
         changed = git.changed_between(self.repo_root, self.base, self.head)
@@ -320,7 +364,8 @@ class _Verification:
         texts = {
             REVIEW: review.record(settled, self.head, model)
             + _truncation_section(self.truncation)
-            + _slot_section(self.slot, self.parallel),
+            + _slot_section(self.slot, self.parallel)
+            + _cache_section(self.trees if self.config.caches else []),
             ticket.CHECKS: checks.report(results, self.head, changed),
         }
         green = settled.go and not checks.blocking_failures(results)
@@ -451,6 +496,11 @@ class _Verification:
 def _slot_section(slot: int, parallel: str = "") -> str:
     given = f"`{context.SLOT_VARIABLE}={slot}` for the setup, the checks and the reviewer"
     return f"\n## Run\n\nSlot {slot} ({given}, ADR 0050).{' ' + parallel if parallel else ''}\n"
+
+
+def _cache_section(trees: Sequence[ReplayTree]) -> str:
+    listing = "\n".join(f"- {t.check}: {t.caches}" for t in trees)
+    return f"\n## Dependency caches\n\n{listing}\n" if listing else ""
 
 
 def _truncation_section(note: str) -> str:

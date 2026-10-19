@@ -353,6 +353,35 @@ fewer checks run at once and the journal says how many (`ticket.checks.parallel`
 ([ADR 0052](docs/adr/0052-parallel-checks.md)). Declare it only for checks that do not depend on
 each other.
 
+**Dependency caches.** A fresh tree per check means installing the dependencies in every tree of
+every round. A `[[project.cache]]` table names a folder (`path`, such as `node_modules` or
+`.venv`, ignored by git), the files whose content identifies it (`key`, such as the lock file)
+and the command that builds that folder alone (`setup`):
+
+```toml
+[[project.cache]]
+path = "worker/node_modules"
+key = ["worker/package-lock.json"]
+setup = ["npm", "ci", "--prefix", "worker"]
+```
+
+The first replay tree with a given key (the SHA-256 of the key files and of `setup`) runs that
+`setup` and stores the folder, read-only, in `<repo>.ariane/cache/<key>/`; the next trees copy it
+(copy-on-write where the file system can, never hard links, so a write into a tree's copy leaves
+the store unchanged) instead of running `setup`. `project.setup` (or a check's own `setup`) then
+runs as before, for the rest. Only Ariane's replay trees fill the store; the ticket's own tree,
+where the agent works, copies a stored folder or builds its own, never stores it. An entry not
+completely written is never used: it is built again. A cache path that the commit already has, or that
+goes through a symbolic link, is never written from the store: its `setup` runs as without a
+cache. The journal lists, per check, which caches
+were copied and which built (`ticket.checks.cache`). At the start of a ticket only the `keep`
+(default 5) most recently used entries of each path are kept. For a uv project, cache
+the dependencies (`setup = ["uv", "sync", "--frozen", "--no-install-project"]`, key `uv.lock`),
+let `project.setup` install the project itself, and run tools as `uv run python -m <tool>`,
+since a virtual environment's scripts name the tree that built them
+([ADR 0054](docs/adr/0054-dependency-cache.md); examples in
+[`docs/ariane.example.toml`](docs/ariane.example.toml)).
+
 Only Ariane runs git commands in the repository while a ticket runs. Several tickets may run at
 once on one repository (one `ariane start` each): each run is registered in
 `<repo>.ariane/runs/<n>` while it lasts. Ariane checks that the agent changed nothing outside the

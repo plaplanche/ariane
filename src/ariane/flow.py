@@ -160,7 +160,7 @@ class _TicketRun:
             # Taken before the setup: instruction files it writes are not part of the baseline.
             self.guard_since = runs.now()  # other runs active since may touch their branches
             guard = self.state().snapshot
-            setup_error = self.setup(self.worktree, self.config.setup, guard)
+            cached, setup_error = replay.set_up_ticket_tree(self, guard)
             self.folder.create(self.issue)
             if self.restarted is not None:  # the journal opens with it (ADR 0047)
                 text = self.restarted.journal(self.number)
@@ -178,9 +178,8 @@ class _TicketRun:
                 self.folder.log("ticket.env.declared_secret", "Declared secrets passed", note)
             if setup_error is not None:
                 raise setup_error
-            self.folder.log(
-                "ticket.setup", "Setup", "No setup command." if not self.config.setup else "Passed."
-            )
+            text = "No setup command." if not self.config.setup else "Passed."
+            self.folder.log("ticket.setup", "Setup", text + cached)
             self.folder.set_status("implementing", "implementer session running", "wait")
             self._commit_record(f"#{self.number}: open the ticket folder")
             start_commit = git.head(self.worktree)

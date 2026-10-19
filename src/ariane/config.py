@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ariane.cache import CacheConfig, CacheConfigError
+from ariane.cache import parse as parse_caches
 from ariane.config_schema import (
     CODEX,
     OPENCODE,
@@ -23,7 +25,7 @@ from ariane.config_schema import (
     model_problem,
 )
 
-__all__ = ["CODEX", "OPENCODE", "PI", "SCHEMA"]
+__all__ = ["CODEX", "OPENCODE", "PI", "SCHEMA", "CacheConfig"]
 
 CONFIG_FILE = "ariane.toml"
 CONFIG_ENV = "ARIANE_CONFIG"
@@ -188,6 +190,7 @@ class Config:
     documentation: Documentation = NO_DOCUMENTATION
     env: tuple[str, ...] = ()  # variables the project's checks need (ADR 0024)
     parallel_checks: int = 1  # checks replayed at the same time (ADR 0052)
+    caches: tuple[CacheConfig, ...] = ()  # `[[project.cache]]`: dependency folders (ADR 0054)
 
 
 def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:
@@ -218,7 +221,7 @@ def parse(data: dict[str, Any]) -> Config:
         data, "", {"project", "tracker", "agents", "checks", "definition_of_done", "documentation"}
     )
     project = _table(data, "project")
-    _only(project, "project", {"base_branch", "setup", "env", "parallel_checks"})
+    _only(project, "project", {"base_branch", "setup", "env", "parallel_checks", "cache"})
     tracker = _table(data, "tracker")
     _only(tracker, "tracker", {"kind", "repository", "token_env", "api_url", "ready_label"})
     agents = _table(data, "agents")
@@ -282,7 +285,15 @@ def parse(data: dict[str, Any]) -> Config:
         documentation=documentation,
         env=_env(project),
         parallel_checks=_parallel_checks(project),
+        caches=_caches(project),
     )
+
+
+def _caches(project: dict[str, Any]) -> tuple[CacheConfig, ...]:
+    try:
+        return parse_caches(project.get("cache", []))
+    except CacheConfigError as exc:
+        raise ConfigError(f"{CONFIG_FILE}: {exc}") from None
 
 
 def _parallel_checks(project: dict[str, Any]) -> int:

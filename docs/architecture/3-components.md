@@ -33,6 +33,7 @@ flowchart TD
   cli --> verify
   codex --> process
   codex --> runtime
+  config --> cache
   config --> config_schema
   context --> config
   context --> git
@@ -81,6 +82,7 @@ flowchart TD
   pi --> process
   pi --> runtime
   process --> logs
+  replay --> cache
   replay --> checks
   replay --> config
   replay --> context
@@ -138,6 +140,7 @@ flowchart TD
   ticket --> logs
   ticket --> redact
   ticket --> tracker
+  verify --> cache
   verify --> checks
   verify --> config
   verify --> context
