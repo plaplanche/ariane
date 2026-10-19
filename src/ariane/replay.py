@@ -187,7 +187,7 @@ def replay(
 
     def set_up(check: CheckConfig, tree: Path, env: Mapping[str, str] | None) -> str:
         command = check.setup if check.setup is not None else run.config.setup
-        used, error = set_up_tree(run, tree, command, guard, env, fill=True)
+        used, error = set_up_tree(run, tree, command, guard, env, fill=True, head=checked)
         if error is not None:
             raise Stop(
                 f"{error.reason} (in the working tree of check {check.name!r})",
@@ -264,18 +264,34 @@ def set_up_tree(
     env: Mapping[str, str] | None = None,
     *,
     fill: bool,
+    head: str = "",
 ) -> tuple[list[cache.Used], Stop | None]:
     """The declared dependency caches (copied from the store, else built by their own setup and,
     when `fill`, stored: ADR 0054), then `command` for whatever they do not cover; each setup
-    guarded by `run.setup`. Returns what the caches did and the first setup's stop, or None."""
+    guarded by `run.setup`. Before a built folder is stored, and once the copied ones are in
+    place, the tree is checked: still at `head` (a replay tree's commit) and no file git does not
+    ignore. Returns what the caches did and the first setup's stop, or None."""
 
     def build(setup: tuple[str, ...]) -> None:
         error = run.setup(tree, setup, guard, env)
         if error is not None:
             raise error
 
+    def validate() -> None:
+        if head and git.detached_head(tree) != head:
+            raise Stop("a cache setup moved the replay working tree's head", "inspect it")
+        leftovers = git.untracked(tree)
+        if leftovers:
+            raise Stop(
+                "the dependency caches left files that git does not ignore",
+                "add them to .gitignore, then start the ticket again",
+                "\n".join(f"- `{path}`" for path in leftovers),
+            )
+
     try:
-        used = cache.prepare(run.config.caches, tree, _store(run), build, fill=fill)
+        used = cache.prepare(
+            run.config.caches, tree, _store(run), build, fill=fill, validate=validate
+        )
     except Stop as exc:
         return [], exc
     return used, run.setup(tree, command, guard, env)

@@ -140,33 +140,44 @@ def prepare(
     build: Callable[[tuple[str, ...]], None],
     *,
     fill: bool,
+    validate: Callable[[], None] = lambda: None,
 ) -> list[Used]:
     """Each cache in `tree`: copied from a complete entry of `store`, else built by `build(setup)`
     (which raises on failure) and, when `fill` (a replay tree, never the agent's), stored. A path
     that crosses a symbolic link, or a folder the commit already has there, is never written by
-    the cache: its setup builds it and nothing is stored."""
+    the cache: its setup builds it and nothing is stored. `validate` (which raises to stop) checks
+    the tree after each build, before anything is stored, and after the folders copied from the
+    store, before the caller runs anything else: a copy skips its setup, not the setup's checks."""
     used: list[Used] = []
     for cache in caches:
         key = key_of(tree, cache)
         target = tree / cache.path
         entry = store / key
+        failed: str | None = None  # the entry that could not be copied, replaced if rebuilt
         blocked = _crossing(tree, cache.path)
         if not blocked and os.path.lexists(target):
             blocked = "the commit already has that path"
-        if not blocked and _restore(store, entry, cache, key, tree):
-            used.append(Used(cache.path, key, hit=True))
-            continue
+        if not blocked:
+            hit, failed = _restore(store, entry, cache, key, tree)
+            if hit:
+                used.append(Used(cache.path, key, hit=True))
+                continue
         build(cache.setup)
+        validate()
         note = ""
         if not fill:
             note = "not stored (the agent's tree never fills the store)"
+        elif key_of(tree, cache) != key:
+            note = "not stored (its setup changed the key files)"
         elif blocked or (blocked := _crossing(tree, cache.path)):
             note = f"not stored ({blocked})"
         elif not target.is_dir() or target.is_symlink():
             note = "not stored (its setup made no folder there)"
         else:
-            note = _store(target, store, entry, cache, key)
+            note = _store(target, store, entry, cache, key, failed)
         used.append(Used(cache.path, key, hit=False, note=note))
+    if any(u.hit for u in used):
+        validate()
     return used
 
 
@@ -213,32 +224,38 @@ def _locked(store: Path) -> Iterator[None]:
                 fcntl.flock(file.fileno(), fcntl.LOCK_UN)
 
 
-def _read_entry(entry: Path, cache: CacheConfig, key: str) -> bool:
-    """A complete, readable entry for this cache and key."""
+def _read_entry(entry: Path, cache: CacheConfig, key: str) -> str | None:
+    """The `id` of a complete entry for this cache and key, or None when it is not one."""
     try:
         meta = json.loads((entry / ENTRY).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return False
-    return (
+        return None
+    if (
         isinstance(meta, dict)
         and meta.get("path") == cache.path
         and meta.get("key") == key
         and (entry / DATA).is_dir()
-    )
+    ):
+        return str(meta.get("id", ""))
+    return None
 
 
-def _restore(store: Path, entry: Path, cache: CacheConfig, key: str, tree: Path) -> bool:
+def _restore(
+    store: Path, entry: Path, cache: CacheConfig, key: str, tree: Path
+) -> tuple[bool, str | None]:
     """Copy the entry's folder to a hidden folder next to `cache.path`, then rename it there: the
     tree sees the whole folder or nothing. An entry that is incomplete or cannot be read is not
-    trusted, even partly: what was written is removed and the caller builds the folder."""
+    trusted, even partly: what was written is removed and the caller builds the folder. Returns
+    whether it was copied, and the `id` of a complete entry whose folder could not be copied."""
     parts = cache.path.split("/")
     made: list[Path] = []  # the parent folders this restore created, removed if it fails
     staging: Path | None = None
     if not entry.is_dir():
-        return False  # no entry: the store is not even created (nor its lock)
+        return False, None  # no entry: the store is not even created (nor its lock)
     with _locked(store):
-        if not _read_entry(entry, cache, key):
-            return False
+        found = _read_entry(entry, cache, key)
+        if found is None:
+            return False, None
         try:
             parent = tree
             for part in parts[:-1]:
@@ -255,32 +272,41 @@ def _restore(store: Path, entry: Path, cache: CacheConfig, key: str, tree: Path)
             for folder in reversed(made):
                 with contextlib.suppress(OSError):
                     os.rmdir(folder)
-            return False
+            return False, found
         with contextlib.suppress(OSError):
             os.utime(entry / ENTRY)  # its last use: what `prune` keeps
-    return True
+    return True, None
 
 
-def _store(target: Path, store: Path, entry: Path, cache: CacheConfig, key: str) -> str:
+def _store(
+    target: Path, store: Path, entry: Path, cache: CacheConfig, key: str, failed: str | None
+) -> str:
     """Copy `target` to a temporary entry, make it read-only, write its `entry.json`, then, under
-    the store's lock, replace an unreadable entry of that key and rename the temporary entry to
-    `entry`: a reader sees a complete entry or none. Returns "" or why it was not stored."""
+    the store's lock, move aside an entry of that key that is unreadable or is `failed` (the one
+    whose folder this tree could not copy) and rename the temporary entry to `entry`: a reader
+    sees a complete entry or none, and an entry another tree published meanwhile is kept.
+    Returns "" or why it was not stored."""
     temporary = store / f"{key}{PARTIAL}{uuid.uuid4().hex}"
+    aside = store / f"{key}{PARTIAL}{uuid.uuid4().hex}"
     try:
         store.mkdir(parents=True, exist_ok=True)
         temporary.mkdir()
         _copy(target, temporary / DATA, writable=False)
-        meta = {"path": cache.path, "key": key, "setup": list(cache.setup)}
+        meta = {"path": cache.path, "key": key, "setup": list(cache.setup), "id": uuid.uuid4().hex}
         (temporary / ENTRY).write_text(json.dumps(meta), encoding="utf-8")
         with _locked(store):
-            if _read_entry(entry, cache, key):
+            found = _read_entry(entry, cache, key)
+            if found is not None and found != failed:
                 remove_tree(temporary)
                 return "stored by another tree at the same time"
-            remove_tree(entry)  # an unreadable entry is replaced, never trusted
+            if os.path.lexists(entry):
+                os.rename(entry, aside)  # never trusted again; removed below, or by `prune`
             os.rename(temporary, entry)
     except OSError as exc:
         remove_tree(temporary)
         return f"not stored ({exc})"
+    finally:
+        remove_tree(aside)
     return ""
 
 

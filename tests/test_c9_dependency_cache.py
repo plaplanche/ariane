@@ -26,7 +26,7 @@ from ariane.config import CheckConfig, Config
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
 
-from conftest import FakeRuntime, Project, edit_app, make_config, sh
+from conftest import FakeRuntime, Project, commit_on_branch, edit_app, make_config, sh
 from test_flow import environ, journal, start
 
 PY = sys.executable
@@ -478,3 +478,116 @@ def test_c9_dependency_cache_without_caches_the_store_is_left_alone(
     assert outcome.exit_code == 0, outcome.line
     assert broken.exists()
     assert "Old cache entries" not in journal(project)
+
+
+MOVE_HEAD = (
+    "import subprocess; run = subprocess.run;"
+    " detached = run(['git', 'symbolic-ref', '-q', 'HEAD']).returncode;"
+    " detached and run(['git', 'commit', '-q', '--allow-empty', '-m', 'moved'], check=True)"
+)
+
+
+def _moving(log: Path) -> Config:
+    """A cache setup that builds `DEPS` and, in a replay tree, moves its detached head."""
+    moving = (PY, "-c", f"exec({MOVE_HEAD!r}); exec({builder(log)[2]!r})")
+    deps = CacheConfig(DEPS, (".gitignore",), moving)
+    return dataclasses.replace(cached(log), caches=(deps,))
+
+
+def test_c9_dependency_cache_a_setup_moving_the_head_publishes_nothing(
+    project: Project, tracker: InMemoryTracker, tmp_path: Path
+) -> None:
+    outcome = start(project, tracker, FakeRuntime(), _moving(tmp_path / "builds.txt"))
+    assert outcome.exit_code != 0
+    assert "moved the replay working tree's head" in outcome.line
+    assert not store(project).exists() or entries(project) == []
+
+
+def test_c9_dependency_cache_verify_refuses_a_setup_moving_the_head_before_storing(
+    project: Project, tmp_path: Path
+) -> None:
+    sh(["git", "branch", "hand/moved"], project.root)
+    outcome = verify.verify(
+        "hand/moved",
+        repo_root=project.root,
+        config=_moving(tmp_path / "builds.txt"),
+        runtime=FakeRuntime(),
+        environ=environ(),
+    )
+    assert outcome.exit_code != 0
+    assert "a cache setup moved a head" in outcome.line
+    assert not store(project).exists() or entries(project) == []
+
+
+def _warm_ticket(
+    project: Project, tracker: InMemoryTracker, tmp_path: Path
+) -> tuple[Config, Path, Path]:
+    """A first ticket that fills the store, with a check that records each run in `ran`."""
+    log, ran = tmp_path / "builds.txt", tmp_path / "ran.txt"
+    marks = f"open({str(ran)!r}, 'a').write('ran\\n')"
+    check = CheckConfig("check", (PY, "-c", marks), True, 1)
+    deps = CacheConfig(DEPS, ("deps.lock",), builder(log))  # a key file the commits keep
+    config_ = dataclasses.replace(cached(log, check), caches=(deps,))
+    assert start(project, tracker, FakeRuntime(), config_).exit_code == 0
+    assert builds(log) == 2 and ran.read_text(encoding="utf-8") == "ran\n"
+    tracker.add_issue(8, "Unignore", "Set app.txt to version 2.")
+    return config_, log, ran
+
+
+def test_c9_dependency_cache_a_hit_no_longer_ignored_by_git_stops_before_the_check(
+    project: Project, tracker: InMemoryTracker, tmp_path: Path
+) -> None:
+    config_, log, ran = _warm_ticket(project, tracker, tmp_path)
+
+    def unignore(session: Session) -> None:
+        edit_app(session)
+        (session.cwd / ".gitignore").write_text("other/\n", encoding="utf-8")
+        shutil.rmtree(session.cwd / DEPS)  # nothing of it is committed
+
+    outcome = start(project, tracker, FakeRuntime(action=unignore), config_, number=8)
+    assert outcome.exit_code != 0
+    assert "files that git does not ignore" in outcome.line, outcome.line
+    assert builds(log) == 2  # the replay copied the folder, then refused it
+    assert ran.read_text(encoding="utf-8") == "ran\n"  # the check never ran on it
+    assert entries(project) and all(p.exists() for p in entries(project))
+
+
+def test_c9_dependency_cache_a_hit_no_longer_ignored_by_git_stops_before_the_agent(
+    project: Project, tracker: InMemoryTracker, tmp_path: Path
+) -> None:
+    config_, log, _ = _warm_ticket(project, tracker, tmp_path)
+    commit_on_branch(project.remote, "main", "unignore", {".gitignore": "other/\n"})
+    runtime = FakeRuntime()
+    outcome = start(project, tracker, runtime, config_, number=8)
+    assert outcome.exit_code != 0
+    assert "files that git does not ignore" in outcome.line, outcome.line
+    assert builds(log) == 2 and runtime.sessions == []  # copied, refused, no agent started
+
+
+def test_c9_dependency_cache_an_entry_whose_folder_cannot_be_copied_is_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "builds.txt"
+    deps, store_ = _warm(tmp_path, log)
+    [entry] = [p for p in store_.iterdir() if p.name != cache.LOCK]
+    before = json.loads((entry / cache.ENTRY).read_text(encoding="utf-8"))["id"]
+    original = cache._copy
+
+    def copy(source: Path, target: Path, **kwargs: Any) -> None:
+        if source.is_relative_to(store_):
+            raise OSError("unreadable")
+        original(source, target, **kwargs)
+
+    monkeypatch.setattr(cache, "_copy", copy)
+    tree = _tree(tmp_path / "next")
+    [used] = cache.prepare([deps], tree, store_, _builder_in(tree), fill=True)
+    assert not used.hit and used.note == ""  # rebuilt and stored in place of the failed entry
+    after = json.loads((entry / cache.ENTRY).read_text(encoding="utf-8"))["id"]
+    assert after != before
+    assert [p.name for p in store_.iterdir() if p.name != cache.LOCK] == [entry.name]
+    monkeypatch.setattr(cache, "_copy", original)
+    last = _tree(tmp_path / "last")
+    assert [u.hit for u in cache.prepare([deps], last, store_, _builder_in(last), fill=True)] == [
+        True
+    ]
+    assert builds(log) == 2

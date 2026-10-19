@@ -25,13 +25,19 @@ behaviour; this ADR records it and the choices it left open.
   content unseen. Any change to a key file or to the setup gives a new key, so the folder is
   built again; an old entry is never updated in place.
 - **The store.** `<repo>.ariane/cache/<key>/`, next to `worktrees/`, holding `data/` (the folder)
-  and `entry.json` (path, key, setup). On a miss, the cache's `setup` runs in the fresh tree
+  and `entry.json` (path, key, setup, id). On a miss, the cache's `setup` runs in the fresh tree
   through the same guarded setup as `project.setup` (allow-list environment, guard snapshot
   compared, survivors killed, untracked files refused, ADR 0024, 0031), then the folder is copied
   into `<key>.partial-<random>/data`, made read-only, `entry.json` written, and the temporary
-  entry renamed to `<key>`. On a hit, `data/` is copied into the fresh tree instead of running
+  entry renamed to `<key>`. Before anything is stored, the replay tree must still be at its
+  commit and hold no file git does not ignore: the checks' own verification comes after the
+  store, so a setup that moved the head would otherwise leave an entry built from another
+  commit. On a hit, `data/` is copied into the fresh tree instead of running
   that setup, and `entry.json` is touched (its time is the entry's last use). `project.setup` (or
-  the check's own `setup`) then runs as before, for whatever the caches do not cover.
+  the check's own `setup`) then runs as before, for whatever the caches do not cover. A hit skips
+  the cache's setup, not its checks: once the copies are in place the tree must hold no file git
+  does not ignore (a commit can drop the ignore rule and keep the key files), before any setup,
+  agent or check runs.
 - **Copies, not links.** Each file is copied as a copy-on-write clone where the file system
   supports it (`FICLONE` on Linux: Btrfs, XFS; `clonefile` on macOS: APFS), else as a plain
   copy; after a first refusal the rest of the folder is copied plainly. Never hard links nor a
@@ -40,7 +46,9 @@ behaviour; this ADR records it and the choices it left open.
   stay links, the copies are writable, modes are kept.
 - **Only complete entries.** An entry is used only when its `entry.json` reads, names the same
   path and key, and `data/` exists. A temporary entry (no completion rename) is never read; an
-  entry without a readable `entry.json` is rebuilt and replaced. A hit is copied into a hidden
+  entry without a readable `entry.json` is rebuilt and replaced, and so is an entry whose folder
+  cannot be copied (each entry has a random `id`; the rebuild replaces the entry with the `id` it
+  failed to copy, never a newer one). A hit is copied into a hidden
   folder next to the cache's path and renamed to it once complete; a copy that fails half-way (a
   file that cannot be read) removes that folder and the parent folders it made, and the cache is
   built instead: the tree never holds part of an entry.

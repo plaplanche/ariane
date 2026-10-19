@@ -226,10 +226,23 @@ class _Verification:
             cache.store_path(self.repo_root),
             lambda command: self._run_setup(command, check, replay, env),
             fill=True,
+            validate=lambda: self._cached(replay, check),
         )
         command = check.setup if check.setup is not None else self.config.setup
         self._run_setup(command, check, replay, env)
         return cache.lines(used)
+
+    def _cached(self, replay: Path, check: CheckConfig) -> None:
+        """Before a built folder is stored and once the copied ones are in place: the replay
+        tree is still at the branch's head and has no file git does not ignore."""
+        where = f" (in the working tree of check {check.name!r})"
+        if git.detached_head(replay) != self.head:
+            raise Refused(f"a cache setup moved a head{where}", "inspect the replay tree")
+        if git.untracked(replay):
+            raise Refused(
+                f"the dependency caches left files that git does not ignore{where}",
+                "add them to .gitignore, then run verify again",
+            )
 
     def _run_setup(
         self,
