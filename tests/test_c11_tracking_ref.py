@@ -4,15 +4,27 @@ The ticket keeps the base it started from."""
 
 from __future__ import annotations
 
+import dataclasses
+import sys
+import threading
 from pathlib import Path
 
 import pytest
 
-from ariane import git
+from ariane import flow, git, runs
+from ariane.config import CheckConfig
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker
 
-from conftest import FakeRuntime, Project, commit_on_branch, copy_template, edit_app, sh
+from conftest import (
+    FakeRuntime,
+    Project,
+    commit_on_branch,
+    copy_template,
+    edit_app,
+    make_config,
+    sh,
+)
 from test_flow import start
 
 TRACKING = "refs/remotes/origin/main"
@@ -191,3 +203,46 @@ def test_c11_tracking_ref_review_diff_and_delivered_range_are_the_same_with_and_
     ]
     assert "merged.txt" not in moved_diffs[0].name_status
     assert _delivered(project, moved_base) == _delivered(still, still_base)
+
+
+def test_c11_tracking_ref_parallel_checks_never_compare_an_older_read_to_an_advanced_guard(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two checks verify at once and share the guard. The first reads git, then another run
+    fetches a merged base before it compares; the second reads the new commit and advances the
+    guard. The first must not compare its older read to that guard: it would see the tracking
+    ref move back and stop the ticket. The first waits (at most 2 s) for the second to advance
+    the guard, which happens at once without the guard's lock and never with it."""
+    advanced = threading.Event()
+    first: list[int] = []
+    merged: list[str] = []
+    state, forward = flow._TicketRun.state, runs.tracking_fast_forward
+
+    def merge(session: Session) -> None:
+        merged.append(_merge_on_remote(project))
+        sh(["git", "fetch", "--quiet", str(project.remote), "refs/heads/main"], project.root)
+
+    def read(run: flow._TicketRun) -> git.GitState:
+        now = state(run)
+        if threading.current_thread() is not threading.main_thread() and not first:
+            first.append(threading.get_ident())
+            # The fetch's ref update, without a process the other check's survivor scan kills.
+            (project.root / ".git" / TRACKING).write_text(merged[0] + "\n", encoding="utf-8")
+            advanced.wait(2)
+        return now
+
+    def fast_forward(cwd: Path, guard: dict[str, str], *args: object) -> list[str]:
+        before = dict(guard)
+        kept = forward(cwd, guard, *args)  # type: ignore[arg-type]
+        if guard != before and threading.get_ident() not in first:
+            advanced.set()
+        return kept
+
+    monkeypatch.setattr(flow._TicketRun, "state", read)
+    monkeypatch.setattr(runs, "tracking_fast_forward", fast_forward)
+    check = (sys.executable, "-c", "pass")
+    both = tuple(CheckConfig(f"check {k}", check, True, 1) for k in (1, 2))
+    config_ = dataclasses.replace(make_config(checks=both), parallel_checks=2)
+    outcome = start(project, tracker, _then_edit(merge), config_)
+    assert first, "the checks were not replayed in parallel"
+    assert outcome.exit_code == 0, f"{outcome.line}\n{outcome.detail}"

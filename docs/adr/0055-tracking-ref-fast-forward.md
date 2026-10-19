@@ -22,6 +22,11 @@ ticket. ADR 0017 listed this as not covered.
 - **The guard takes the new commit.** The tolerated commit replaces `old` in the run's guard
   snapshot, so a later move is measured from it: when the remote advances again and nobody
   fetches, the ref still equals the guard; when someone fetches again, the same rule applies.
+- **One verification at a time per run.** The parallel checks of a replay (ADR 0052) share the
+  guard snapshot; each reads git, compares and advances the guard under the run's
+  `flow._TicketRun.guard_lock`, also around a setup's check. Without it, a check that read the
+  ref before a fetch and compared after another check advanced the guard would see a move
+  backwards and stop the ticket.
 - **Any other move still stops**, with the same reason as before: backwards, sideways, to a
   descendant that is not the remote's base (a local commit, or one the remote no longer points
   to), a deletion, or a move together with any other change.
