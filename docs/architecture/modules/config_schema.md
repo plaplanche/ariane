@@ -28,6 +28,7 @@ The description of `ariane.toml` as a JSON Schema, and the runtimes each role ma
 - `agents.<role>.idle_minutes` is an optional positive number (ADR 0045); that it is below `timeout_minutes` is checked by `config.parse` only.
 - `checks[].setup` is an optional argument list.
 - `project.env` is an optional list of non-empty strings, default `[]` (ADR 0024).
+- `project.parallel_checks` is an optional integer above 0, default 1 (ADR 0052).
 - Raises nothing.
 
 ## Workflow

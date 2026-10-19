@@ -21,7 +21,7 @@ Loads and validates `ariane.toml` (C22). Every error names the faulty key.
 | `Documentation` | dataclass | The optional `[documentation]` table (C25, ADR 0026): `paths`, `map`, `generated`; `documents_for(path)`, `not_updated(changed)`, `checks()`. |
 | `NO_DOCUMENTATION` | constant | The empty `Documentation`, used without the table. |
 | `DEFAULT_DEFINITION_OF_DONE` | constant | The definition of done when the table is absent (C26). |
-| `Config` | dataclass | The validated settings: base branch, setup, tracker, implementer, reviewer, checks, definition of done, documentation, and `env` (the `[project] env` entries, default empty, ADR 0024). |
+| `Config` | dataclass | The validated settings: base branch, setup, tracker, implementer, reviewer, checks, definition of done, documentation, `env` (the `[project] env` entries, default empty, ADR 0024) and `parallel_checks` (default 1, ADR 0052). |
 | `load(repo_root, environ=None)` | function | Read `ariane.toml`, or the file `ARIANE_CONFIG` names, and validate it (C22). |
 | `parse(data)` | function | Validate a parsed TOML mapping and return a `Config`. |
 
@@ -36,6 +36,7 @@ Loads and validates `ariane.toml` (C22). Every error names the faulty key.
 - Runtimes (C5, ADR 0029): `runtime` is `claude-code`, or `opencode` for the reviewer only; an opencode agent takes `<provider>/<model>`, tools among `read`, `glob`, `grep`, and must set `max_tokens` (else `agents.<role>.max_tokens` is refused). A Claude Code reviewer's `tools` are a subset of `Read`, `Glob`, `Grep` (ADR 0031). `AgentConfig.max_tokens` is Ariane's own token cap per session. `codex` is also for the reviewer only (ADR 0043); its optional `api_key_env` names the variable holding an API key (refused with another runtime, and it requires `max_tokens`), and its tools follow the Claude Code reviewer's allow list. `pi` is also for the reviewer only (ADR 0051): `<provider>/<model>`, tools among `read`, `grep`, `find`, `ls` (`bash`, `edit`, `write` are refused, C10), `max_tokens` required; its optional `api_key_env` needs a provider whose key variable pi documents (`config_schema.PI_PROVIDER_KEYS`). The rules per runtime are `config_schema.agent_problem`; `parse` raises the `ConfigError` naming `agents.<role>.<key>` it returns.
 - Idle limit (C5, ADR 0045): `agents.<role>.idle_minutes` is optional, for both roles and every runtime; a value that is not a positive number, or is at or above `timeout_minutes`, is refused naming `agents.<role>.idle_minutes`. `DEFAULT_IDLE_MINUTES` (10) applies when it is absent and `timeout_minutes` is above 10.
 - `[project] env` is an optional list of variable names or prefixes ending in `_` (C21, ADR 0024): the variables agents, checks and setup commands receive beyond the base set. Anything but a list of non-empty strings is refused, naming `project.env`.
+- `[project] parallel_checks` is an optional positive integer, default 1 (C9, ADR 0052): the number of checks replayed at the same time. Anything else (0, a negative or fractional number, a boolean, a string) is refused, naming `project.parallel_checks`.
 - `SCHEMA` is re-exported from `config_schema`.
 
 ## Workflow

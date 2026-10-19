@@ -20,7 +20,7 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 ## Behaviour and errors
 
 - `CheckResult`: name, blocking flag, outcome and output of one check.
-- `run_checks`, `run_check`: run the declared commands in a working tree; the flow also passes the generated-documentation commands as checks named `docs: <name>` (C25), so they appear in the report and the statuses like any check.
+- `run_checks`, `run_check`: run the declared commands in a working tree; `run_check` is called from the replay's worker threads when `project.parallel_checks` is above 1 (ADR 0052), each with its tree and its slot's environment; the flow also passes the generated-documentation commands as checks named `docs: <name>` (C25), so they appear in the report and the statuses like any check.
 - `blocking_failures`, `summary_line`, `summary_table`, `report`: read and render results.
 - `parse_summary_table`: read a committed report back.
 

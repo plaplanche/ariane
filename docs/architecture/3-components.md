@@ -83,12 +83,15 @@ flowchart TD
   process --> logs
   replay --> checks
   replay --> config
+  replay --> context
   replay --> delivery
   replay -.-> flow
   replay --> git
+  replay --> process
   replay --> restart
   replay --> review
   replay --> review_session
+  replay --> slots
   replay --> stop
   replay --> ticket
   report --> measures
@@ -192,11 +195,13 @@ sequenceDiagram
   F->>N: snapshot git first, then drop the changes that are another registered run's own branch and keys
   F->>G: commit
   F->>P: replay and review
-  loop for each check
-    P->>G: add a clean replay tree (setup runs there)
+  Note over P: parallel_checks above 1: up to that many workers, each with its own slot (ADR 0052)
+  loop for each check, in declared order, up to parallel_checks at the same time
+    P->>G: add a clean replay tree (setup runs there, with the worker's ARIANE_SLOT)
     P->>C: run that check
     P->>G: verify, remove the tree
   end
+  Note over P: a stop in one worker or Ctrl-C kills the others' commands; every tree is removed
   C-->>P: results
   alt a blocking check failed
     P-->>F: stop before any review, push nothing
@@ -279,7 +284,7 @@ sequenceDiagram
   U->>CLI: ariane verify branch
   CLI->>V: verify
   V->>G: refuse a checked-out branch with uncommitted changes
-  loop for each check
+  loop for each check, up to parallel_checks at the same time, each worker with its own slot
     V->>G: add a clean replay tree at the branch head
     V->>V: setup command
     V->>C: run that check

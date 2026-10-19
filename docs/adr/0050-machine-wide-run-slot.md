@@ -1,6 +1,6 @@
 # 0050. A machine-wide run slot, given to the project as `ARIANE_SLOT`
 
-- Status: accepted
+- Status: accepted; one slot per run extended by 0052 (a slot per parallel check)
 - Date: 2026-10-18
 - Capabilities: C11, C22
 

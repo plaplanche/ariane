@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import threading
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -78,6 +79,7 @@ class TicketFolder:
         self.path = folder_path(root, number)
         self._secrets = [s for s in secrets if s]
         self._records: dict[str, str] = {}
+        self._lock = threading.RLock()  # parallel checks journal from their threads (ADR 0052)
 
     def create(self, issue: Issue) -> None:
         if self.path.exists() or self.path.is_symlink():
@@ -96,7 +98,8 @@ class TicketFolder:
         entry = f"\n## {now()} {step}\n"
         if detail:
             entry += f"\n{detail.rstrip()}\n"
-        self.write(JOURNAL, self._records.get(JOURNAL, "") + entry)
+        with self._lock:
+            self.write(JOURNAL, self._records.get(JOURNAL, "") + entry)
 
     def set_status(self, state: str, detail: str, next_action: str) -> None:
         self.write(
@@ -106,9 +109,10 @@ class TicketFolder:
         )
 
     def write(self, name: str, text: str) -> None:
-        self._records[name] = redact(text, self._secrets)
-        self._ensure_folder()
-        write_file(self.path / name, self._records[name])
+        with self._lock:
+            self._records[name] = redact(text, self._secrets)
+            self._ensure_folder()
+            write_file(self.path / name, self._records[name])
 
     def restore(self) -> None:
         """Rewrite the folder exactly as Ariane recorded it, whatever an agent did."""

@@ -21,7 +21,7 @@ from ariane.flow import (
 )
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
-from ariane.replay import record_truncation, replay_each, truncation_note
+from ariane.replay import parallel_note, record_truncation, replay_each, truncation_note
 from ariane.review_session import ReviewFailed, ReviewSession, agent_logins, instruction_dirs
 from ariane.runtime import AgentRuntime
 from ariane.stop import Stop
@@ -160,6 +160,7 @@ class _Verification:
         self.base_instructions = git.base_instructions(repo_root, REMOTE, self.config.base_branch)
         self.processes_before = set(process.descendants(exited=True))
         self.truncation = ""  # where the reviewer's diff was cut, if it was
+        self.parallel = ""  # how many checks ran at once, when more than one could (ADR 0052)
         self.guard = self._snapshot()
         self.metrics = Metrics(issue.number if issue else 0, "verify", lambda text: None)
         self.issue = issue or Issue(
@@ -216,14 +217,17 @@ class _Verification:
             raise Refused(f"the replay working tree already exists at {tree}", "remove it")
         return tree
 
-    def _setup(self, check: CheckConfig, replay: Path) -> None:
+    def _setup(self, check: CheckConfig, replay: Path, env: Mapping[str, str] | None) -> None:
         command = check.setup if check.setup is not None else self.config.setup
         if not command:
             return
         where = f" (in the working tree of check {check.name!r})"
         try:
             done = process.run(
-                command, cwd=replay, timeout_s=SETUP_TIMEOUT_S, env=self.untrusted_env
+                command,
+                cwd=replay,
+                timeout_s=SETUP_TIMEOUT_S,
+                env=self.untrusted_env if env is None else env,
             )
         except process.CommandNotFoundError as exc:
             raise Refused(f"setup failed: {exc}{where}", "install it or fix the setup") from None
@@ -242,16 +246,21 @@ class _Verification:
 
     def _replay_and_review(self, replay: Path, records: Path) -> Outcome:
         all_checks = (*self.config.checks, *self.config.documentation.checks())
-        results = replay_each(
-            all_checks,
-            lambda k: self._tree_for(replay, k),
-            create=lambda tree: git.add_detached_worktree(self.repo_root, tree, self.head),
-            setup=self._setup,
-            verify=lambda tree: self._unchanged(tree, "the checks", ""),
-            remove=lambda tree: git.remove_worktree(self.repo_root, tree),
-            env=self.untrusted_env,
-            trees=[],
-        )
+        wanted = min(self.config.parallel_checks, len(all_checks))
+        with slots.several(wanted - 1) as more:  # each worker its own slot (ADR 0052)
+            workers = [self.slot, *more]
+            self.parallel = parallel_note(workers, wanted) if wanted > 1 else ""
+            results = replay_each(
+                all_checks,
+                lambda k: self._tree_for(replay, k),
+                create=lambda tree: git.add_detached_worktree(self.repo_root, tree, self.head),
+                setup=self._setup,
+                verify=lambda tree: self._unchanged(tree, "the checks", ""),
+                remove=lambda tree: git.remove_worktree(self.repo_root, tree),
+                env=self.untrusted_env,
+                trees=[],
+                slots=workers,
+            )
         changed = git.changed_between(self.repo_root, self.base, self.head)
         folder = ticket.TicketFolder(records, self.issue.number, secrets=self.secrets)
         folder.create(self.issue)
@@ -314,7 +323,7 @@ class _Verification:
         texts = {
             REVIEW: review.record(settled, self.head, model)
             + _truncation_section(self.truncation)
-            + _slot_section(self.slot),
+            + _slot_section(self.slot, self.parallel),
             ticket.CHECKS: checks.report(results, self.head, changed),
         }
         green = settled.go and not checks.blocking_failures(results)
@@ -442,9 +451,9 @@ class _Verification:
                 git.remove_worktree(self.repo_root, tree)
 
 
-def _slot_section(slot: int) -> str:
+def _slot_section(slot: int, parallel: str = "") -> str:
     given = f"`{context.SLOT_VARIABLE}={slot}` for the setup, the checks and the reviewer"
-    return f"\n## Run\n\nSlot {slot} ({given}, ADR 0050).\n"
+    return f"\n## Run\n\nSlot {slot} ({given}, ADR 0050).{' ' + parallel if parallel else ''}\n"
 
 
 def _truncation_section(note: str) -> str:

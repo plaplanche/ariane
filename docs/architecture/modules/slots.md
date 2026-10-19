@@ -12,12 +12,14 @@ The machine-wide slot of a run (C11, C22, ADR 0050): a number from 0 to 15 that 
 | `folder()` | function | `~/.ariane/slots/`, the folder of the slot files, shared by every Ariane run of the user on the machine. |
 | `try_lock(file)` | function | Takes an operating-system lock on an open file without waiting; False when another holder has it. |
 | `held(where=None)` | context manager | Holds the lowest free slot `k` (the lock of `<where>/<k>.lock`, `where` defaulting to `folder()`) for the block and yields `k`; all 16 held: `Stop(REASON, NEXT_ACTION)`. |
+| `several(count, where=None)` | context manager | Holds up to `count` more slots for the block, as many as are free, lowest first, and yields them (an empty list when none is free); never raises for want of a slot: the slots of the parallel checks beyond the run's own (ADR 0052). |
 
 ## Behaviour and errors
 
 - The lock is `fcntl.flock` (exclusive, non-blocking) on POSIX and `msvcrt.locking` (`LK_NBLCK`, one byte) on Windows. Closing the file releases it (on Windows `held` also unlocks it explicitly first), and so does the system when the process dies, so a killed run never leaves a slot held. The files stay; they hold nothing.
 - `held` creates the folder when it is missing and tries the slots in order, 0 first; it never waits.
 - `ariane start` (`flow.start`, after the ticket lock), `ariane start --shadow` (`shadow.start`) and `ariane verify` (`verify.verify`) take a slot before the setup and before any branch or tree is created, and hold it to their end, however the run ends (green, stopped, Ctrl-C). The slot reaches the project through `context.untrusted_environment(slot=…)`, as `ARIANE_SLOT`, after Ariane's own `ARIANE_*` variables are withheld.
+- With `project.parallel_checks` above 1, the replay (`replay.replay`, `verify`) takes up to `parallel_checks - 1` more slots with `several` for its extra workers and holds them until the replay ends; each worker gives its own slot to its setup and check (ADR 0052).
 
 ## Workflow
 
@@ -52,6 +54,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 ```mermaid
 flowchart LR
   flow --> slots
+  replay --> slots
   restart --> slots
   shadow --> slots
   slots --> stop

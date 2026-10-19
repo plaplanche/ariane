@@ -10,6 +10,9 @@ setup = ["uv", "sync"]
 # proxy and certificate variables). An entry ending in "_" is a prefix: ["DATABASE_URL", "MYAPP_"].
 # A name that looks like a secret still passes when declared, and the journal says so.
 env = []
+# Checks replayed at the same time, each in its own clean tree and run slot (`ARIANE_SLOT`);
+# 1 (the default) replays them one by one. Only for checks that do not depend on each other.
+# parallel_checks = 3
 
 [tracker]
 # Tracker kind; only "github" exists today.

@@ -26,6 +26,7 @@ EXIT_STOPPED = 1
 EXIT_INTERRUPTED = 130
 MAX_FIX_ROUNDS = 2
 _FAILURES = FAILURES
+_Env = Mapping[str, str] | None  # a parallel check's environment, with its own slot
 
 
 @dataclass(frozen=True)
@@ -222,15 +223,16 @@ class _TicketRun:
         )
 
     def setup(
-        self, cwd: Path, command: tuple[str, ...] | None, guard: dict[str, str]
+        self, cwd: Path, command: tuple[str, ...] | None, guard: dict[str, str], env: _Env = None
     ) -> Stop | None:
-        """Run the setup command (C8) in `cwd` without credentials (it may run agent-written
-        code), then, before anything else runs, compare git and the instruction files to `guard`
-        (ADR 0031); an error is journaled once the folder exists."""
+        """Run the setup command (C8) in `cwd` in `env` or the run's, without credentials (it may
+        run agent-written code), then, before anything else runs, compare git and the instruction
+        files to `guard` (ADR 0031); an error is journaled once the folder exists."""
         if not command:
             return None
         try:
-            done = process.run(command, cwd=cwd, timeout_s=SETUP_TIMEOUT_S, env=self.untrusted_env)
+            env = self.untrusted_env if env is None else env
+            done = process.run(command, cwd=cwd, timeout_s=SETUP_TIMEOUT_S, env=env)
         except process.CommandNotFoundError as exc:
             return Stop(f"setup failed: {exc}", "install it or fix project.setup")
         survived = self.survivors(f"setup `{' '.join(command)}`") or self._unchanged("setup", guard)

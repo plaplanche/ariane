@@ -28,7 +28,7 @@ The ticket folder `work/<n>/` (C1, C10, C23): every document of a ticket, readab
 
 ## Behaviour and errors
 
-- `TicketFolder(root, number, secrets=())` writes under `root/work/<n>/`: `brief.md` and `journal.md` (from `create`), one entry per `log` appended to `journal.md`, `status.md` (`set_status`), `checks.md` and the `review-<round>.md` files (through `write`). Every text is redacted with the given secrets before it is written, and kept in memory.
+- `TicketFolder(root, number, secrets=())` writes under `root/work/<n>/`: `brief.md` and `journal.md` (from `create`), one entry per `log` appended to `journal.md`, `status.md` (`set_status`), `checks.md` and the `review-<round>.md` files (through `write`). Every text is redacted with the given secrets before it is written, and kept in memory. `write` and `log` hold a lock, so the replay's worker threads can journal at the same time (ADR 0052).
 - `create` raises `FileExistsError` when the ticket folder already exists. `log` raises `ValueError` for an undeclared type (`logs.functional`) and emits `journal.warning` for an entry of level warning.
 - `restore` rewrites the folder exactly as recorded in memory, whatever an agent did (removing other files, links and folders); `exists` tells whether the journal was written.
 - `read_status` reads `status.md` of a folder; `parse_status` accepts the current and the old wording and returns fields missing from the text as absent.

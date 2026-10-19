@@ -9,7 +9,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, NamedTuple
@@ -151,6 +151,63 @@ def _tree(table: Mapping[int, _Proc]) -> dict[int, tuple[str, str]]:
 
 # The processes `kill_survivors` killed that no caller has taken yet (`take_killed`).
 _killed: dict[int, str] = {}
+# Commands of several threads (parallel checks, ADR 0052): a spawn and a survivor scan never
+# overlap, and a scan spares the commands other threads still wait for.
+_lock = threading.RLock()
+_running: dict[int, int] = {}  # pid of each command `run` or `stream` waits for -> its thread
+_cancelled: set[int] = set()  # threads whose next commands are refused (`cancel`)
+_shielded: set[int] = set()  # threads whose commands `cancel` neither kills nor refuses
+
+
+class Cancelled(Exception):
+    """The command was not started: its thread was cancelled (`cancel`)."""
+
+
+def cancel(threads: Collection[int]) -> None:
+    """Kill the process trees of the commands `threads` run now and refuse the ones they start
+    next, until `resume`; a thread in `shielded` keeps its command (ADR 0052)."""
+    with _lock:
+        _cancelled.update(threads)
+        for pid, owner in list(_running.items()):
+            if owner in threads and owner not in _shielded:
+                kill_tree(pid)
+
+
+def resume(threads: Collection[int]) -> None:
+    with _lock:
+        _cancelled.difference_update(threads)
+
+
+@contextlib.contextmanager
+def shielded() -> Iterator[None]:
+    """The commands this thread runs in the block are not cancelled (creating or removing a
+    tree is never left half done)."""
+    me = threading.get_ident()
+    with _lock:
+        _shielded.add(me)
+    try:
+        yield
+    finally:
+        with _lock:
+            _shielded.discard(me)
+
+
+def _busy(table: Mapping[int, _Proc], own: int | None = None) -> set[int]:
+    """The processes of the commands other threads still wait for (all but `own`): each one,
+    its descendants and the members of its process group and session."""
+    roots = {pid for pid in _running if pid != own and pid in table}
+    groups = _groups(table, roots)
+    found = set(roots) | {pid for pid, proc in table.items() if {proc.group, proc.session} & groups}
+    children: dict[int, list[int]] = {}
+    for pid, proc in table.items():
+        children.setdefault(proc.parent, []).append(pid)
+    pending = list(found)
+    while pending:
+        for pid in children.get(pending.pop(), []):
+            if pid not in found:
+                found.add(pid)
+                pending.append(pid)
+    return found
 
 
 def take_killed() -> dict[int, str]:
@@ -180,6 +237,11 @@ def kill_survivors(
     """
     if not sys.platform.startswith("linux"):
         return {}
+    with _lock:
+        return _kill_survivors(before, left)
+
+
+def _kill_survivors(before: Collection[int], left: Mapping[int, str] | None) -> dict[int, str]:
     found: dict[int, str] = {}
     groups: set[int] = set()
     killed: set[int] = set()  # the groups already sent SIGKILL
@@ -190,18 +252,19 @@ def kill_survivors(
     deadline = time.monotonic() + _REAP_SECONDS
     while True:
         table = _process_table()
-        kept |= _groups(table, before)
+        spared = {*before, *_busy(table)}  # what other threads' commands run is not a survivor
+        kept |= _groups(table, spared)
         tree = _tree(table)
         exited = {p for p, proc in table.items() if proc.parent == me and proc.state == "Z"}
         # Read from the scan's table, before the exited ones are reaped.
-        new_groups = _groups(table, (tree.keys() | exited) - set(before)) - kept - groups
+        new_groups = _groups(table, (tree.keys() | exited) - spared) - kept - groups
         groups = (groups | new_groups) - kept
-        reaped = [pid for pid in exited if pid not in before and _wait(pid)]
+        reaped = [pid for pid in exited if pid not in spared and _wait(pid)]
         members = {pid for pid, proc in table.items() if {proc.group, proc.session} & groups}
         alive = {
             pid: (table[pid].state, table[pid].name)
             for pid in (tree.keys() | members) - {me}
-            if pid not in before and table[pid].state not in _GONE
+            if pid not in spared and table[pid].state not in _GONE
         }
         if not alive and not reaped and not new_groups:
             if not groups - killed:
@@ -366,15 +429,20 @@ def _execute(
     logs.emit("process.started", " ".join(_shown(arg) for arg in args))
     before = set(descendants(exited=True))
     start = time.monotonic()
-    proc = subprocess.Popen(
-        args,
-        cwd=cwd,
-        env=dict(env) if env is not None else None,
-        stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
-        **kwargs,  # type: ignore[call-overload]
-    )
+    me = threading.get_ident()
+    with _lock:  # no survivor scan sees the child before it is registered
+        if me in _cancelled and me not in _shielded:
+            raise Cancelled(f"not started, the replay is stopping: {' '.join(argv)}")
+        proc = subprocess.Popen(
+            args,
+            cwd=cwd,
+            env=dict(env) if env is not None else None,
+            stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
+            **kwargs,  # type: ignore[call-overload]
+        )
+        _running[proc.pid] = me
     stop = threading.Event()
 
     def seen(line: str) -> None:
@@ -392,13 +460,15 @@ def _execute(
         if not timed_out and not idle and not stop.is_set():
             # The command ended by itself: what it started and still runs outlived it, in its
             # group or not. Named before the group is killed, so it is counted (C10, ADR 0031).
-            left = {pid: name for pid, name in descendants().items() if pid not in before}
+            left = _left(before, proc.pid)
     finally:
         # Whatever ended the wait (exit, timeout, Ctrl-C, any error), nothing outlives the call.
         kill_tree(proc.pid)
         # Reap the child and let the readers reach the end of the pipes, best effort.
         with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=_DRAIN_SECONDS)
+        with _lock:
+            _running.pop(proc.pid, None)
         # What left the group dies too, before the caller goes on (C10, ADR 0031).
         kill_survivors(before, left)
     completed = Completed(
@@ -422,6 +492,21 @@ def _execute(
     )
     logs.emit("process.exited", f"{argv[0]}: {exit_text} in {completed.duration_s:.2f} s")
     return completed
+
+
+def _left(before: Collection[int], own: int) -> dict[int, str]:
+    """The running descendants that were not there before the command `own` started, except
+    what other threads' commands run."""
+    if not sys.platform.startswith("linux"):
+        return {}
+    with _lock:
+        table = _process_table()
+        spared = {*before, *_busy(table, own)}
+        return {
+            pid: name
+            for pid, (state, name) in _tree(table).items()
+            if pid not in spared and state not in _GONE
+        }
 
 
 def _wait_limits(

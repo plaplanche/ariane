@@ -3,13 +3,15 @@ then the read-only reviewer on a separate tree."""
 
 from __future__ import annotations
 
+import os
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ariane import checks, git, review, ticket
+from ariane import checks, context, git, process, review, slots, ticket
 from ariane.config import CheckConfig
 from ariane.delivery import FAILURES
 from ariane.restart import command
@@ -22,11 +24,12 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ReplayTree:
-    """One check's tree: where it was, and how long its setup took."""
+    """One check's tree: where it was, how long its setup took, and the slot it ran in."""
 
     check: str
     path: Path
     setup_s: float
+    slot: int | None = None  # None: the run's own slot, checks replayed one by one
 
 
 def replay_each(
@@ -34,29 +37,115 @@ def replay_each(
     tree_for: Callable[[int], Path],
     *,
     create: Callable[[Path], None],
-    setup: Callable[[CheckConfig, Path], None],
+    setup: Callable[[CheckConfig, Path, Mapping[str, str] | None], None],
     verify: Callable[[Path], None],
     remove: Callable[[Path], None],
     env: Mapping[str, str] | None,
     trees: list[ReplayTree],
+    slots: Sequence[int] = (),
 ) -> list[checks.CheckResult]:
-    """C9: each check, in order, in its own fresh tree: create, set up, run that check only,
-    verify, then remove the tree, also on a stop or Ctrl-C. `trees` fills as the trees are made.
+    """C9: each check in its own fresh tree: create, set up, run that check only, verify, then
+    remove the tree, also on a stop or Ctrl-C. `trees` fills as the trees are made.
 
-    `flow` and `verify` both replay with this function."""
-    results = []
-    for k, check in enumerate(all_checks, 1):
-        tree = tree_for(k)
-        create(tree)
+    With several `slots`, as many worker threads replay the checks at the same time, each giving
+    its slot as `ARIANE_SLOT` to its setup and check (ADR 0052); the results keep the declared
+    order. A stop in one worker, or Ctrl-C, stops the others, kills their process trees and
+    removes every tree. `flow` and `verify` both replay with this function."""
+    pending = list(enumerate(all_checks, 1))
+    results: dict[int, checks.CheckResult] = {}
+    serial = threading.Lock()  # creating, verifying, removing a tree: one worker at a time
+    stopping = threading.Event()
+    serial_stop = threading.Lock()
+    cause: list[BaseException] = []  # what stopped the replay first
+    workers: list[threading.Thread] = []
+
+    def stop_all(exc: BaseException) -> None:
+        with serial_stop:
+            if not stopping.is_set():
+                cause.append(exc)
+                stopping.set()
+        process.cancel({t.ident for t in workers if t.ident is not None})
+
+    def one(k: int, check: CheckConfig, env_k: Mapping[str, str] | None, slot: int | None) -> None:
+        with serial, process.shielded():  # a tree is never left half made
+            tree = tree_for(k)
+            create(tree)
         try:
             started = time.monotonic()
-            setup(check, tree)
-            trees.append(ReplayTree(check.name, tree, time.monotonic() - started))
-            results.append(checks.run_check(check, tree, env))
+            setup(check, tree, env_k)
+            trees.append(ReplayTree(check.name, tree, time.monotonic() - started, slot))
+            results[k] = checks.run_check(check, tree, env_k)
             verify(tree)
+        except BaseException as exc:
+            stop_all(exc)  # before this tree is removed: the others stop at once
+            raise
         finally:
-            remove(tree)
-    return results
+            with serial, process.shielded():
+                remove(tree)
+
+    def work(slot: int | None) -> None:
+        env_k = env if slot is None else _with_slot(env, slot)
+        while not stopping.is_set():
+            with serial:
+                if not pending:
+                    return
+                k, check = pending.pop(0)
+            try:
+                one(k, check, env_k, slot)
+            except BaseException as exc:
+                stop_all(exc)
+                if slot is None:  # one by one, in the calling thread
+                    raise
+                return
+
+    if len(slots) <= 1:
+        work(None)
+        return [results[k] for k in sorted(results)]
+    workers += [threading.Thread(target=work, args=(slot,), daemon=True) for slot in slots]
+    try:
+        for thread in workers:
+            thread.start()
+        _join(workers)
+    except KeyboardInterrupt as exc:  # Ctrl-C reaches the calling thread only
+        stop_all(exc)
+        _join(workers, interruptible=False)
+    finally:
+        process.resume({t.ident for t in workers if t.ident is not None})
+        names = [c.name for c in all_checks]
+        trees.sort(key=lambda t: names.index(t.check))
+    if cause:
+        raise cause[0]
+    return [results[k] for k in sorted(results)]
+
+
+def _join(threads: Sequence[threading.Thread], *, interruptible: bool = True) -> None:
+    """Wait for `threads`, in short waits so Ctrl-C reaches the calling thread on Windows too;
+    not `interruptible`, a second Ctrl-C is ignored while the stopped workers remove their trees."""
+    for thread in threads:
+        while thread.is_alive():
+            try:
+                thread.join(0.1)
+            except KeyboardInterrupt:
+                if interruptible:
+                    raise
+
+
+def _with_slot(env: Mapping[str, str] | None, slot: int) -> dict[str, str]:
+    return {**(os.environ if env is None else env), context.SLOT_VARIABLE: str(slot)}
+
+
+def parallel_note(workers: Sequence[int], wanted: int) -> str:
+    """How many checks ran at once and in which slots; fewer than `wanted` when fewer were free."""
+    note = (
+        f"Checks replayed {len(workers)} at a time, in slots {', '.join(map(str, workers))}"
+        f" (`{context.SLOT_VARIABLE}`, ADR 0052)."
+    )
+    if len(workers) < wanted:
+        note += (
+            f" `project.parallel_checks` asked for {wanted}; only {len(workers)} run slot(s)"
+            " were free."
+        )
+    return note
 
 
 def replay(
@@ -75,9 +164,9 @@ def replay(
             raise Stop(f"the replay working tree already exists at {tree}", _leftover(run))
         return tree
 
-    def set_up(check: CheckConfig, tree: Path) -> None:
+    def set_up(check: CheckConfig, tree: Path, env: Mapping[str, str] | None) -> None:
         command = check.setup if check.setup is not None else run.config.setup
-        error = run.setup(tree, command, guard)
+        error = run.setup(tree, command, guard, env)
         if error is not None:
             raise Stop(
                 f"{error.reason} (in the working tree of check {check.name!r})",
@@ -91,20 +180,30 @@ def replay(
             raise Stop("the checks moved the replay working tree's head", "inspect it")
         run.verify("the checks", start_commit, guard, refs_before, expected_head=checked)
 
+    all_checks = run.all_checks()
+    wanted = min(run.config.parallel_checks, len(all_checks))
     try:
-        return replay_each(
-            run.all_checks(),
-            tree_for,
-            create=lambda tree: git.add_detached_worktree(run.worktree, tree, checked),
-            setup=set_up,
-            verify=verify_tree,
-            remove=lambda tree: remove(run, tree),
-            env=run.untrusted_env,
-            trees=trees,
-        )
+        with slots.several(wanted - 1) as more:  # each worker its own slot (ADR 0052)
+            workers = [run.slot, *more]
+            if wanted > 1:
+                note = parallel_note(workers, wanted)
+                run.folder.log("ticket.checks.parallel", "Checks in parallel", note)
+            return replay_each(
+                all_checks,
+                tree_for,
+                create=lambda tree: git.add_detached_worktree(run.worktree, tree, checked),
+                setup=set_up,
+                verify=verify_tree,
+                remove=lambda tree: remove(run, tree),
+                env=run.untrusted_env,
+                trees=trees,
+                slots=workers,
+            )
     finally:
         if trees:
-            lines = "\n".join(f"- {t.check}: `{t.path}` (setup {t.setup_s:.1f} s)" for t in trees)
+            lines = "\n".join(
+                f"- {t.check}: `{t.path}` ({_slot(t)}setup {t.setup_s:.1f} s)" for t in trees
+            )
             run.folder.log(
                 "ticket.checks.worktree",
                 "Checks working trees",
@@ -173,6 +272,10 @@ def review_round(
         return settled
     finally:
         remove(run, tree)
+
+
+def _slot(tree: ReplayTree) -> str:
+    return "" if tree.slot is None else f"slot {tree.slot}, "
 
 
 def _leftover(run: _TicketRun) -> str:

@@ -18,6 +18,7 @@ Entries of a ticket's journal.
 | `ticket.work.committed` | info | The agent's work was committed on the ticket branch. |
 | `ticket.docs.not_updated` | info | Documents mapped to changed files that the ticket left untouched. |
 | `ticket.checks.worktree` | info | The clean working trees used to replay the checks, one per check. |
+| `ticket.checks.parallel` | info | How many checks were replayed at the same time, and in which run slots. |
 | `ticket.checks.replayed` | info | The checks were replayed by Ariane, with the result. |
 | `ticket.review.started` | info | A reviewer session started, with its model and limits. |
 | `ticket.review.stopped` | info | A reviewer session stopped, with its cost and tokens. |
