@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -136,6 +137,8 @@ class _TicketRun:
         self.processes_before: set[int] = set()
         self.registry = worktree.parent.parent / runs.FOLDER  # `runs.folder` of the repository
         self.witnessed: dict[int, runs.Run] = {}  # the other runs this run has seen live
+        # Parallel checks share the guard: each reads git, compares and advances it in turn.
+        self.guard_lock = threading.RLock()
         self.secrets = context.known_secrets(environ, config.tracker.token_env)
         self.folder = ticket.TicketFolder(worktree, issue.number, secrets=self.secrets)
         self.metrics = Metrics(issue.number, "delivered", lambda t: self.folder.write(METRICS, t))
@@ -312,15 +315,17 @@ class _TicketRun:
             survived = self.survivors(after)
             if survived is not None:
                 raise survived
-            now = self.state()
-            if (branch := now.branch) != self.branch:
-                raise Stop(f"{after} left branch {self.branch} (now {branch or 'detached'})", keep)
-            # Every time: the shallow file or a replacement ref can change a commit's ancestry.
-            if not git.is_ancestor(self.worktree, start_commit, now.head):
-                raise Stop(f"{after} rewrote the ticket branch's history", keep)
-            if expected_head is not None and now.head != expected_head:
-                raise Stop(f"{after} moved the ticket branch", keep)
-            stopped = self._unchanged(after, guard, now.snapshot)
+            with self.guard_lock:  # no other check advances the guard past this snapshot
+                now = self.state()
+                if (branch := now.branch) != self.branch:
+                    detached = branch or "detached"
+                    raise Stop(f"{after} left branch {self.branch} (now {detached})", keep)
+                # Every time: the shallow file or a replacement ref can change a commit's ancestry.
+                if not git.is_ancestor(self.worktree, start_commit, now.head):
+                    raise Stop(f"{after} rewrote the ticket branch's history", keep)
+                if expected_head is not None and now.head != expected_head:
+                    raise Stop(f"{after} moved the ticket branch", keep)
+                stopped = self._unchanged(after, guard, now.snapshot)
             if stopped is None:
                 stopped = self._remote_stop(after, refs_before)
             if stopped is not None:
@@ -343,14 +348,26 @@ class _TicketRun:
         self, after: str, guard: dict[str, str], now: dict[str, str] | None = None
     ) -> Stop | None:
         """The stop when git or the reviewer's instruction files differ from `guard`, apart from
-        another run's own branch, its branch keys and its kept branch (C11, ADR 0017, ADR 0047).
-        Git is read first: a run registers before its git writes, so any it shows is in `during`."""
-        now = self.state().snapshot if now is None else now
-        others = runs.during(self.registry, self.guard_since, self.witnessed) - {self.number}
-        changes = runs.foreign_changes(
-            guard, now, others, runs.kept_branches(self.witnessed, others)
-        )
+        another run's own branch, its branch keys and its kept branch (C11, ADR 0017, ADR 0047),
+        and a fast-forward of the base's tracking ref to the remote's base (ADR 0055).
+        Git is read first: a run registers before its git writes, so any it shows is in `during`;
+        under `guard_lock` until `guard` advanced, so no parallel check compares an older read."""
+        with self.guard_lock:
+            now = self.state().snapshot if now is None else now
+            others = runs.during(self.registry, self.guard_since, self.witnessed) - {self.number}
+            changes = runs.foreign_changes(
+                guard, now, others, runs.kept_branches(self.witnessed, others)
+            )
+            tracking = f"refs/remotes/{self.remote}/{self.config.base_branch}"
+            changes = runs.tracking_fast_forward(
+                self.worktree, guard, now, changes, tracking, self._remote_base
+            )
         return runs.guard_stop(after, changes, QUIET)
+
+    def _remote_base(self) -> str:
+        """The commit the remote's base branch points to now ("" when it has none)."""
+        refs = git.remote_refs(self.worktree, self.url)
+        return refs.get(f"refs/heads/{self.config.base_branch}", "")
 
     def _remote_changes(self, refs_before: dict[str, str]) -> list[str]:
         return git.remote_changes(

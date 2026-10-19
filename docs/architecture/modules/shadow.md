@@ -11,7 +11,7 @@
 | `BASE_REF_REMOTE` | constant | `shadow`: only names the base branch's ref in the clone; it is not a remote. |
 | `clone_path(repo_root, number)` | function | Where a shadow ticket lives: `<repo>.ariane/shadow/<n>/`. |
 | `start(number, *, repo_root, config, tracker, runtime, environ)` | function | Runs a shadow ticket and returns its `Outcome`; it holds the run's machine-wide slot (`slots.held`, ADR 0050) from before the clone to its end, and refuses when all 16 are held. |
-| `ShadowRun` | class | The ticket run of [flow](flow.md) with metrics mode `shadow`, no remote check and a local delivery; `restartable = False`, so its stops never name `--restart` (ADR 0047). |
+| `ShadowRun` | class | The ticket run of [flow](flow.md) with metrics mode `shadow`, no remote check (`_remote_base` is empty, so any move of the clone's base ref stops, ADR 0055) and a local delivery; `restartable = False`, so its stops never name `--restart` (ADR 0047). |
 | `judge(repo_root, number, verdict, minutes, note=None)` | function | Records the human's verdict and time in the shadow ticket's `metrics.json` (ADR 0037). |
 
 ## Behaviour and errors
@@ -37,6 +37,7 @@ classDiagram
 class ShadowRun {
   remote str
   _remote_changes(refs_before) list
+  _remote_base() str
   _deliver(checked, settled, reviewed, results) Outcome
 }
 ShadowRun --|> _TicketRun

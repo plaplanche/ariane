@@ -391,6 +391,9 @@ branch's `remote` and `merge` keys, and only for a run Ariane saw running. Anyth
 ticket. A merge on the base branch (a fast-forward) does not stop the ticket; any other remote
 change does: a created, deleted or rewritten branch or tag, a base branch that did not
 fast-forward, or any change to the ticket's branch. The stop line names the refs (ADR 0017).
+Another run's fetch of a base branch that advanced by a merge does not stop the ticket either:
+the base's tracking ref may fast-forward to the commit the remote's base points to, and the
+ticket keeps the base it started from; any other move of that ref stops it (ADR 0055).
 
 Only Ariane pushes, with the tracker token sent as an HTTP authorization header for that one push
 (the machine's credential helpers are off). Without a token, or if that push is refused for

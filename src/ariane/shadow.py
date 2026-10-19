@@ -116,6 +116,9 @@ class ShadowRun(_TicketRun):
     def _remote_changes(self, refs_before: dict[str, str]) -> list[str]:
         return []
 
+    def _remote_base(self) -> str:
+        return ""  # no remote witnesses a move of the clone's base ref: it stops (ADR 0055)
+
     def _deliver(
         self,
         checked: str,

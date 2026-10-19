@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -326,6 +326,30 @@ def foreign_changes(
             continue
         kept.append(line)
     return kept
+
+
+def tracking_fast_forward(
+    cwd: Path,
+    guard: dict[str, str],
+    now: dict[str, str],
+    changes: list[str],
+    ref: str,
+    remote_base: Callable[[], str],
+) -> list[str]:
+    """`changes` without the move of the base's tracking `ref` when it is the only one left and
+    goes from the commit in `guard` to a descendant that the remote's base points to now
+    (`remote_base`, read only then): another run fetched a base that advanced by a merge. `guard`
+    then takes the new commit, so that a later move is measured from it. Any other move of `ref`
+    (backwards, sideways, to a commit that is not the remote's base, a deletion) is kept, so the
+    guard still stops on it (C11, ADR 0055). Git is read only once the rest of it is unchanged."""
+    key = f"ref {ref}"
+    if changes != [f"changed: {key}"]:
+        return changes
+    old, new = guard.get(key, ""), now.get(key, "")
+    if not old or not new or new != remote_base() or not git.is_ancestor(cwd, old, new):
+        return changes
+    guard[key] = new
+    return []
 
 
 def guard_stop(after: str, changes: list[str], quiet: str) -> Stop | None:
