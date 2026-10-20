@@ -69,7 +69,8 @@ until an implementer session takes them (#146).
   `ticket.update.merged` and `ticket.update.pushed` are journal entries.
 - **Review numbering.** The update's review continues the ticket's numbering: `review-<k>.md`, `k`
   one more than the highest present in `work/<n>/` (the ticket's records are read back from its
-  clean working tree). Its diff is the merge commit's from the fetched base, without `work/`.
+  clean working tree, all of them before anything is written: a failed or interrupted read
+  stops the update with nothing written or removed). Its diff is the merge commit's from the fetched base, without `work/`.
 - **Checks selected.** With selective checks (ADR 0056), the checks an update replays are chosen
   from the ticket's diff from the base and from what the merge brings from the base (the ticket's
   head before the merge to the merge commit, both sides of a rename): a check scoped to files only

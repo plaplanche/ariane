@@ -101,6 +101,10 @@ def update(
             run.residuals = review.accepted_residuals(repo_root, heads.base)
             run.base_instructions = instructions
             run.witnessed = witnessed
+            # Read back before anything is written: a failed or interrupted read stops the update
+            # here, and no stop record can rewrite the folder from records half read.
+            run.folder.load()
+            run.metrics.resume(run.folder.read(METRICS))
         except Refused as exc:
             line = f"Did not update ticket #{number}: {exc.reason}. Next: {exc.next_action}."
             return Outcome(EXIT_STOPPED, line)
@@ -241,8 +245,6 @@ class _UpdateRun(_TicketRun):
     def execute_update(self) -> Outcome:
         try:
             self.pushed = True
-            self.folder.load()
-            self.metrics.resume(self.folder.read(METRICS))
             self.processes_before = set(process.descendants(exited=True))
             self.guard_since = runs.now()
             guard = self.state().snapshot

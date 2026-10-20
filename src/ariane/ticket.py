@@ -92,11 +92,17 @@ class TicketFolder:
 
     def load(self) -> None:
         """Take the files already in the folder as Ariane's records: a delivered ticket's,
-        read from its clean working tree at a commit Ariane made (`ariane update`, ADR 0033)."""
+        read from its clean working tree at a commit Ariane made (`ariane update`, ADR 0033).
+        All or nothing: a file that cannot be read leaves the records as they were."""
+        read: dict[str, str] = {}
+        for entry in sorted(self.path.iterdir()):
+            if entry.is_file() and not entry.is_symlink():
+                try:
+                    read[entry.name] = entry.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    raise OSError(f"{entry} is not UTF-8 text") from None
         with self._lock:
-            for entry in sorted(self.path.iterdir()):
-                if entry.is_file() and not entry.is_symlink():
-                    self._records[entry.name] = entry.read_text(encoding="utf-8")
+            self._records.update(read)
 
     def read(self, name: str) -> str:
         """The record `name` as Ariane holds it, "" when there is none."""
