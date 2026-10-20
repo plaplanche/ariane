@@ -58,6 +58,7 @@ flowchart LR
   restart --> slots
   shadow --> slots
   slots --> stop
+  update --> slots
   verify --> slots
 ```
 <!-- end generated -->

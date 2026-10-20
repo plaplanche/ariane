@@ -11,6 +11,7 @@ flowchart LR
   vendor[Model vendor]
   user -->|ariane start --shadow n| ariane
   user -->|ariane start n| ariane
+  user -->|ariane update n| ariane
   user -->|ariane verify branch| ariane
   user -->|"ariane report [--since]"| ariane
   user -->|"ariane judge n accept or reject, --minutes N, [--note]"| ariane
@@ -19,6 +20,7 @@ flowchart LR
   ariane -->|read an issue| github
   ariane -->|report: read pull request states| github
   ariane -->|push one branch| github
+  ariane -->|update: read the pull request's state, push the merged branch| github
   ariane -->|open a pull request| github
   ariane -->|publish statuses| github
   ariane -->|start agent sessions, prompt and trimmed environment| runtime
@@ -29,4 +31,5 @@ flowchart LR
 `ariane verify` works on a local branch: it commits its records on it and never pushes.
 `ariane start --shadow` never pushes and never writes to the tracker: it reads the issue only.
 Only `ariane start` without `--shadow` pushes, and only once, after the checks passed on a clean replay (ADR 0018).
+`ariane update` is a delivered ticket's only other push: the base branch merged into it, the checks replayed and one review `go`, a fast-forward of the pull request's branch (ADR 0033).
 Agents never receive the GitHub token.

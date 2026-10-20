@@ -63,8 +63,39 @@ class Metrics:
         self.outcome = "running"
         self.category = ""  # why it did not end delivered green (`stop.CATEGORIES`, ADR 0058)
         self.restarted_from: dict[str, str | float] | None = None  # the run this one started over
+        self.updates = 0  # the `ariane update` runs that merged the base branch (ADR 0033)
         self.replays: list[dict[str, Any]] = []  # per replayed round: its selection, its time
         self.full_replay: dict[str, Any] | None = None  # None: no full replay was considered
+
+    def resume(self, text: str) -> None:
+        """Continue the measurements of the ticket's earlier runs from their `metrics.json`
+        (`ariane update`, ADR 0033): its steps and sessions are extended, its counts added to;
+        an unreadable file is left out and the measurements start empty."""
+        try:
+            data = json.loads(text)
+            attempts = data.get("attempts", {})
+            found = {
+                "started": str(data["started"]),
+                "steps": list(data.get("steps", [])),
+                "sessions": list(data.get("sessions", [])),
+                "rounds": int(data.get("rounds", 0)),
+                "unchanged_fix_rounds": int(data.get("unchanged_fix_rounds", 0)),
+                "attempts": Attempts(
+                    int(attempts.get("push", 0)), int(attempts.get("pull_request", 0))
+                ),
+                "guard_violations": int(attempts.get("guard_violations", 0)),
+                "surviving": int(data.get("surviving_processes", 0)),
+                "blocking_red": int(data.get("blocking_red_at_delivery", 0)),
+                "first_pass_verdict": str(data.get("first_pass_verdict", NOT_REVIEWED)),
+                "restarted_from": data.get("restarted_from"),
+                "updates": int(data.get("updates", 0)),
+                "replays": list(data.get("replays", [])),
+                "full_replay": data.get("full_replay"),
+            }
+        except (ValueError, KeyError, TypeError, AttributeError):
+            return
+        for name, value in found.items():
+            setattr(self, name, value)
 
     def step(self, name: str) -> None:
         self.steps.append({"name": name, "at": ticket.now().replace(" ", "T")})
@@ -201,6 +232,7 @@ class Metrics:
             "unchanged_fix_rounds": self.unchanged_fix_rounds,
             "first_pass_verdict": self.first_pass_verdict,
             "outcome": self.outcome,
+            "updates": self.updates,
             "replays": self.replays,
         }
         if self.category:

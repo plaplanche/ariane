@@ -89,6 +89,7 @@ flowchart LR
   runs --> process
   runs --> restart
   runs --> stop
+  update --> runs
 ```
 <!-- end generated -->
 

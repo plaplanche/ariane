@@ -145,6 +145,7 @@ flowchart LR
   full_replay -.-> flow
   replay -.-> flow
   shadow --> flow
+  update --> flow
   verify --> flow
 ```
 <!-- end generated -->

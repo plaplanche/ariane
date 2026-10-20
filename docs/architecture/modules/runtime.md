@@ -96,6 +96,7 @@ flowchart LR
   runtime --> config
   runtime --> stop
   shadow --> runtime
+  update --> runtime
   verify --> runtime
 ```
 <!-- end generated -->

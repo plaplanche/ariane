@@ -29,6 +29,7 @@ Declares every log type once (functional journal entries and technical records) 
 - `functional` raises `ValueError` for an undeclared type, `emit` a `KeyError`; `parse_level` and `resolve_level` raise `ValueError` for an unknown level name.
 - The generated [log catalogue](../../logs.md) lists every declared type.
 - Reviewer integrity (C10, ADR 0031) declares, among others: `ticket.review.diff_truncated` (the reviewer's diff was cut; the files to read in the tree), `process.survivors_killed` (processes that outlived a command were killed) and `process.subreaper_failed` (an error: Ariane could not become the subreaper, so `start` and `verify` run nothing).
+- Update (C11, ADR 0033): `ariane update <n>` journals `ticket.update.started` and `ticket.update.merged` (the merge commit) and, on go, `ticket.update.pushed`; an up-to-date branch writes nothing in the repository, so `ticket.update.up_to_date` is a technical record, in the log file `update-<n>.log`.
 - Restart (C23, ADR 0047): `ticket.restarted` is the first journal entry of a run started with `ariane start <n> --restart` that cleared something: the trees removed, the kept branch `ariane-restarted/<n>-...` and its head commit, and the previous run's last action read from that branch's `work/<n>/status.md`. A restart with nothing to clear is a plain start and writes none.
 - Parallel replay (C9, ADR 0052): `ticket.checks.parallel` is the journal entry of a replay with `project.parallel_checks` above 1: how many checks ran at the same time (fewer than asked when fewer run slots were free) and the run slot each worker held.
 - `ticket.warning.label_refused`: the tracker refused the `owner-review` label of a change to a sensitive path (ADR 0057).
@@ -96,6 +97,7 @@ flowchart LR
   logs --> redact
   process --> logs
   ticket --> logs
+  update --> logs
 ```
 <!-- end generated -->
 

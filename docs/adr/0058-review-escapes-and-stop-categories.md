@@ -41,8 +41,11 @@ per ticket. Choosing a reviewer model or a risk tier without those numbers is gu
   still red after the fix rounds), `review` (a review still `no-go` after the rounds, or a fix round
   that changed nothing after one), `merge` (a conflict while updating the branch), `ci` (red CI
   after the CI rounds), `infra` (setup, slot, lock, a leftover tree, the tracker, git, and any
-  other error). `merge` and `ci` are reserved for the `update` command and the CI rounds, which do
-  not exist yet. A delivered green ticket has no `category` key. `Stop` carries its category
+  other error). `ariane update` (ADR 0033) records `merge` for a conflict, `checks`
+  for blocking checks red after the merge, `review` for its `no-go`, `guard` for its remote branch
+  moved or a merge commit with unexpected parents, `infra` for the rest; an update refused before
+  any change (no pull request, a dirty tree, nothing to merge) leaves the ticket as delivered and
+  is not a stop. `ci` is reserved for the CI rounds, which do not exist yet. A delivered green ticket has no `category` key. `Stop` carries its category
   (`infra` by default), so each raiser names its own; `ReviewFailed` and `verify.Refused` carry one
   too. `ariane report` counts the tickets per category, then per implementer model; a record from
   before categories is `not recorded`. A start that ends before its run exists (the issue gate,

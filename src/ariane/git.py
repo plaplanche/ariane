@@ -542,19 +542,21 @@ def push(
     *,
     token: str = "",
     environ: Mapping[str, str] | None = None,
+    expected: str = "",
 ) -> str:
-    """Push exactly commit `sha` to `branch`, whatever the local branch points at now.
-
-    With a token, the push carries it as an authorization header. Without one, or when that push
-    is refused for authentication, Ariane pushes once more without the header (a cloud sandbox's
-    proxy may supply credentials). Returns how the push went, for the journal.
-    """
+    """Push exactly commit `sha` to `branch`, whatever the local branch points at now; with
+    `expected`, as a fast-forward from it, leased (atomic: refused when the remote branch is no
+    longer at `expected`, moved or deleted). A token goes as an authorization header; without one,
+    or refused for authentication, once more without it (a sandbox's proxy may supply
+    credentials). Returns how the push went, for the journal."""
     base = os.environ if environ is None else environ
-    args = ["push", "--quiet", url, f"{sha}:refs/heads/{branch}"]
-    secrets = [token] if token else []
+    if expected and not is_ancestor(cwd, expected, sha):
+        raise GitError(f"git push refused: {sha} is not a fast-forward from {expected}")
+    lease = [f"--force-with-lease=refs/heads/{branch}:{expected}"] if expected else []
+    args = ["push", "--quiet", *lease, url, f"{sha}:refs/heads/{branch}"]
+    basic = base64.b64encode(f"x-access-token:{token}".encode()).decode("ascii")
+    secrets = [token, basic] if token else []
     if token:
-        basic = base64.b64encode(f"x-access-token:{token}".encode()).decode("ascii")
-        secrets.append(basic)
         first = git(args, cwd, env=push_env(base, token), check=False)
         if first.ok:
             return "with the tracker token as an authorization header"
@@ -571,14 +573,10 @@ def push(
 
 def fast_forwarded(cwd: Path, url: str, branch: str, old: str, new: str) -> bool:
     """Whether the remote `branch` moved from `old` to `new` by a fast-forward (fetches `new`)."""
-    if git(["cat-file", "-e", f"{old}^{{commit}}"], cwd, check=False).ok is False:
-        return False
-    # Fetched from the URL, not the remote: the base branch's remote-tracking ref is part of the
-    # guard, and a fetch from a named remote would update it.
-    fetched = git(["fetch", "--quiet", url, f"refs/heads/{branch}"], cwd, check=False)
-    if not fetched.ok:
-        return False
-    return is_ancestor(cwd, old, new)
+    known = git(["cat-file", "-e", f"{old}^{{commit}}"], cwd, check=False).ok
+    # From the URL: a fetch from the remote would update a remote-tracking ref the guard watches.
+    fetched = known and git(["fetch", "--quiet", url, f"refs/heads/{branch}"], cwd, check=False).ok
+    return fetched and is_ancestor(cwd, old, new)
 
 
 def remote_changes(

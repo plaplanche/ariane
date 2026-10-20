@@ -84,5 +84,6 @@ flowchart LR
 - [`stop`](modules/stop.md)
 - [`ticket`](modules/ticket.md)
 - [`tracker`](modules/tracker.md)
+- [`update`](modules/update.md)
 - [`verify`](modules/verify.md)
 <!-- end generated -->

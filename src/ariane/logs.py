@@ -123,6 +123,13 @@ FUNCTIONAL_TYPES = _declare(
         ("ticket.pushed", "info", "The ticket branch was pushed."),
         ("ticket.delivered", "info", "The pull request was opened."),
         (
+            "ticket.update.started",
+            "info",
+            "`ariane update` merged, or tried to merge, the base branch into the ticket branch.",
+        ),
+        ("ticket.update.merged", "info", "The base branch was merged: the merge commit."),
+        ("ticket.update.pushed", "info", "The updated ticket branch was pushed, a fast-forward."),
+        (
             "ticket.checks.full_replay",
             "info",
             "The full replay after delivery: not sampled, started, passed or stopped.",
@@ -170,6 +177,11 @@ TECHNICAL_TYPES = _declare(
             "The issue's label events are read again: not listed yet.",
         ),
         ("guard.verified", "info", "A guard verification passed."),
+        (
+            "ticket.update.up_to_date",
+            "info",
+            "`ariane update` found the base branch merged already: nothing written.",
+        ),
         ("journal.warning", "warning", "A warning was written to the ticket journal."),
         ("run.stopped", "error", "A ticket run stopped."),
     ],
