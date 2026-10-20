@@ -59,6 +59,19 @@ generated = [
   { name = "references", check = ["uv", "run", "python", "scripts/generate_docs.py", "--check"] },
 ]
 
+# Changes the owner reviews too (ADR 0057): the push guard, the run registry, redaction, process
+# handling and the workflows. A change touching one gets the pull request label `owner-review`.
+[review]
+sensitive_paths = [
+  "src/ariane/git.py",
+  "src/ariane/claude_code.py",
+  "src/ariane/delivery.py",
+  "src/ariane/runs.py",
+  "src/ariane/redact.py",
+  "src/ariane/process.py",
+  ".github/**",
+]
+
 # Definition of done (C26): given to the implementer; the reviewer answers each sentence.
 [definition_of_done]
 items = [

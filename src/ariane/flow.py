@@ -130,6 +130,7 @@ class _TicketRun:
         self.url = url
         self.number = issue.number
         self.base_instructions = ""
+        self.residuals = review.residuals_in(worktree)  # the tree is the base commit (ADR 0057)
         self.restarted: Restarted | None = None
         self.pushed = False  # the branch is on the remote: it is never restarted (ADR 0047)
         self.not_updated: list[str] = []
@@ -200,9 +201,8 @@ class _TicketRun:
             return self._stopped(exc)
 
     def state(self) -> git.GitState:
-        """The guard's view of git (configuration, hooks, refs, and the base's tracking ref) and
-        of the instruction files the reviewer can load from outside its tree (ADR 0031), with
-        the ticket tree's branch and head."""
+        """The guard's view of git (configuration, hooks, refs, the base's tracking ref), of the
+        instruction files the reviewer can load outside its tree (ADR 0031), branch and head."""
         reviewer_tree = self.worktree.with_name(f"{self.number}-review")
         read = git.state(
             self.worktree,
@@ -391,9 +391,8 @@ class _TicketRun:
         refs_before: dict[str, str],
         findings: str,
     ) -> bool:
-        """C10: a fresh implementer session fixes the findings in the ticket's working tree.
-
-        Returns False when the round left the head where it was: nothing to replay or review."""
+        """C10: a fresh implementer session fixes the findings in the ticket's working tree;
+        False when the round left the head where it was: nothing to replay or review."""
         self.metrics.fix_round(round_)
         self.folder.set_status("implementing", f"fix round {round_} running", "wait")
         self.folder.log(
@@ -543,6 +542,7 @@ class _TicketRun:
             self.truncated,
             lambda: setattr(self, "pushed", True),
             self.tier,
+            replay.sensitive(self, checked),
         )
         self.metrics.delivered_red(len(checks.blocking_failures(results)))
         self.metrics.finish("needs a human" if delivery.draft else "delivered")

@@ -395,6 +395,19 @@ SCHEMA: dict[str, Any] = {
                 },
             },
         },
+        "review": {
+            "type": "object",
+            "additionalProperties": False,
+            "description": "How the review treats the change (C10, ADR 0057).",
+            "properties": {
+                "sensitive_paths": {
+                    **_GLOBS,
+                    "description": "Path globs the owner reviews too: a change touching one is"
+                    " pointed out to the reviewer, and its pull request gets the label"
+                    " `owner-review` and a line naming the sensitive paths changed.",
+                },
+            },
+        },
         "checks_policy": {
             "type": "object",
             "additionalProperties": False,

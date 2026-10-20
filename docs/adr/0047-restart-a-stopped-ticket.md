@@ -81,11 +81,11 @@ removes.
 - The preparation now reads the remote before it looks for leftovers, so a ticket both pushed and
   left over is refused for the remote first.
 
-- **Residual, accepted by the owner until an operating-system sandbox (slice 7).** The lock proves
-  that the previous Ariane process has ended, not that its agents have: an agent that survives a
-  killed or crashed Ariane process (SIGKILL bypasses the cleanup of C10's process groups) can
-  still write in the ticket's tree while a restart saves and removes it, and those writes are
-  lost. Only a sandbox that ends every process of a run with it closes this.
+- **Accepted residual.** Accepted by the owner until an operating-system sandbox (slice 7): the
+  restart lock proves that the previous Ariane process has ended, not that its agents have: an
+  agent that survives a killed or crashed Ariane process (SIGKILL bypasses the cleanup of C10's
+  process groups) can still write in the ticket's tree while a restart saves and removes it, and
+  those writes are lost. Only a sandbox that ends every process of a run with it closes this.
 
 ## Alternatives considered
 - **Delete the branch.** Loses the previous run's commits; refused by the requirement that an

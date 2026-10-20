@@ -129,11 +129,14 @@ Choices the spec left open, taken as the simplest design that meets it:
 - A process an agent's own git starts in the background (for example an automatic `git gc`) and
   that is still running when the session ends counts as a survivor too.
 
-Residuals: on macOS and Windows no survivor is found (no subreaper; Job objects on Windows and a
-process scan on macOS are later work), so a process started in a new session there still outlives
-its session. Instruction files are guarded, not removed: one that was there before the ticket
-started (for example the owner's own `~/.claude/CLAUDE.md`) is still loaded by the reviewer;
-running the reviewer in bare mode needs an owner decision about logins and stays out of scope.
+Residuals:
+- **Accepted residual.** On macOS and Windows no survivor is found (no subreaper; Job objects on
+  Windows and a process scan on macOS are later work), so a process started in a new session
+  there still outlives its session.
+- **Accepted residual.** Instruction files are guarded, not removed: one that was there before
+  the ticket started (for example the owner's own `~/.claude/CLAUDE.md`) is still loaded by the
+  reviewer; running the reviewer in bare mode needs an owner decision about logins and stays out
+  of scope.
 
 ## Amendment (#188, 2026-10-17)
 
@@ -158,9 +161,9 @@ the process kept running. Decided for C10:
 3. **The deadline still kills.** At 5 seconds every group found and every pid found get
    `SIGKILL` before the scans give up (`process.survivors_remaining`).
 
-Residual: a process that changes its session at every fork (a new `setsid()` in each generation)
-still forms a new group the scans may never see running, and can escape them; only an
-operating-system sandbox (cgroups, slice 7) closes that.
+- **Accepted residual.** A process that changes its session at every fork (a new `setsid()` in
+  each generation) still forms a new group the survivor scans may never see running, and can
+  escape them; only an operating-system sandbox (cgroups, slice 7) closes that.
 
 ## Amendment (#182, 2026-10-18): pi
 

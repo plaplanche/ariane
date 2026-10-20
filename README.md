@@ -91,6 +91,8 @@ sys.exit(subprocess.call(args))
 
 The reviewer is given the ticket's Out of scope section, and a finding about out-of-scope work is never blocking.
 The reviewer also checks the order of side effects: a write before the check that should guard it, or a retry that can write twice, is a blocking finding.
+The review is in proportion (ADR 0057): a case that neither the ticket nor the specification asks for, and that no acceptance criterion covers, is minor unless it loses data, breaks a security property or makes a check pass wrongly. The residuals the owner accepted in an ADR (an item starting with `- **Accepted residual.**` in `docs/adr/`, read at the base commit) are given to the reviewer, and a finding that is one of them is minor, titled "accepted residual (ADR NNNN)".
+With `[review] sensitive_paths` (path globs), a change touching one of those files is pointed out to the reviewer, and its pull request gets the label `owner-review` and a line, above the review, naming the sensitive paths changed; nothing is merged or approved automatically.
 
 The reviewer loads nothing from the tree under review (no hooks, settings or instruction files; ADR 0031): a Claude Code reviewer's `tools` are a subset of `Read`, `Glob`, `Grep`, and it gets the base branch's `CLAUDE.md` in its prompt as data.
 The instruction files it could load from outside that tree (`CLAUDE.md` and `CLAUDE.local.md` in the ancestors of its folders, the user-level `CLAUDE.md`, opencode's, Codex's or pi's global instructions and configuration) are guarded from before the first setup command and compared right after every setup (before its check runs), agent session and check: one written by any of them stops the ticket before the review.

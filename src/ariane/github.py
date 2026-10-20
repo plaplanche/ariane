@@ -189,6 +189,12 @@ class GitHubTracker:
         except (KeyError, TypeError, ValueError) as exc:
             raise TrackerError(f"GitHub API: unexpected pull request: {exc!r}") from None
 
+    def add_labels(self, number: int, labels: list[str]) -> None:
+        # A pull request's labels are its issue's; GitHub creates a label it does not know.
+        self._request_any(
+            "POST", f"/repos/{self._repository}/issues/{number}/labels", {"labels": labels}
+        )
+
     def file_url(self, branch: str, path: str) -> str:
         return f"{self._web_url}/{self._repository}/blob/{branch}/{path}"
 

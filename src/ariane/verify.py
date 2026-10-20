@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from ariane import cache, checks, context, git, process, review, slots, ticket
-from ariane.config import CheckConfig, Config
+from ariane.config import CheckConfig, Config, matching_paths
 from ariane.flow import (
     EXIT_INTERRUPTED,
     EXIT_OK,
@@ -327,7 +327,9 @@ class _Verification:
             raise Refused(f"the reviewer working tree already exists at {tree}", "remove it")
         git.add_reviewer_worktree(self.repo_root, tree, self.head)
         try:
-            return self._review_in(tree, records, folder, all_checks, results, changed, changes)
+            return self._review_in(
+                tree, records, folder, all_checks, results, changed, changes, files
+            )
         finally:
             git.remove_worktree(self.repo_root, tree)
 
@@ -340,6 +342,7 @@ class _Verification:
         results: list[checks.CheckResult],
         changed: list[str],
         changes: git.Changes,
+        files: Sequence[str],
     ) -> Outcome:
         tree_before = git.status(tree)
         sessions = ReviewSession(
@@ -355,6 +358,8 @@ class _Verification:
             small_env=self.small_reviewer_env,
             changed_lines=changes.changed_lines,
             tier=self.tier,
+            residuals=review.accepted_residuals(self.repo_root, self.base),
+            sensitive=matching_paths(self.config.sensitive_paths, files),  # both sides of a rename
         )
         try:
             answer = sessions.run(

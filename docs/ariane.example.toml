@@ -132,6 +132,12 @@ command = ["uv", "run", "pytest", "-q"]
 # module_roots = ["src/*/"]
 # critical_paths = ["src/auth/**"]
 
+# Optional: the paths the owner reviews too (ADR 0057). A change touching one is pointed out to
+# the reviewer, and its pull request gets the label `owner-review` and a line, above the review,
+# naming the sensitive paths changed. Nothing is merged or approved automatically.
+# [review]
+# sensitive_paths = ["src/auth/**", ".github/**"]
+
 # Optional: what a change must satisfy to be done. Each item is a declared check ({ check = "name" })
 # or a sentence ({ text = "..." }). The implementer receives every item. Without this table,
 # the default list applies: blocking checks pass, tests cover the change, documentation updated.

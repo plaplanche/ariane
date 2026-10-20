@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ariane import cache, checks, context, git, process, review, slots, ticket
-from ariane.config import CheckConfig
+from ariane.config import CheckConfig, matching_paths
 from ariane.delivery import FAILURES
 from ariane.restart import command
 from ariane.review_session import ReviewFailed, ReviewSession
@@ -385,6 +385,13 @@ def round_changes(run: _TicketRun, start_commit: str, checked: str) -> git.Chang
     return run.changes[checked]
 
 
+def sensitive(run: _TicketRun, checked: str) -> list[str]:
+    """The paths of replayed commit `checked` matching `[review] sensitive_paths`, for its review
+    and its delivery alike: decoded, and a rename or copy on both sides (ADR 0057)."""
+    paths = checks.changed_files(run.changes[checked].name_status)
+    return matching_paths(run.config.sensitive_paths, paths)
+
+
 def review_round(
     run: _TicketRun,
     checked: str,
@@ -423,6 +430,8 @@ def review_round(
             small_env=run.agent_envs["reviewer.small"],
             changed_lines=changes.changed_lines,
             tier=run.tier,
+            residuals=run.residuals,
+            sensitive=sensitive(run, checked),
         )
         try:
             answer = sessions.run(
