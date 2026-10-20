@@ -136,3 +136,51 @@ def shadow_lines(shadows: list[dict[str, Any]], recent: list[dict[str, Any]]) ->
     )
     lines.append(f"shadow pass: {'yes' if ok else 'no'}")
     return lines
+
+
+def _rounds(data: dict[str, Any]) -> list[dict[str, Any]]:
+    found = data.get("replays")
+    return [r for r in found if isinstance(r, dict)] if isinstance(found, list) else []
+
+
+def _seconds(value: Any) -> float:
+    ok = isinstance(value, int | float) and not isinstance(value, bool)
+    return float(value) if ok else 0.0
+
+
+def full_replay(data: dict[str, Any]) -> dict[str, Any] | None:
+    """The `full_replay` object of a ticket's metrics when it ran to its end, or None."""
+    found = data.get("full_replay")
+    if not isinstance(found, dict) or found.get("ran") is not True or found.get("stopped"):
+        return None
+    return found
+
+
+def selective_lines(rows: list[dict[str, Any]], max_escape_rate: float) -> list[str]:
+    """The "Selective checks" lines (#186): the tickets with a round that skipped a check or ran
+    one partly, their replay time, the full replays' time against the selective rounds they
+    replayed, the escapes and their rate per full replay, and a warning above
+    `max_escape_rate`. No such ticket gives no line."""
+    chosen = [d for d in rows if any(r.get("skipped") or r.get("partial") for r in _rounds(d))]
+    if not chosen:
+        return []
+    with_selection = sum(_seconds(r.get("duration_s")) for d in chosen for r in _rounds(d))
+    sampled = [(d, f) for d in chosen if (f := full_replay(d)) is not None]
+    selective = sum(_seconds(_rounds(d)[-1].get("duration_s")) for d, _ in sampled)
+    full = sum(_seconds(f.get("duration_s")) for _, f in sampled)
+    escapes = sum(len(f.get("escapes") or []) for _, f in sampled)
+    rate = escapes / len(sampled) if sampled else 0.0
+    shown = f"{escapes}/{len(sampled)} ({100 * rate:.1f}%)" if sampled else "not measured"
+    lines = [
+        f"Selective checks: {len(chosen)} tickets with selection, replay time"
+        f" {with_selection:.1f} s; on the {len(sampled)} sampled tickets {selective:.1f} s"
+        f" selective versus {full:.1f} s full ({full - selective:.1f} s saved);"
+        f" {len(sampled)} full replays, {escapes} escapes, escape rate {shown}."
+    ]
+    if sampled and rate > max_escape_rate:
+        lines.append(
+            f"Warning: the escape rate {100 * rate:.1f}% is above max_escape_rate"
+            f" {100 * max_escape_rate:g}%: skipped or partial checks let failures through;"
+            " consider turning selection off (`paths`, `[checks_policy]`)."
+        )
+    return lines

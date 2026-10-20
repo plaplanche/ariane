@@ -98,6 +98,7 @@ flowchart LR
   cli --> ticket
   delivery --> ticket
   flow --> ticket
+  full_replay --> ticket
   metrics --> ticket
   replay --> ticket
   report --> ticket

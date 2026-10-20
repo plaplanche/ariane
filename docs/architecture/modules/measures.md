@@ -19,6 +19,8 @@ The success measure of `ariane report` (C19, ADR 0038): human time, gates bypass
 | `judgement(data)` | function | The `judgement` object of a shadow ticket's metrics, or None. |
 | `attempts(data)` | function | The `(push, pull_request, guard_violations)` counts of a ticket's metrics. |
 | `shadow_lines(shadows, recent)` | function | The shadow lines of the report: totals over `shadows`, then the pass line over `recent`. |
+| `full_replay(data)` | function | The `full_replay` object of a ticket's metrics when it ran to its end (not stopped), or None. |
+| `selective_lines(rows, max_escape_rate)` | function | The "Selective checks" line of the report, and its warning above `max_escape_rate`. |
 
 ## Behaviour and errors
 
@@ -27,6 +29,7 @@ The success measure of `ariane report` (C19, ADR 0038): human time, gates bypass
 - `restart_seconds` adds each stop (an `outcome: ` step that is not `delivered`, `needs a human` or `running`) to the next `verify` start, and, for a run that started over with `ariane start --restart`, `restarted_from.stopped_at` to the run's `started`, plus `restarted_from.earlier_s` for the earlier restarts of a chain (ADR 0047; never negative, an unreadable time adds nothing).
 - `bypassed`: a hand takeover per `verify` record of the branch, blocking checks red at delivery, and a merge while the last review on the branch is no-go (the last `verify` go cancels it).
 - `shadow_lines`: tickets, accept rate, not yet judged, agent push and pull-request attempts, guard violations, then `shadow pass: yes|no` over the last `SHADOW_WINDOW` tickets of `recent` (all the shadow tickets, whatever `--since`): ten required, no attempt, no violation, at least `SHADOW_ACCEPTED` accepted. No shadow ticket gives no line.
+- `selective_lines` (#186): over the tickets with a replayed round (`replays`) that skipped a check or ran one partly: their count and total replay time; on the sampled tickets (a full replay that ran, not stopped), their last round's replay time against the full replays' time and the difference (saved); the full replays, the escapes (failing checks, summed) and the escape rate, escapes / full replays ("not measured" without a full replay). Above `max_escape_rate` a second line warns: "Warning: the escape rate <p>% is above max_escape_rate <q>%: ... consider turning selection off". Nothing is turned off: the owner decides. No such ticket gives no line; a field of the wrong type counts as nothing.
 
 ## Workflow
 
@@ -38,6 +41,7 @@ A[delivered ticket metrics] --> B[waiting: pull request state from the tracker]
   C --> D
   A --> E[bypassed: takeovers, red checks, merge on no-go]
   S[shadow tickets] --> F[shadow_lines: totals and shadow pass]
+  R[tickets with selection] --> G[selective_lines: time saved, escapes, rate, warning]
 ```
 
 ## Code view (C4 level 4)
@@ -62,6 +66,8 @@ class measures {
   judgement(data)
   attempts(data)
   shadow_lines(shadows, recent)
+  full_replay(data)
+  selective_lines(rows, max_escape_rate)
 }
 measures ..> Human
 measures ..> Tracker
@@ -81,4 +87,4 @@ flowchart LR
 
 ## Serves
 
-C19; ADR 0030, ADR 0038, ADR 0047. See [the component view](../3-components.md).
+C9, C19; ADR 0030, ADR 0038, ADR 0047, ADR 0056. See [the component view](../3-components.md).

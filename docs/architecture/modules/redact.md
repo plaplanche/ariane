@@ -47,6 +47,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 flowchart LR
   delivery --> redact
   flow --> redact
+  full_replay --> redact
   git --> redact
   logs --> redact
   ticket --> redact

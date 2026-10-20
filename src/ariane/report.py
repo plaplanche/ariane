@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ariane import measures, metrics, shadow, ticket
+from ariane.risk import DEFAULT_MAX_ESCAPE_RATE
 from ariane.tracker import Tracker
 
 PARTLY = "partly not reported"
@@ -20,9 +21,15 @@ class Report:
     exit_code: int
 
 
-def build(root: Path, since: str | None, tracker: Tracker | None = None) -> Report:
+def build(
+    root: Path,
+    since: str | None,
+    tracker: Tracker | None = None,
+    max_escape_rate: float = DEFAULT_MAX_ESCAPE_RATE,
+) -> Report:
     """Read every metrics file under `root/work` and the shadow clones, keep tickets started on
-    or after `since`. Without a `tracker` the waiting time reads "not available"."""
+    or after `since`. Without a `tracker` the waiting time reads "not available"; the selective
+    checks warn above `max_escape_rate`."""
     work = root / ticket.WORK_DIR
     shadows = shadow.clone_path(root, 0).parent
     paths = (
@@ -69,6 +76,7 @@ def build(root: Path, since: str | None, tracker: Tracker | None = None) -> Repo
     seconds = sum(_duration(d) for d in rows)
     rounds = sum(d["rounds"] for d in rows)
     lines.extend(_measure_lines(rows, recent, delivered, people, flagged))
+    lines.extend(measures.selective_lines(rows, max_escape_rate))
     reviewed = [d for d in rows if d["first_pass_verdict"] != metrics.NOT_REVIEWED]
     go = sum(1 for d in reviewed if d["first_pass_verdict"] == "go")
     rate = f"{go}/{len(reviewed)}" + (f" ({100 * go // len(reviewed)}%)" if reviewed else "")

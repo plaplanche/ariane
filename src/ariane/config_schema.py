@@ -106,6 +106,7 @@ _ARGV: dict[str, Any] = {"type": "array", "minItems": 1, "items": _STR}
 _POSITIVE: dict[str, Any] = {"type": "number", "exclusiveMinimum": 0}
 _GLOBS: dict[str, Any] = {"type": "array", "minItems": 1, "items": _STR}
 _COUNT: dict[str, Any] = {"type": "integer", "exclusiveMinimum": 0}
+_FRACTION: dict[str, Any] = {"type": "number", "minimum": 0, "maximum": 1}
 
 _AGENT: dict[str, Any] = {
     "type": "object",
@@ -432,6 +433,19 @@ SCHEMA: dict[str, Any] = {
                 "critical_paths": {
                     **_GLOBS,
                     "description": "Path globs whose change makes the round high.",
+                },
+                "full_replay_sample": {
+                    **_FRACTION,
+                    "default": 0.2,
+                    "description": "The fraction of tickets whose last round skipped a check or"
+                    " ran one with ARIANE_FULL_SUITE=0 that get a full replay after delivery,"
+                    " drawn from the ticket number and the commit; 0 disables it.",
+                },
+                "max_escape_rate": {
+                    **_FRACTION,
+                    "default": 0.02,
+                    "description": "`ariane report` warns when the escapes per full replay are"
+                    " above this rate.",
                 },
             },
         },

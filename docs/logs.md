@@ -35,10 +35,13 @@ Entries of a ticket's journal.
 | `ticket.shadow.done` | info | A shadow ticket ended: nothing pushed, no pull request. |
 | `ticket.pushed` | info | The ticket branch was pushed. |
 | `ticket.delivered` | info | The pull request was opened. |
+| `ticket.checks.full_replay` | info | The full replay after delivery: not sampled, started, passed or stopped. |
+| `ticket.checks.escape` | warning | A check failed only in the full replay: it passed, skipped or partial, in the round. |
 | `ticket.warning.ignored_files` | warning | The agent created files that git ignores. |
 | `ticket.warning.replay_not_removed` | warning | The replay working tree stayed. |
 | `ticket.warning.statuses_refused` | warning | The tracker refused commit statuses. |
 | `ticket.warning.label_refused` | warning | The tracker refused the owner-review label. |
+| `ticket.warning.comment_refused` | warning | The tracker refused a pull request comment. |
 | `ticket.stopped` | error | The ticket stopped; the reason and the next action follow. |
 
 ## Technical logs

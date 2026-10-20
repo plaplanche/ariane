@@ -178,6 +178,7 @@ flowchart LR
   config --> risk
   context --> config
   flow --> config
+  full_replay --> config
   replay --> config
   review --> config
   review_session --> config

@@ -539,6 +539,20 @@
             "minLength": 1
           },
           "description": "Path globs whose change makes the round high."
+        },
+        "full_replay_sample": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.2,
+          "description": "The fraction of tickets whose last round skipped a check or ran one with ARIANE_FULL_SUITE=0 that get a full replay after delivery, drawn from the ticket number and the commit; 0 disables it."
+        },
+        "max_escape_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.02,
+          "description": "`ariane report` warns when the escapes per full replay are above this rate."
         }
       }
     },

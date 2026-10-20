@@ -29,7 +29,7 @@ The description of `ariane.toml` as a JSON Schema, and the runtimes each role ma
 - `checks[].setup` is an optional argument list.
 - `checks[].paths` is an optional non-empty array of non-empty strings and `checks[].always` the constant `true`; a `not` clause refuses an item with both (ADR 0056). `project.check_all_paths` is an optional non-empty array of non-empty strings.
 - `review` is an optional object whose only key, `sensitive_paths`, is a non-empty array of non-empty strings (ADR 0057).
-- `checks[].full_when` is `"high"` (the default) or `"always"`. `checks_policy` is an optional object with no other key than `max_changed_lines` and `max_modules` (integers above 0, defaults 300 and 3) and `module_roots` and `critical_paths` (non-empty arrays of non-empty strings) (ADR 0056).
+- `checks[].full_when` is `"high"` (the default) or `"always"`. `checks_policy` is an optional object with no other key than `max_changed_lines` and `max_modules` (integers above 0, defaults 300 and 3) `module_roots` and `critical_paths` (non-empty arrays of non-empty strings) (ADR 0056), and `full_replay_sample` and `max_escape_rate` (numbers from 0 to 1, defaults 0.2 and 0.02; #186).
 - `project.env` is an optional list of non-empty strings, default `[]` (ADR 0024).
 - `project.parallel_checks` is an optional integer above 0, default 1 (ADR 0052).
 - `project.cache` is an optional array of objects (`[[project.cache]]`, ADR 0054): required `path`, `key` (an argument list of files) and `setup` (an argument list), optional `keep` (integer above 0, default 5), no other key; that paths stay inside the tree and do not overlap is checked by `config.parse` only.

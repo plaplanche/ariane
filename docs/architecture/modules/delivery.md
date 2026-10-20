@@ -9,7 +9,7 @@ Delivers a ticket: one push, the pull request (a draft that can carry failing bl
 | `OWNER_REVIEW_LABEL` | constant | `owner-review`, the label of a pull request whose change touches `[review] sensitive_paths` (ADR 0057). |
 | `FAILURES` | constant | The exception types a delivery step can raise (git, tracker, OS, missing command). |
 | `PullRequestRefused` | exception | The tracker refused the pull request; carries `reason` and `next_action`. |
-| `Delivered` | dataclass | The result: `pull_url` and `draft`. |
+| `Delivered` | dataclass | The result: `pull_url`, `draft`, `pushed` (the commit pushed, which carries the statuses) and `pull_number`, for the full replay after delivery ([full_replay](full_replay.md)). |
 | `Delivery` | dataclass | Performs the delivery of one ticket; `deliver(results)` pushes, opens the pull request and publishes the statuses. |
 
 ## Behaviour and errors
@@ -98,6 +98,7 @@ flowchart LR
   delivery --> ticket
   delivery --> tracker
   flow --> delivery
+  full_replay --> delivery
   replay --> delivery
 ```
 <!-- end generated -->

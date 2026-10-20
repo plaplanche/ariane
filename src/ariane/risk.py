@@ -13,7 +13,16 @@ FULL_WHEN = (HIGH, "always")  # `checks[].full_when`: when the check gets ARIANE
 NO_POLICY = "no `[checks_policy]`"
 DEFAULT_MAX_CHANGED_LINES = 300
 DEFAULT_MAX_MODULES = 3
-_KEYS = ("max_changed_lines", "max_modules", "module_roots", "critical_paths")
+DEFAULT_FULL_REPLAY_SAMPLE = 0.2
+DEFAULT_MAX_ESCAPE_RATE = 0.02
+_KEYS = (
+    "max_changed_lines",
+    "max_modules",
+    "module_roots",
+    "critical_paths",
+    "full_replay_sample",
+    "max_escape_rate",
+)
 
 
 class PolicyError(ValueError):
@@ -23,12 +32,16 @@ class PolicyError(ValueError):
 @dataclass(frozen=True)
 class ChecksPolicy:
     """`[checks_policy]`: what makes a round `high`. `module_roots` are globs of the folders
-    whose children count as modules; empty, the repository root is the only one."""
+    whose children count as modules; empty, the repository root is the only one.
+    `full_replay_sample` is the fraction of selective tickets fully replayed after delivery, and
+    `max_escape_rate` the escape rate above which `ariane report` warns (#186)."""
 
     max_changed_lines: int = DEFAULT_MAX_CHANGED_LINES
     max_modules: int = DEFAULT_MAX_MODULES
     module_roots: tuple[str, ...] = ()
     critical_paths: tuple[str, ...] = ()
+    full_replay_sample: float = DEFAULT_FULL_REPLAY_SAMPLE
+    max_escape_rate: float = DEFAULT_MAX_ESCAPE_RATE
 
 
 @dataclass(frozen=True)
@@ -55,6 +68,7 @@ class Tier:
 
 
 UNMEASURED = Tier(HIGH, (NO_POLICY,), measured=False)
+FULL_REPLAY = Tier(HIGH, ("full replay after delivery",))  # every check gets the full suite
 
 
 def parse(raw: Any) -> ChecksPolicy | None:
@@ -71,7 +85,16 @@ def parse(raw: Any) -> ChecksPolicy | None:
         _count(raw, "max_modules", DEFAULT_MAX_MODULES),
         _globs(raw, "module_roots"),
         _globs(raw, "critical_paths"),
+        _fraction(raw, "full_replay_sample", DEFAULT_FULL_REPLAY_SAMPLE),
+        _fraction(raw, "max_escape_rate", DEFAULT_MAX_ESCAPE_RATE),
     )
+
+
+def _fraction(raw: dict[str, Any], key: str, default: float) -> float:
+    value = raw.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int | float) or not 0 <= value <= 1:
+        raise PolicyError(f"checks_policy.{key}: expected a number between 0 and 1")
+    return float(value)
 
 
 def _count(raw: dict[str, Any], key: str, default: int) -> int:

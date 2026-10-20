@@ -8,7 +8,7 @@ The measurements of one ticket, `work/<n>/metrics.json` (C19, ADR 0034): UTF-8, 
 | --- | --- | --- |
 | `METRICS` | constant | `metrics.json`, the file name. |
 | `NOT_REVIEWED` | constant | `not reviewed`, the first-pass verdict before any review. |
-| `Metrics` | class | `Metrics(number, mode, write)`: ticket number, mode (`delivered`, `verify`, `shadow`), start time, steps, sessions, fix rounds, attempts, first-pass verdict and outcome; `render()` gives the file's text; `keep_stopped(path)` writes it, outcome `stopped`, to a path outside the repository without the usual writer (a stop before the ticket folder exists, or a verify that commits nothing; ADR 0031). |
+| `Metrics` | class | `Metrics(number, mode, write)`: ticket number, mode (`delivered`, `verify`, `shadow`), start time, steps, sessions, fix rounds, attempts, first-pass verdict and outcome; `render()` gives the file's text; `replayed(round_, selected, skipped, partial, duration_s)` records a round's replay; `full_replayed(ran, duration_s=0, escapes=None, stopped="")` the full replay after delivery; `keep_stopped(path)` writes it, outcome `stopped`, to a path outside the repository without the usual writer (a stop before the ticket folder exists, or a verify that commits nothing; ADR 0031). |
 
 ## Behaviour and errors
 
@@ -17,6 +17,8 @@ The measurements of one ticket, `work/<n>/metrics.json` (C19, ADR 0034): UTF-8, 
 - `run_session(runtime, session, round_=0, changed_lines=None)` runs a session on its runtime and records role, round, runtime, model, stop reason, cost, tokens (input, output, cache read, cache write; null when not reported), `duration_s` and, when the runtime says so, `billing` (`plan`: covered by a subscription, cost recorded as 0; `api`), and for a reviewer session `changed_lines`, the size of the diff it reviewed (ADR 0046). Attempts (C19, ADR 0036): it sums the sessions' `SessionResult.attempts` into `"attempts": {"push", "pull_request", "guard_violations"}`; `guard_violation()` counts a post-session check that stopped the ticket.
 - `surviving_processes(count)`: the processes that outlived a setup, an agent session or a check and were killed, summed as `surviving_processes` (C10, ADR 0031); written with the next step.
 - `restarted_from` (ADR 0047): set by a run that started over with `ariane start --restart`, written as `"restarted_from": {"branch": <kept branch>, "stopped_at": <the previous run's last step>, "earlier_s": <seconds>}` (`stopped_at` absent when that run's `metrics.json` was unreadable, `earlier_s`, the restart time of the earlier runs of a chain, absent when zero); absent otherwise.
+- `replays` (#186): one object per replayed round, `{"round", "selected", "skipped", "partial", "duration_s"}`: the checks run, skipped by `paths` and run with `ARIANE_FULL_SUITE=0`, and the replay's wall time.
+- `full_replay` (#186): absent when no full replay was considered (no skipped or partial check in the last round, or a blocking failure); else `{"ran", "duration_s", "escapes"}` (the checks that failed only in the full replay), with `"stopped": <reason>` when it stopped; `full_replayed` also adds the step `full replay ran` or `full replay not sampled`.
 - `delivered_red(count)`: the blocking checks red at delivery, written as `blocking_red_at_delivery` (C19, ADR 0038).
 - `unchanged_fix_round()` counts a fix round that changed nothing into `unchanged_fix_rounds` (C10). `reviewed(go)`, `fix_round(round_)`, `finish(outcome)`: the first review's verdict (`go`, `no-go`, or `not reviewed`), the number of fix rounds, the outcome (`running`, `delivered`, `stopped`, `needs a human`).
 
@@ -52,6 +54,8 @@ class Metrics {
   fix_round(round_)
   guard_violation()
   delivered_red(count)
+  replayed(round_, selected, skipped, partial, duration_s)
+  full_replayed(ran, duration_s, escapes, stopped)
   finish(outcome)
   render() str
 }

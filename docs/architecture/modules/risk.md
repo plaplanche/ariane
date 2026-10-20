@@ -14,15 +14,18 @@ The risk tier of a round (C9, ADR 0056): the optional `[checks_policy]` table, w
 | `NO_POLICY` | constant | The reason of the tier without `[checks_policy]`: "no `[checks_policy]`". |
 | `DEFAULT_MAX_CHANGED_LINES` | constant | `300`, `max_changed_lines` when not given. |
 | `DEFAULT_MAX_MODULES` | constant | `3`, `max_modules` when not given. |
+| `DEFAULT_FULL_REPLAY_SAMPLE` | constant | `0.2`, `full_replay_sample` when not given (and without the table). |
+| `DEFAULT_MAX_ESCAPE_RATE` | constant | `0.02`, `max_escape_rate` when not given (and without the table). |
 | `PolicyError` | exception | The `[checks_policy]` table is invalid; `config` reports it as a `ConfigError` naming the key. |
-| `ChecksPolicy` | dataclass | `[checks_policy]`: `max_changed_lines`, `max_modules`, `module_roots` (globs of the folders whose children count as modules; empty: the repository root), `critical_paths` (globs). |
+| `ChecksPolicy` | dataclass | `[checks_policy]`: `max_changed_lines`, `max_modules`, `module_roots` (globs of the folders whose children count as modules; empty: the repository root), `critical_paths` (globs), `full_replay_sample` (the fraction of selective tickets fully replayed after delivery) and `max_escape_rate` (above which `ariane report` warns). |
 | `Tier` | dataclass | A round's `level` (`low` or `high`), its `reasons`, and `measured` (False without `[checks_policy]`); `high`, `text()` ("high: 412 changed lines (more than 300); touches `critical_paths` `src/auth/**`") and `variables(full_when)`, the two variables of a check. |
 | `UNMEASURED` | constant | The tier without `[checks_policy]`: `high`, reason `NO_POLICY`, not `measured`. |
+| `FULL_REPLAY` | constant | The tier of the full replay after delivery: `high`, reason "full replay after delivery", so every check gets `ARIANE_FULL_SUITE=1`. |
 | `parse(raw)` | function | The `[checks_policy]` table as a `ChecksPolicy`, or `None` when it is absent. |
 
 ## Behaviour and errors
 
-- `parse` refuses a value that is not a table (`checks_policy`), an unknown key (`checks_policy.<key>: unknown key`), a `max_changed_lines` or `max_modules` that is not a positive integer (0, a negative number, a fraction, a boolean, a string), and a `module_roots` or `critical_paths` that is not a non-empty list of non-empty strings, each naming `checks_policy.<key>`.
+- `parse` refuses a value that is not a table (`checks_policy`), an unknown key (`checks_policy.<key>: unknown key`), a `max_changed_lines` or `max_modules` that is not a positive integer (0, a negative number, a fraction, a boolean, a string), and a `module_roots` or `critical_paths` that is not a non-empty list of non-empty strings, each naming `checks_policy.<key>`; a `full_replay_sample` or `max_escape_rate` that is not a number from 0 to 1 (a boolean, a string, 1.5) is refused with "expected a number between 0 and 1".
 - `Tier.variables(full_when)` gives `ARIANE_RISK_TIER` the tier and `ARIANE_FULL_SUITE` `1` when the tier is `high` or `full_when` is `"always"`, else `0`. Without `[checks_policy]` the tier is always `high`, so every check gets `ARIANE_FULL_SUITE=1`: no behaviour change.
 - A tier that is not `measured` does not change the review's sizing (ADR 0046); a measured `high` keeps the full review (`review_session.ReviewSession.small`).
 
@@ -48,6 +51,8 @@ class ChecksPolicy {
   max_modules int
   module_roots tuple
   critical_paths tuple
+  full_replay_sample float
+  max_escape_rate float
 }
 class Tier {
   level str
@@ -72,10 +77,13 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 ```mermaid
 flowchart LR
   checks --> risk
+  cli --> risk
   config --> risk
   delivery --> risk
   flow --> risk
+  full_replay --> risk
   replay --> risk
+  report --> risk
   review --> risk
   review_session --> risk
   verify --> risk
