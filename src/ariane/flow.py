@@ -13,7 +13,7 @@ from ariane import checks, context, git, logs, process, replay, review, review_s
 from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.full_replay import after_delivery
-from ariane.metrics import METRICS, Metrics
+from ariane.metrics import METRICS, Metrics, keep_refused, stopped_metrics_path
 from ariane.redact import redact
 from ariane.restart import Restarted, kept_name, lock_path, locked, prepare, with_restart
 from ariane.risk import Tier
@@ -46,11 +46,6 @@ def worktree_path(repo_root: Path, number: int) -> Path:
     return repo_root.parent / f"{repo_root.name}.ariane" / "worktrees" / str(number)
 
 
-def stopped_metrics_path(worktree: Path, number: int) -> Path:
-    """`<repo>.ariane/stopped/<n>/metrics.json`: a stop before the ticket folder exists."""
-    return worktree.parent.parent / "stopped" / str(number) / METRICS
-
-
 def branch_name(number: int) -> str:
     return f"ariane/{number}"
 
@@ -68,6 +63,7 @@ def start(
     try:
         issue = tracker.read_issue(number)
     except TrackerError as exc:
+        keep_refused(worktree_path(repo_root, number), number, exc)  # the gate's refusal: `spec`
         return Outcome(exc.exit_code, f"Did not start #{number}: {exc}. Next: {exc.next_action}.")
     except KeyboardInterrupt:
         return _interrupted_before_start(number)
@@ -88,6 +84,7 @@ def start(
             run.restarted = restarted
             run.witnessed = witnessed
         except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
+            keep_refused(worktree, number, exc)  # lock, slot, registry or preparation: `infra`
             reason, next_action = describe(exc)
             left = worktree.exists() or git.local_branch_exists(repo_root, branch)
             if left and not isinstance(exc, Stop):  # a preparation interrupted after creating them

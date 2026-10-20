@@ -25,9 +25,16 @@ class _Group:
     reviews: int = 0
     go: int = 0
     findings: int = 0
-    tickets: int = 0  # `go` tickets whose pull request the tracker described
-    escapes: int = 0
+    outcomes: dict[int, bool] = field(default_factory=dict)  # per `go` ticket told: escaped
     seen: set[int] = field(default_factory=set)  # tickets with a review in this group
+
+    @property
+    def tickets(self) -> int:  # distinct tickets: several records of one ticket count once
+        return len(self.outcomes)
+
+    @property
+    def escapes(self) -> int:
+        return sum(self.outcomes.values())
 
     def rate(self) -> str:
         if self.tickets < MIN_TICKETS:
@@ -55,16 +62,19 @@ def _ci_red(data: dict[str, Any]) -> bool | None:
 
 
 def escaped(data: dict[str, Any], tracker: Tracker) -> bool | None:
-    """Whether the `go` that delivered `data` was wrong: a red CI on the reviewed head, a human
-    "changes requested" review, or the pull request closed without merge. None when there is no
-    pull request to tell; `TrackerError` when the tracker fails."""
+    """Whether the `go` that delivered `data` was wrong: a red CI on the reviewed head, or after
+    the `go`, a human "changes requested" review or the pull request closed without merge. None
+    when there is no pull request to tell; `TrackerError` when the tracker fails. The pull
+    request is the branch's latest (one per ticket branch, ADR 0058)."""
     branch = data.get("branch") or f"ariane/{data['ticket']}"
     state = tracker.pull_request_state(branch)
     if state is None:
         return None
-    if _ci_red(data) or (state.ended and not state.merged):
+    reviews = [s for s in data["sessions"] if s.get("role") == "reviewer" and "verdict" in s]
+    since = str(reviews[-1].get("at") or data["started"])  # a record from before `at`: its start
+    if _ci_red(data) or (state.ended >= since and not state.merged):
         return True
-    return bool(state.number) and tracker.changes_requested(state.number)
+    return bool(state.number) and tracker.changes_requested(state.number, since)
 
 
 def _delivered_go(data: dict[str, Any], reviews: list[dict[str, Any]]) -> bool:
@@ -105,8 +115,8 @@ def lines(rows: list[dict[str, Any]], tracker: Tracker | None) -> list[str]:
         ci_read = ci_read or _ci_red(data) is not None
         if result is not None:
             group = groups[(implementer, str(last.get("model")), str(last.get("runtime")))]
-            group.tickets += 1
-            group.escapes += result
+            ticket = int(data["ticket"])  # a ticket's records count once: escaped if any is
+            group.outcomes[ticket] = group.outcomes.get(ticket, False) or result
     if not groups:
         return []
     out = []

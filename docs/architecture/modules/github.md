@@ -14,7 +14,7 @@ The GitHub tracker over the REST API, with the standard library only (C1, C10, C
 - `read_issue` returns an issue only if it carries the ready label put by a user with write permission (the owner of a user-owned repository needs no permission call) and has not changed since, through REST only (ADR 0032 and its amendment); otherwise it raises `IssueRefused`, naming the reason and how to fix it. When the events show no `labeled` event for the label, or an issue changed after the last one listed, they are read again up to 4 more times after 1, 2, 4 and 8 s (`sleep` is injectable; log `github.label_event_retry`), and the last read decides; the issue is not read again.
 - `open_pull_request` opens a draft when asked and returns the `PullRequest`; `add_labels` posts the labels to the pull request's issue (`POST /repos/<repository>/issues/<n>/labels`, GitHub creates a label it does not have, ADR 0057); `comment` posts a comment on the pull request's conversation (`POST /repos/<repository>/issues/<n>/comments`, the full replay's escapes); `set_commit_status` publishes a status.
 - `pull_request_state(branch)`: `GET /pulls?state=all&head=<owner>:<branch>`, newest first; the end is `merged_at`, else `closed_at`, with the pull request's `number`; none when the branch has no pull request.
-- `changes_requested(number)`: `GET /pulls/<n>/reviews`, page after page (100 per page, as the issue events); yes when a review's `state` is `CHANGES_REQUESTED` and its `user.type` is `User` (a bot account's is `Bot`), for the review escapes of `ariane report` (C19, ADR 0058).
+- `changes_requested(number, since="")`: `GET /pulls/<n>/reviews`, page after page (100 per page, as the issue events); yes when a review's `state` is `CHANGES_REQUESTED`, its `user.type` is `User` (a bot account's is `Bot`) and its `submitted_at` is `since` or later (ISO 8601 UTC, compared as text), for the review escapes of `ariane report` (C19, ADR 0058).
 - `read_issue` also raises `TrackerError` for a pull request number.
 - Any refused or failed request, or an unreachable server, raises `TrackerError`. The token is sent only in the request header and never logged.
 
@@ -59,7 +59,7 @@ class GitHubTracker {
   file_url(branch, path) str
   set_commit_status(sha, context, state, description, target_url) None
   pull_request_state(branch) PullRequestState
-  changes_requested(number) bool
+  changes_requested(number, since) bool
 }
 class web_url {
   <<function>>

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -15,9 +16,31 @@ from typing import Any
 from ariane import ticket
 from ariane.attempts import Attempts
 from ariane.runtime import AgentRuntime, Session, SessionResult
+from ariane.stop import SPEC, category_of
+from ariane.tracker import IssueRefused
 
 METRICS = "metrics.json"
 NOT_REVIEWED = "not reviewed"
+
+
+def stopped_metrics_path(worktree: Path, number: int) -> Path:
+    """`<repo>.ariane/stopped/<n>/metrics.json`: a stop before the ticket folder exists."""
+    return worktree.parent.parent / "stopped" / str(number) / METRICS
+
+
+def keep_refused(worktree: Path, number: int, exc: BaseException) -> None:
+    """A start that ended before its run began records its stop category (ADR 0058): `spec`
+    for the issue gate's refusal, else the stop's (`infra` for a lock, a slot, the registry, the
+    preparation or Ctrl-C). One new folder per attempt, `<repo>.ariane/stopped/<n>/refused/
+    <time>-<random>/metrics.json`, so neither a running ticket's metrics nor an earlier record
+    is overwritten; best effort, as `keep_stopped`."""
+    category = SPEC if isinstance(exc, IssueRefused) else category_of(exc)
+    refused = stopped_metrics_path(worktree, number).parent / "refused"
+    stamp = ticket.now().replace(" ", "T").replace(":", "")
+    with contextlib.suppress(OSError):
+        refused.mkdir(parents=True, exist_ok=True)
+        attempt = Path(tempfile.mkdtemp(prefix=f"{stamp}-", dir=refused))
+        Metrics(number, "delivered", lambda _: None).keep_stopped(attempt / METRICS, category)
 
 
 class Metrics:
@@ -81,10 +104,12 @@ class Metrics:
 
     def reviewed(self, go: bool, findings: int = 0) -> None:
         """The first review's verdict is the first-pass verdict; the reviewer session that
-        answered (the last one) records its verdict and its number of findings (ADR 0058)."""
+        answered (the last one) records its verdict, its number of findings and when it was
+        given: only what follows a `go` can make it an escape (ADR 0058)."""
         reviewers = [s for s in self.sessions if s["role"] == "reviewer"]
         if reviewers:
-            reviewers[-1] |= {"verdict": "go" if go else "no-go", "findings": findings}
+            at = ticket.now().replace(" ", "T")
+            reviewers[-1] |= {"verdict": "go" if go else "no-go", "findings": findings, "at": at}
         if self.first_pass_verdict == NOT_REVIEWED:
             self.first_pass_verdict = "go" if go else "no-go"
 

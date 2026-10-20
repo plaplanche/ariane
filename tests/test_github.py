@@ -296,12 +296,18 @@ def test_c19_review_escapes_changes_requested_reads_human_reviews(stub: tuple[St
     state, url = stub
     path = "/repos/owner/name/pulls/12/reviews?per_page=100&page=1"
     bot = {"state": "CHANGES_REQUESTED", "user": {"login": "ci[bot]", "type": "Bot"}}
-    human = {"state": "CHANGES_REQUESTED", "user": {"login": "owner", "type": "User"}}
+    human = {
+        "state": "CHANGES_REQUESTED",
+        "user": {"login": "owner", "type": "User"},
+        "submitted_at": "2026-10-05T13:00:00Z",
+    }
     approved = {"state": "APPROVED", "user": {"login": "owner", "type": "User"}}
     state.responses[("GET", path)] = (200, [bot, approved])
     assert tracker(url).changes_requested(12) is False
     state.responses[("GET", path)] = (200, [bot, human])
     assert tracker(url).changes_requested(12) is True
+    assert tracker(url).changes_requested(12, "2026-10-05T12:00:00Z") is True
+    assert tracker(url).changes_requested(12, "2026-10-05T14:00:00Z") is False  # before the go
     state.responses[("GET", path)] = (200, {"not": "a list"})
     with pytest.raises(TrackerError):
         tracker(url).changes_requested(12)

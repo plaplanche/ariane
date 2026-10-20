@@ -92,7 +92,9 @@ flowchart TD
   measures --> tracker
   metrics --> attempts
   metrics --> runtime
+  metrics --> stop
   metrics --> ticket
+  metrics --> tracker
   opencode --> attempts
   opencode --> process
   opencode --> runtime

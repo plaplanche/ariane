@@ -71,9 +71,9 @@ class Tracker(Protocol):
         """The latest pull request from `branch` (ISO 8601 times), or None if there is none."""
         ...
 
-    def changes_requested(self, number: int) -> bool:
+    def changes_requested(self, number: int, since: str = "") -> bool:
         """Whether a human (not a bot account) left a "changes requested" review on pull request
-        `number` (C19, ADR 0058)."""
+        `number`, submitted at `since` or later (an ISO 8601 UTC time; C19, ADR 0058)."""
         ...
 
     def set_commit_status(
@@ -98,7 +98,7 @@ class InMemoryTracker:
     refuse_labels: bool = False
     comments: dict[int, list[str]] = field(default_factory=dict)
     refuse_comments: bool = False
-    changes_requested_on: set[int] = field(default_factory=set)
+    changes_requested_on: dict[int, str] = field(default_factory=dict)  # number: submitted at
 
     def add_issue(self, number: int, title: str, body: str) -> Issue:
         issue = Issue(number, title, body, f"memory://issues/{number}")
@@ -140,10 +140,10 @@ class InMemoryTracker:
             raise TrackerError("the tracker is unreachable")
         return self.pull_states.get(branch)
 
-    def changes_requested(self, number: int) -> bool:
+    def changes_requested(self, number: int, since: str = "") -> bool:
         if self.unreachable:
             raise TrackerError("the tracker is unreachable")
-        return number in self.changes_requested_on
+        return number in self.changes_requested_on and self.changes_requested_on[number] >= since
 
     def set_commit_status(
         self, sha: str, context: str, state: str, description: str, target_url: str

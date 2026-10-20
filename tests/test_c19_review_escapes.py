@@ -10,9 +10,10 @@ from typing import Any
 import pytest
 from test_fix_rounds import NO_GO
 
-from ariane import report
+from ariane import flow, report
 from ariane.runtime import Session, StopReason
-from ariane.tracker import InMemoryTracker, PullRequestState
+from ariane.stop import Stop
+from ariane.tracker import InMemoryTracker, IssueRefused, PullRequestState
 
 from conftest import PY, FakeRuntime, Project, make_config, sh
 from test_flow import start, worktree
@@ -29,6 +30,7 @@ def put(root: Path, number: int, **kw: Any) -> None:
         "runtime": kw.pop("runtime", "codex"),
         "verdict": kw.pop("verdict", "go"),
         "findings": kw.pop("findings", 0),
+        "at": kw.pop("at", None),  # None: a record from before the verdict's time
     }
     data = {
         "ticket": number,
@@ -39,7 +41,7 @@ def put(root: Path, number: int, **kw: Any) -> None:
         "first_pass_verdict": review["verdict"],
         "outcome": "delivered",
     } | kw
-    path = root / f"work/{number}/metrics.json"
+    path = root / kw.pop("path", f"work/{number}") / "metrics.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
 
@@ -71,7 +73,7 @@ def test_c19_review_escapes_each_wrong_go_counts_once_a_merge_does_not(root: Pat
     tracker.pull_states["ariane/1"] = pull(101, "2026-10-02T00:00:00Z", merged=True)
     put(root, 2)  # a human asked for changes
     tracker.pull_states["ariane/2"] = pull(102, "2026-10-02T00:00:00Z", merged=True)
-    tracker.changes_requested_on.add(102)
+    tracker.changes_requested_on[102] = "2026-10-02T00:00:00Z"
     put(root, 3)  # closed without merge
     tracker.pull_states["ariane/3"] = pull(103, "2026-10-02T00:00:00Z")
     put(root, 4, ci_failures=[])  # green CI, merged
@@ -147,6 +149,72 @@ def test_c19_review_escapes_report_counts_categories_per_model(root: Path) -> No
     assert "Stopped by category: guard 2, review 1, not recorded 1 over 4 tickets." in out
     assert "Stopped by category, implementer imp: guard 1, review 1, not recorded 1." in out
     assert "Stopped by category, implementer other: guard 1." in out
+
+
+def test_c19_review_escapes_only_what_follows_the_go_counts(root: Path) -> None:
+    tracker = InMemoryTracker()
+    go = "2026-10-05T12:00:00Z"
+    put(root, 1, at=go)  # changes requested before the go, fixed, then the go: no escape
+    tracker.pull_states["ariane/1"] = pull(101, "2026-10-06T00:00:00Z", merged=True)
+    tracker.changes_requested_on[101] = "2026-10-04T08:00:00Z"
+    put(root, 2, at=go)  # changes requested after the go: an escape
+    tracker.pull_states["ariane/2"] = pull(102, "2026-10-06T00:00:00Z", merged=True)
+    tracker.changes_requested_on[102] = "2026-10-05T13:00:00Z"
+    put(root, 3, at=go)  # closed without merge before the go: not this go's escape
+    tracker.pull_states["ariane/3"] = pull(103, "2026-10-05T11:00:00Z")
+    assert "2 escapes" not in escapes_line(lines(root, tracker))
+    assert ", 1 escapes, " in escapes_line(lines(root, tracker))
+
+
+def test_c19_review_escapes_a_ticket_counts_once_toward_the_threshold(root: Path) -> None:
+    tracker = InMemoryTracker()
+    for k in range(5):  # five takeover records of ticket 7, on five branches, all escaped
+        put(root, 7, path=f"work/verify/ariane/7-{k}", outcome="delivered")
+        tracker.pull_states[f"ariane/7-{k}"] = pull(170 + k, "2026-10-02T00:00:00Z")
+    line = escapes_line(lines(root, tracker))
+    assert "1 escapes, escape rate not shown (1 tickets, fewer than 5)" in line
+
+
+def test_c19_review_escapes_report_reads_the_stops_kept_outside_the_repository(
+    root: Path,
+) -> None:
+    kept = root.parent / f"{root.name}.ariane"
+    put(kept, 7, path="stopped/7", outcome="stopped", category="infra")
+    put(kept, 8, path="stopped/8/refused/2026-10-01T090000Z-1", outcome="stopped", category="spec")
+    put(kept, 9, path="verify/ariane-9", outcome="stopped", category="checks")
+    out = lines(root, None)
+    assert "Stopped by category: spec 1, checks 1, infra 1 over 3 tickets." in out
+
+
+def refused(project: Project) -> list[dict[str, Any]]:
+    kept = project.root.parent / f"{project.root.name}.ariane" / "stopped/7/refused"
+    found = [json.loads(p.read_text(encoding="utf-8")) for p in kept.glob("*/metrics.json")]
+    return [d for d in found if isinstance(d, dict)]
+
+
+def test_c19_review_escapes_a_start_refused_before_its_run_records_its_category(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = tracker.read_issue
+
+    def gated(number: int) -> Any:
+        raise IssueRefused("issue #7 is not labelled `ariane`")
+
+    monkeypatch.setattr(tracker, "read_issue", gated)
+    assert start(project, tracker, FakeRuntime()).exit_code == 2
+    monkeypatch.setattr(tracker, "read_issue", real)
+
+    def held(*args: Any) -> Any:
+        raise Stop("ticket #7 is running in another Ariane process", "wait")
+
+    monkeypatch.setattr(flow, "locked", held)
+    assert start(project, tracker, FakeRuntime()).exit_code == 1
+    found = refused(project)
+    assert sorted((d["outcome"], d["category"]) for d in found) == [
+        ("stopped", "infra"),
+        ("stopped", "spec"),
+    ]
+    assert not (worktree(project) / "work/7/metrics.json").exists()  # no run's file touched
 
 
 def metrics(project: Project) -> dict[str, Any]:

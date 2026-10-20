@@ -54,6 +54,7 @@ flowchart LR
   checks --> stop
   flow --> stop
   full_replay --> stop
+  metrics --> stop
   replay --> stop
   restart --> stop
   review --> stop

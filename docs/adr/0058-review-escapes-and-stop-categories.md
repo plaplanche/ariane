@@ -34,7 +34,7 @@ per ticket. Choosing a reviewer model or a risk tier without those numbers is gu
   with a verdict exists, rather than a separate `--escapes` flag: the report stays one command.
 - **Stop categories.** Every outcome other than delivered green records `category` in
   `metrics.json`, from the fixed list `stop.CATEGORIES`: `spec` (the implementer changed no file:
-  the ticket was unclear; the issue gate refuses before any record exists), `guard` (push guard,
+  the ticket was unclear; or the issue gate refused it), `guard` (push guard,
   tree or reviewer tree changed, processes left running, records committed by the agent), `budget`
   (a cost, token, turn or time limit of a session), `runtime` (an agent CLI error, a quota, a
   login, a reviewer answer invalid twice), `checks` (blocking checks red: on the first replay, or
@@ -45,7 +45,18 @@ per ticket. Choosing a reviewer model or a risk tier without those numbers is gu
   not exist yet. A delivered green ticket has no `category` key. `Stop` carries its category
   (`infra` by default), so each raiser names its own; `ReviewFailed` and `verify.Refused` carry one
   too. `ariane report` counts the tickets per category, then per implementer model; a record from
-  before categories is `not recorded`.
+  before categories is `not recorded`. A start that ends before its run exists (the issue gate,
+  the lock, a slot, the registry, the preparation) has no ticket folder, and another run of the
+  ticket may hold one: it records its category in a new folder per attempt,
+  `<repo>.ariane/stopped/<n>/refused/<time>-<random>/metrics.json`, which overwrites nothing.
+  The report reads those, the first-setup stops (`<repo>.ariane/stopped/<n>/metrics.json`, ADR
+  0031) and the verifications that ended without committing (`<repo>.ariane/verify/<slug>/`).
+- **Order and identity.** Only what follows the `go` makes it an escape: the reviewer session
+  that answered records `at`, its time, and a "changes requested" review or a close without merge
+  counts when it is at that time or later (a record from before `at` uses its `started`). The
+  pull request is the branch's latest: Ariane opens one per ticket branch. The 5-ticket threshold
+  counts distinct ticket numbers: several records of one ticket (hand takeovers) count once, as
+  escaped if any of them escaped.
 - **The tracker is read at report time.** What happened after a `go` (the owner's review, the
   merge or the close) happens after Ariane's run ended, often days later; Ariane did not see it and
   does not store it. The report asks the tracker each time (`Tracker.pull_request_state`, with the

@@ -240,12 +240,13 @@ class GitHubTracker:
         except (KeyError, TypeError, AttributeError, ValueError) as exc:
             raise TrackerError(f"GitHub API: unexpected pull request: {exc!r}") from None
 
-    def changes_requested(self, number: int) -> bool:
+    def changes_requested(self, number: int, since: str = "") -> bool:
         reviews = self._pages(f"/repos/{self._repository}/pulls/{number}/reviews")
         return any(
             r.get("state") == "CHANGES_REQUESTED"
             and isinstance(r.get("user"), dict)
             and r["user"].get("type") == "User"  # a bot account's type is "Bot"
+            and str(r.get("submitted_at") or "") >= since  # ISO 8601 UTC: ordered as text
             for r in reviews
         )
 

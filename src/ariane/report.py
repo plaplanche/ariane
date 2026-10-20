@@ -28,17 +28,21 @@ def build(
     tracker: Tracker | None = None,
     max_escape_rate: float = DEFAULT_MAX_ESCAPE_RATE,
 ) -> Report:
-    """Read every metrics file under `root/work`, the ticket worktrees and the shadow clones,
+    """Read every metrics file under `root/work`, the ticket worktrees, the shadow clones and
+    the stops kept outside the repository (`<repo>.ariane/stopped/`, `<repo>.ariane/verify/`),
     keep tickets started on or after `since`. Without a `tracker` the waiting time reads "not
     available"; the selective checks warn above `max_escape_rate`."""
     work = root / ticket.WORK_DIR
     shadows = shadow.clone_path(root, 0).parent
     worktrees = shadows.parent / WORKTREES
+    kept_verify = shadows.parent / "verify"  # a verification that ended without committing
     paths = (
         sorted(work.glob(f"*/{metrics.METRICS}"))
         + sorted(work.glob(f"verify/**/{metrics.METRICS}"))
         + sorted(_own_paths(worktrees))
         + sorted(_own_paths(shadows))
+        + sorted((shadows.parent / "stopped").glob(f"**/{metrics.METRICS}"))  # ADR 0031, 0058
+        + sorted(kept_verify.glob(f"*/{metrics.METRICS}"))
     )
     if not paths:
         return Report(["No metrics file found. Next: run ariane start <issue>."], 0)
@@ -58,6 +62,8 @@ def build(
         verify_dir = work / "verify"
         if path.is_relative_to(verify_dir):
             data["branch"] = path.parent.relative_to(verify_dir).as_posix()
+        elif path.is_relative_to(kept_verify):
+            data["branch"] = path.parent.name  # the branch's slug, `ariane-7`
         if path.is_relative_to(shadows) and data["mode"] != "shadow":
             continue
         if path.is_relative_to(worktrees):
