@@ -4,6 +4,7 @@ selective checks missed. It never changes the push, the pull request or the revi
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import time
 from collections.abc import Sequence
@@ -69,7 +70,22 @@ def after_delivery(
 ) -> None:
     """After the delivery of `checked`: when its round passed its blocking checks with one
     skipped or partial, draw the sample, then fully replay, record, journal and publish. Every
-    record goes in a local commit; a stop here is recorded and ends the full replay only."""
+    record goes in a local commit. Whatever stops it (Ctrl-C, an error, even while recording or
+    publishing) ends the full replay only: it is journaled when it can be, and never reaches
+    the run, so the delivered outcome stays (ADR 0056)."""
+    try:
+        _after_delivery(run, checked, results, done)
+    except (KeyboardInterrupt, Exception) as exc:
+        reason, _ = describe(exc)
+        detail = exc.detail if isinstance(exc, Stop) else str(exc)
+        with contextlib.suppress(KeyboardInterrupt, Exception):
+            run.folder.log("ticket.checks.full_replay", f"Full replay stopped: {reason}", detail)
+            run._commit_record(f"#{run.number}: record the full replay")
+
+
+def _after_delivery(
+    run: _TicketRun, checked: str, results: Sequence[checks.CheckResult], done: Delivered
+) -> None:
     round_ = run.metrics.replays[-1] if run.metrics.replays else None
     if round_ is None or not selective(round_) or checks.blocking_failures(results):
         return

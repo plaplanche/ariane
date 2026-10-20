@@ -13,6 +13,7 @@ from ariane.tracker import Tracker
 
 PARTLY = "partly not reported"
 COVERED = "covered by plan"
+WORKTREES = "worktrees"  # `<repo>.ariane/worktrees/<n>`, as `flow.worktree_path`
 
 
 @dataclass(frozen=True)
@@ -27,20 +28,23 @@ def build(
     tracker: Tracker | None = None,
     max_escape_rate: float = DEFAULT_MAX_ESCAPE_RATE,
 ) -> Report:
-    """Read every metrics file under `root/work` and the shadow clones, keep tickets started on
-    or after `since`. Without a `tracker` the waiting time reads "not available"; the selective
-    checks warn above `max_escape_rate`."""
+    """Read every metrics file under `root/work`, the ticket worktrees and the shadow clones,
+    keep tickets started on or after `since`. Without a `tracker` the waiting time reads "not
+    available"; the selective checks warn above `max_escape_rate`."""
     work = root / ticket.WORK_DIR
     shadows = shadow.clone_path(root, 0).parent
+    worktrees = shadows.parent / WORKTREES
     paths = (
         sorted(work.glob(f"*/{metrics.METRICS}"))
         + sorted(work.glob(f"verify/**/{metrics.METRICS}"))
-        + sorted(_shadow_paths(shadows))
+        + sorted(_own_paths(worktrees))
+        + sorted(_own_paths(shadows))
     )
     if not paths:
         return Report(["No metrics file found. Next: run ariane start <issue>."], 0)
     lines: list[str] = []
     rows: list[dict[str, Any]] = []
+    local: dict[tuple[Any, Any], dict[str, Any]] = {}  # a ticket worktree's run, by its start
     recent: list[dict[str, Any]] = []  # every shadow ticket, whatever `since` says
     failed = 0
     for path in paths:
@@ -56,10 +60,15 @@ def build(
             data["branch"] = path.parent.relative_to(verify_dir).as_posix()
         if path.is_relative_to(shadows) and data["mode"] != "shadow":
             continue
+        if path.is_relative_to(worktrees):
+            if data["mode"] != "shadow":
+                local[(data["ticket"], data["started"])] = data
+            continue
         if data["mode"] == "shadow":
             recent.append(data)
         if since is None or data["started"][:10] >= since:
             rows.append(data)
+    rows = _with_local(rows, local, since)
     rows.sort(key=lambda d: (d["started"], d["ticket"], d.get("branch", "")))
     takeovers = [d for d in rows if "branch" in d]
     delivered = [d for d in rows if d["mode"] == "delivered"]
@@ -93,14 +102,30 @@ def build(
     return Report(lines, 1 if failed else 0)
 
 
-def _shadow_paths(shadows: Path) -> list[Path]:
-    """Only a clone's own ticket: the clone also holds every record that was on the base branch."""
+def _own_paths(clones: Path) -> list[Path]:
+    """Only a ticket worktree's or shadow clone's own ticket: it also holds every record that
+    was on the base branch."""
     found = []
-    for clone in shadows.glob("*"):
+    for clone in clones.glob("*"):
         own = clone / ticket.WORK_DIR / clone.name / metrics.METRICS
         if clone.name.isdigit() and own.is_file():
             found.append(own)
     return found
+
+
+def _with_local(
+    rows: list[dict[str, Any]], local: dict[tuple[Any, Any], dict[str, Any]], since: str | None
+) -> list[dict[str, Any]]:
+    """A ticket worktree holds the latest record of its run (the full replay after delivery is
+    only committed there, ADR 0056): it replaces the merged record of the same run, and a run
+    not merged yet is added."""
+    merged = {(d["ticket"], d["started"]) for d in rows if "branch" not in d}
+    kept = [local.get((d["ticket"], d["started"]), d) if "branch" not in d else d for d in rows]
+    return kept + [
+        d
+        for key, d in local.items()
+        if key not in merged and (since is None or d["started"][:10] >= since)
+    ]
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -121,6 +146,7 @@ def _read(path: Path) -> dict[str, Any]:
         if not isinstance(session, dict):
             raise TypeError("a session is not an object")
         _duration_of(session)
+    measures.check_full_replay(data.get("full_replay"))
     return data
 
 

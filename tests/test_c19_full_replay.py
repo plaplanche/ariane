@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from ariane import full_replay, report, risk
+from ariane import flow, full_replay, git, report, risk
 from ariane.config import CheckConfig, ChecksPolicy, Config
 from ariane.tracker import InMemoryTracker
 
@@ -171,6 +171,75 @@ def test_c19_full_replay_a_refused_comment_is_a_warning(
     assert start(project, tracker, FakeRuntime(), cfg).exit_code == 0
     assert "Warning: comment refused\n\ncomments are refused" in journal(project)
     assert statuses(tracker, "ariane/full-replay")[0]["state"] == "failure"
+
+
+def test_c19_full_replay_interrupted_while_publishing_keeps_the_delivered_outcome(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupt(self: InMemoryTracker, *args: Any) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(InMemoryTracker, "comment", interrupt)
+    cfg = config(1.0, CheckConfig("related", FULL_FAILS, True, 1))
+    outcome = start(project, tracker, FakeRuntime(), cfg)
+    assert outcome.exit_code == 0 and "review go" in outcome.line
+    assert "Full replay stopped: interrupted by the user" in journal(project)
+    status = (worktree(project) / "work/7/status.md").read_text(encoding="utf-8")
+    assert "- Last action: delivered" in status
+    done = metrics(project)
+    assert done["outcome"] == "delivered" and done["full_replay"]["escapes"] == ["related"]
+    tree = worktree(project)
+    assert sh(["git", "log", "-1", "--format=%s"], tree).strip() == "#7: record the full replay"
+
+
+def test_c19_full_replay_a_failed_final_commit_keeps_the_delivered_outcome(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commit = flow._TicketRun._commit_record
+
+    def refuse(self: flow._TicketRun, message: str) -> None:
+        if message.endswith("record the full replay"):
+            raise git.GitError("commit refused")
+        commit(self, message)
+
+    monkeypatch.setattr(flow._TicketRun, "_commit_record", refuse)
+    cfg = config(1.0, CheckConfig("app", PASS, True, 1, full_when="always"), skipped_docs())
+    outcome = start(project, tracker, FakeRuntime(), cfg)
+    assert outcome.exit_code == 0 and "review go" in outcome.line
+    assert "Full replay stopped: commit refused" in journal(project)
+    status = (worktree(project) / "work/7/status.md").read_text(encoding="utf-8")
+    assert "- Last action: delivered" in status
+    assert statuses(tracker, "ariane/full-replay")[0]["state"] == "success"
+
+
+def test_c19_full_replay_report_from_the_main_checkout_after_a_sampled_delivery(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    """The full replay is committed in the ticket worktree only, after the push: the report
+    reads it there, in place of the merged record of the same run."""
+    cfg = config(1.0, CheckConfig("related", FULL_FAILS, True, 1))
+    assert start(project, tracker, FakeRuntime(), cfg).exit_code == 0
+    pushed = project.remote_branches()["ariane/7"]
+    sh(["git", "fetch", "origin", "ariane/7"], project.root)
+    sh(["git", "merge", "--ff-only", pushed], project.root)  # the pull request is merged
+    assert "full_replay" not in project.show(pushed, "work/7/metrics.json")
+    lines = report.build(project.root, None, None, 0.02).lines
+    assert len([x for x in lines if x.startswith("#7 ")]) == 1
+    [line] = [x for x in lines if x.startswith("Selective checks:")]
+    assert "1 full replays, 1 escapes, escape rate 1/1 (100.0%)" in line
+    assert any(x.startswith("Warning: the escape rate 100.0%") for x in lines)
+
+
+def test_c19_full_replay_report_names_a_malformed_full_replay(tmp_path: Path) -> None:
+    put(tmp_path, 1, [selective_round(10)], {"ran": True, "duration_s": 4, "escapes": 1})
+    put(tmp_path, 2, [selective_round(10)], {"ran": True, "duration_s": 4, "escapes": ["t"]})
+    result = report.build(tmp_path, None)
+    assert result.exit_code == 1
+    assert (
+        "Could not read work/1/metrics.json: full_replay.escapes is not a list of check names;"
+        " skipped." in result.lines
+    )
+    assert any("1 full replays, 1 escapes" in x for x in result.lines)
 
 
 def put(root: Path, number: int, rounds: list[dict[str, Any]], full: Any = None) -> None:

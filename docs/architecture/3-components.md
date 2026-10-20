@@ -354,6 +354,7 @@ sequenceDiagram
   CLI->>P: report
   P->>M: take the metrics.json name (report reads and validates work/*/metrics.json and work/verify/**/metrics.json itself)
   P->>H: take the shadow clone paths (report reads their metrics.json itself)
+  P->>P: read the ticket worktrees' own metrics.json (the full replay after delivery), in place of the merged record of the same run
   P->>E: lines and totals
   E->>T: read pull request states (human time)
   E-->>P: measures

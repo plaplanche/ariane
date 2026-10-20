@@ -156,6 +156,21 @@ def full_replay(data: dict[str, Any]) -> dict[str, Any] | None:
     return found
 
 
+def check_full_replay(found: Any) -> None:
+    """A `full_replay` object's types (`report` names and skips a file that fails this): `ran`
+    a boolean, `escapes` a list of check names, `duration_s` a number."""
+    if found is None:
+        return
+    if not isinstance(found, dict) or not isinstance(found.get("ran"), bool):
+        raise TypeError("full_replay is not an object with a boolean ran")
+    escapes = found.get("escapes", [])
+    if not isinstance(escapes, list) or not all(isinstance(e, str) for e in escapes):
+        raise TypeError("full_replay.escapes is not a list of check names")
+    duration = found.get("duration_s", 0)
+    if isinstance(duration, bool) or not isinstance(duration, int | float):
+        raise TypeError("full_replay.duration_s is not a number")
+
+
 def selective_lines(rows: list[dict[str, Any]], max_escape_rate: float) -> list[str]:
     """The "Selective checks" lines (#186): the tickets with a round that skipped a check or ran
     one partly, their replay time, the full replays' time against the selective rounds they
@@ -168,7 +183,7 @@ def selective_lines(rows: list[dict[str, Any]], max_escape_rate: float) -> list[
     sampled = [(d, f) for d in chosen if (f := full_replay(d)) is not None]
     selective = sum(_seconds(_rounds(d)[-1].get("duration_s")) for d, _ in sampled)
     full = sum(_seconds(f.get("duration_s")) for _, f in sampled)
-    escapes = sum(len(f.get("escapes") or []) for _, f in sampled)
+    escapes = sum(len(f.get("escapes", [])) for _, f in sampled)
     rate = escapes / len(sampled) if sampled else 0.0
     shown = f"{escapes}/{len(sampled)} ({100 * rate:.1f}%)" if sampled else "not measured"
     lines = [

@@ -256,7 +256,8 @@ replay of the checks (each in its own tree), one review, then `work/verify/<bran
 on the branch (never pushed). It exits 0 only on a `go` with green blocking checks; the issue's
 text goes to the reviewer with `--issue`, else the branch's commit messages.
 `ariane report [--since YYYY-MM-DD]` summarises cost, agent time, rounds and first-pass verdicts per
-ticket from the `metrics.json` files in the checkout. It also gives the two numbers of the success
+ticket from the `metrics.json` files in the checkout and in the ticket worktrees (which hold the
+full replay after delivery). It also gives the two numbers of the success
 measure: human time (a delivered ticket's waiting time from its pull request's opening to its merge
 or close, read from the tracker with the token, "not available" without it, plus each stop to the
 next `ariane verify`; a shadow ticket's minutes from `ariane judge`) and gates bypassed (hand

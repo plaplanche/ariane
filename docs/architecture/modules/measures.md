@@ -20,6 +20,7 @@ The success measure of `ariane report` (C19, ADR 0038): human time, gates bypass
 | `attempts(data)` | function | The `(push, pull_request, guard_violations)` counts of a ticket's metrics. |
 | `shadow_lines(shadows, recent)` | function | The shadow lines of the report: totals over `shadows`, then the pass line over `recent`. |
 | `full_replay(data)` | function | The `full_replay` object of a ticket's metrics when it ran to its end (not stopped), or None. |
+| `check_full_replay(found)` | function | Raises `TypeError` when a `full_replay` object is not one: `ran` a boolean, `escapes` a list of check names, `duration_s` a number (`report` names and skips the file). |
 | `selective_lines(rows, max_escape_rate)` | function | The "Selective checks" line of the report, and its warning above `max_escape_rate`. |
 
 ## Behaviour and errors

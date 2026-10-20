@@ -139,7 +139,10 @@ and measured.
   full replay's time on every sampled ticket, the time selection is meant to save, and a sampled
   ticket would be delivered differently from the others. After the delivery it never delays or
   changes the push, the pull request, its body or the review, and the run's outcome and line stay
-  those of the delivery; a stop or Ctrl-C during it is recorded and ends only the full replay.
+  those of the delivery; a stop or Ctrl-C during it, or an error while recording, publishing or
+  committing its records, is journaled when it can be and ends only the full replay. Those
+  records are committed only in the ticket worktree, after the push, so `ariane report` reads the
+  ticket worktrees too: a worktree's record replaces the merged record of the same run.
 - **Why sampling, not every ticket.** A full replay on every ticket would double the replay time
   of each selective ticket and remove the saving; a fifth of them is enough to estimate a rate
   over a few dozen tickets, and the project tunes the fraction (1 during a trial, lower once the

@@ -8,22 +8,23 @@
 | --- | --- | --- |
 | `PARTLY` | constant | `partly not reported`, said of a cost when a session's cost is null. |
 | `COVERED` | constant | `covered by plan`, said of sessions whose `billing` is `plan`. |
+| `WORKTREES` | constant | `worktrees`, the folder of the ticket worktrees in `<repo>.ariane`, as `flow.worktree_path`. |
 | `Report` | class | The result: `lines` and `exit_code`. |
 | `build(root, since, tracker=None, max_escape_rate=0.02)` | function | Reads the metrics files and returns a `Report`. |
 
 ## Behaviour and errors
 
-- `build` reads `work/*/metrics.json`, `work/verify/**/metrics.json` (a hand-takeover record shows its branch) and the shadow clones (`<repo>.ariane/shadow/<n>/work/<n>/metrics.json`); it writes nothing. It keeps tickets started on or after `since` and prints number, mode, outcome, cost ("partly not reported" when a session's cost is null), agent time, rounds and first-pass verdict.
+- `build` reads `work/*/metrics.json`, `work/verify/**/metrics.json` (a hand-takeover record shows its branch), the ticket worktrees (`<repo>.ariane/worktrees/<n>/work/<n>/metrics.json`) and the shadow clones (`<repo>.ariane/shadow/<n>/work/<n>/metrics.json`); it writes nothing. A ticket worktree holds the latest record of its run: the full replay after delivery is committed only there, after the push (ADR 0056). Its record replaces the merged record of the same run (same ticket and `started`), and a run not merged yet is added. It keeps tickets started on or after `since` and prints number, mode, outcome, cost ("partly not reported" when a session's cost is null), agent time, rounds and first-pass verdict.
 - Before the totals it prints `Human time:` (waiting, restarts, shadow minutes judged, per merged pull request), `Gates bypassed:` and the `Shadow:` totals with `shadow pass: yes|no` (C19, ADR 0038). Each delivered ticket's line gets its human time and gates bypassed; a shadow ticket's line gets its judgement. Then the "Selective checks" line (`measures.selective_lines`: tickets with selection, replay time with selection versus the full replays' time on the sampled tickets, full replays, escapes and escape rate), with a warning when the rate is above `max_escape_rate` (`[checks_policy]`, read by `cli`; ADR 0056).
 - Plan-billed sessions (`billing` = `plan`) are not summed in dollars: a ticket or the totals show "covered by plan" instead of an amount, or after the amount of the other sessions (ADR 0043). Totals give tickets, cost, agent time, rounds and the first-pass go rate (go / reviewed).
 - Without a tracker (no token, no configuration) or when it fails, the waiting time reads "not available".
-- A file that cannot be read or has a field of the wrong type is named and skipped, and the exit code is 1. No metrics file at all gives one line and exit code 0.
+- A file that cannot be read or has a field of the wrong type (a `full_replay` object included, `measures.check_full_replay`) is named and skipped, and the exit code is 1. No metrics file at all gives one line and exit code 0.
 
 ## Workflow
 
 ```mermaid
 flowchart TD
-A[metrics files: work, verify, shadow clones] --> B[read and check each file]
+A[metrics files: work, verify, ticket worktrees, shadow clones] --> B[read and check each file]
   B -->|unreadable| C[name it, skip it, exit 1]
   B --> D[keep tickets since the date]
   D --> E[measures: human time, gates bypassed]
