@@ -1,14 +1,18 @@
 # Review 0
 
-- Reviewed commit: `892ae3db2de8b1304fdcd270a3c88516a8b62728`
+- Reviewed commit: `e9b7a15d0c3d2c1b0e4d0e5ea5b772c4873d8fce`
 - Reviewer model: gpt-6-astra
 - Verdict: **no-go** (the reviewer answered no-go)
 
 ## Findings
 
-- **blocking** (`src/ariane/ticket.py:99`) Interrupted record loading can delete existing ticket files
+- **blocking** (`src/ariane/replay.py:255`) Incoming changes select checks but do not contribute to their risk tier
 
-  load() populates _records incrementally. If reading review-0.md raises PermissionError, or Ctrl-C interrupts loading after journal.md, folder.exists() already returns true. execute_update() catches the exception and invokes the inherited stop handler before loading has completed. The write order is then: append the stop to journal.md; overwrite metrics.json using fresh, unresumed metrics; write status.md; restore() deletes every file absent from the partially populated _records; commit those changes. Consequently, later review records are deleted, earlier measurements are replaced, and an ignored plain file such as z-evidence.txt is irretrievably removed even though it passed _not_records(). This is blocking because it loses data. A read-only mocked reproduction confirmed that a failed read leaves exists() true and subsequent records absent from the restoration set. Load into a temporary mapping and publish it only after every read succeeds; errors or interruptions before successful loading must leave the existing folder untouched. Add regression tests for both read failure and interruption.
+  The update adds incoming paths to `changed` but discards their changed-line count. `risk_tier` therefore receives the ticket-only line count. With a two-line ticket and 1,000 incoming lines in the same module, a policy threshold of 300 incorrectly produces `low` and `ARIANE_FULL_SUITE=0`. A blocking check that runs integration tests only for the full suite can consequently pass without testing the merged combination, and that success is published after pushing. This makes a check pass wrongly. Compute the update's risk from both relevant diffs, with documented counting semantics, and add a regression test where the omitted full suite would fail.
+
+- **minor** (`src/ariane/update.py:93`) Concurrent runs do not recognize an update process on Linux
+
+  Updates register themselves, but `runs._started_as` recognizes only `start <number>`. Read-only probes confirmed that `ariane update 7` is rejected while `ariane start 7` is recognized. Interleaving: another ticket snapshots refs; the update registers and writes its merge commit; the other ticket verifies its snapshot, excludes the update from genuine runs, and stops on its legitimate branch change. Two updates can similarly stop each other. Extend registry recognition and its tests to the new command. This is not the accepted ADR 0017 impersonation residual.
 
 ## Definition of done
 
@@ -34,19 +38,20 @@
 
 - met: The change is covered by tests that fail without it.
 
-  The new test_c11_update tests cover successful merging, replay, review, fast-forward delivery, statuses, refusals, conflicts, abort failures, remote races, metrics, and selective checks. These depend on the new command and implementation. Ariane reports all checks passing; I did not rerun filesystem-writing tests in this read-only review. The partial-load failure above lacks coverage. Side-effect audit: entry creates log/lock/slot bookkeeping; ordinary refusals precede fetching, while the base-record refusal follows fetch writes. Up-to-date exits before fetching and writes only external bookkeeping/logs. Active updates register the run, fetch Git objects/tracking metadata, merge the tree/index/history, then write journal and metrics. Conflicts abort before recording; unresolved merges avoid record writes. Successful merges write replay records, create/setup/run/remove replay trees, create/run/remove the reviewer tree, and write review/metrics records. Red or no-go outcomes write and commit stop records locally. Go commits records, checks guards, pushes with an atomic expected-head lease, journals the push, publishes statuses, and commits final records locally. No new pull request is opened.
+  The new test modules cover successful merging, replay, review, statuses, refusals, conflicts, interrupted merges, remote movement including the final push race, record preservation, metrics and CLI dispatch. They depend on the new implementation. Ariane reports the suite passing; I did not rerun filesystem-writing tests in this read-only review. The findings identify additional missing regression cases.
 
 - met: The documentation the change affects is updated (C25).
 
-  README includes PowerShell and bash usage. The update module documentation, affected module pages, context/container/component diagrams, CLI reference, and log catalogue are updated. Ariane reports the generated-reference check passing.
+  README includes PowerShell and bash usage; architecture views, affected module documents, the new update module document, CLI reference and log catalogue are updated. Side-effect trace: CLI logging and lock/slot bookkeeping precede refusal checks; a needed fetch writes objects and tracking metadata; registration writes registry records; merge writes the tree, index and commit; journal/status/metrics writes follow; replay creates and removes clean trees and writes check records; review creates and removes its tree and writes review records; delivery restores and commits records, checks the guard, performs the leased push, writes the push journal, publishes statuses, and commits local delivery records. Conflict handling aborts before recording the stop; unresolved merges avoid record commits. Red/no-go paths commit stop records without pushing. Up-to-date exits before fetch and ticket-record writes, with technical logging and lock bookkeeping only.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0033's amendment records the push lease, additional refusals, review numbering, no-op logging, check selection, residual provenance, metrics continuation, unresolved-merge handling, and stopped-branch recovery.
+  ADR 0033's amendment records lease enforcement, additional record-preservation refusals, up-to-date logging, review numbering, incoming-path selection, residual provenance, metrics continuation and interrupted-merge handling. The risk-tier finding is an implementation inconsistency requiring correction and clarified counting semantics.
 
 ## Proposed learnings (not decided)
 
-- Proposed: Load persistent records atomically before enabling any recovery handler that rewrites or deletes files; test interruptions during loading as well as during merging.
+- When combining diffs for check selection, test that risk measurements and full-suite decisions cover the same changes.
+- Adding a registered command requires testing its recognition by concurrent-run guards using its real command-line shape.
 
 ## Run
 
