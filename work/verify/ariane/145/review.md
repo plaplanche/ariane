@@ -1,22 +1,18 @@
 # Review 0
 
-- Reviewed commit: `9547f51cf2814123a0dc58d3e98c8396b8ba7fda`
+- Reviewed commit: `d69b3d2f06199720398c6c5e6c70cc6c4e625fa9`
 - Reviewer model: gpt-6-astra
 - Verdict: **no-go** (the reviewer answered no-go)
 
 ## Findings
 
-- **blocking** (`src/ariane/update.py:96`) The update trusts accepted residuals from the unmerged ticket
+- **blocking** (`src/ariane/ticket.py:98`) Loading existing records silently discards directories that restore then deletes
 
-  _UpdateRun inherits _TicketRun.__init__, which reads residuals_in(worktree). For update, that tree contains the delivered ticket, not the base commit. An ADR marker added by the ticket therefore becomes an owner-accepted residual in the next review, even though the owner has never merged it. The sequence is: read ticket-authored residuals, merge, replay, instruct the reviewer to downgrade matching findings, then push on go. This breaks ADR 0057's security boundary: a change can grant itself a review exemption. Read accepted_residuals from the pinned base commit and add a regression test showing that ticket-only markers never enter the accepted-residuals prompt.
+  load() retains only immediate regular files, but restore() recursively removes every entry absent from that snapshot. A clean delivered tree can contain committed work/7/attachments/evidence.md (explicitly permitted by _only_records_beyond), or ignored local attachments. The sequence is: load omits attachments; merge, replay and review run; push_update calls _commit_record; restore recursively deletes attachments; git.commit stages the deletion; _require_replayed permits it because it is under work/7/; the deletion is pushed. A recorded failure also invokes the destructive restore. Ignored contents are lost without any Git recovery. This remains blocking under the proportionality rule because it loses data. A read-only mocked execution confirmed that an existing directory omitted by load is subsequently passed to _remove. Preserve existing contents recursively without following links, or refuse unsupported entries before merging; add regression coverage for tracked and ignored nested contents.
 
-- **blocking** (`src/ariane/replay.py:255`) Incoming renames can skip a blocking check and publish success
+- **minor** (`src/ariane/update.py:93`) Concurrent Linux runs do not recognize update registrations
 
-  git.changed_between uses diff --name-only, which reports only the destination of a detected rename. If the base moves src/a.py to lib/a.py while the ticket changes an unrelated file, the base-to-merge diff contains neither side of that rename and the incoming listing adds only lib/a.py. A blocking check scoped to src/** is consequently skipped. The sequence is: lose the source path, select checks, create a passing skipped result, commit that report, push, and publish a success status without running the check. This makes a check pass wrongly and violates ADR 0056's explicit requirement to include both sides of renames. Use git.changes plus checks.changed_files for incoming changes and test a rename out of a blocking check's scope.
-
-- **minor** (`src/ariane/update.py:93`) Concurrent update processes are not recognized by the Linux run guard
-
-  The update registers itself, but runs._started_as recognizes only command lines containing start <number>. A concurrent start or update therefore never considers an update process genuine on Linux. When that update writes its merge or records commit, the other run sees an unauthorized branch change and stops. Extend recognition to update and test overlapping runs. This is an availability defect; it fails closed rather than permitting an unsafe push.
+  The update registers its process with runs.registered, but runs._started_as only accepts a command line containing start <number>. During concurrent start A and update B, B registers and writes its merge commit to ariane/B; A's watcher rejects B as nongenuine, so A's next guard treats B's legitimate branch movement as unauthorized and stops A. Two concurrent updates have the same problem. Extend process recognition to the new command while preserving the existing identity checks, and cover this with separate-process tests. Classified minor because simultaneous update execution is not an explicit acceptance criterion here; this is distinct from the accepted registry-spoofing residual.
 
 ## Definition of done
 
@@ -42,22 +38,21 @@
 
 - met: The change is covered by tests that fail without it.
 
-  tests/test_c11_update.py adds integration coverage for successful merging, replay, review, statuses, refusals, conflicts, red checks, no-go, remote movement including lease races, interrupted merges, metrics and CLI dispatch. These exercise the new command and cannot pass without it. The owner reports green checks; I did not rerun write-producing tests in this read-only checkout. The findings identify missing regression cases. Side-effect audit: CLI logging and lock/slot bookkeeping precede refusals; the up-to-date path emits a technical log without fetching. An active update fetches objects/tracking metadata, registers the run, then writes merge objects/index/tree/ref state. A conflict invokes abort before journal or record writes; an unresolved merge leaves records untouched. A completed merge writes journal/metrics/status, creates replay trees and any setup/cache artifacts, writes changed-file listings, runs checks, removes replay trees, writes reports, creates the reviewer tree and session records, removes that tree, and writes the review. Red/no-go paths write and commit stop records without pushing. Success writes metrics/status, restores and commits records, verifies replay equivalence and guards, pushes with an atomic expected-head lease, writes the push journal, publishes statuses, and commits final records locally. Registry teardown appends history and removes the live entry. Git commands and failures also produce technical logs.
+  tests/test_c11_update.py adds substantive coverage for merging, replay, review, statuses, refusals, conflicts, metrics and remote lease races; the base lacks the imported update module and command. Ariane reports the full checks passing. I did not rerun filesystem-writing tests in this read-only review. Missing coverage includes record-directory preservation and concurrent command recognition. Side-effect audit: command logging and lock/slot files precede eligibility checks; the up-to-date path performs no ticket-record or Git fetch writes. An update then fetches objects/tracking refs/FETCH_HEAD, registers the run, merges into the index/tree/history, writes journal and metrics, creates replay trees and any setup/cache outputs, removes those trees, writes check records, creates/removes the reviewer tree and writes review/session records. Success writes delivery metrics and pushing status, restores and commits records, runs the final guard, performs the leased push, journals the push, publishes statuses, then commits delivered status locally. Red checks/no-go write and commit stop records without pushing. Conflict handling aborts before ticket-record writes; failed abort or unresolved interruption leaves merge state intact. Registry cleanup writes its ended record and removes the live entry. The destructive restore identified above occurs on both success and recorded-stop paths.
 
 - met: The documentation the change affects is updated (C25).
 
-  README includes PowerShell and bash usage; ADR 0033 is amended; the CLI reference and log catalogue include update; context, container and component diagrams are updated; update has a module document and affected module documentation is updated. The reported generated-reference check passed.
+  README includes PowerShell and bash usage. The new update module document, affected module documents, C4 views, CLI reference and log catalogue are updated. The supplied docs-reference check passed.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0033's amendment records the push lease, refusal semantics, no-write up-to-date behavior, review numbering, incoming-change selection, metrics continuation and handling of unresolved merges and stops. The blocking findings are implementation violations of existing decisions, not missing design decisions.
+  ADR 0033's amendment records review numbering, refusals, the atomic leased fast-forward push, no-op logging, incoming-file check selection, residual provenance, metrics continuation and unresolved-merge handling. The destructive record restoration is an implementation defect rather than an acceptable additional design choice.
 
 ## Proposed learnings (not decided)
 
-- When reusing a run class, revalidate constructor assumptions about whether its working tree contains trusted base code or an unmerged change.
-- Use the same rename-aware change representation for every input to check selection; test moves out of a check's scope.
-- Adding a registered command also requires updating process-authentication rules and concurrent-run tests.
+- Proposed: test load-and-restore round trips against all existing content, including nested and ignored files, before using restoration on resumed work.
+- Proposed: when adding a registered command, test that concurrent processes recognize its identity and tolerate its authorized branch writes.
 
 ## Run
 
-Slot 1 (`ARIANE_SLOT=1` for the setup, the checks and the reviewer, ADR 0050).
+Slot 0 (`ARIANE_SLOT=0` for the setup, the checks and the reviewer, ADR 0050).
