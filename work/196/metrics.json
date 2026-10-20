@@ -7,15 +7,75 @@
   "blocking_red_at_delivery": 0,
   "first_pass_verdict": "not reviewed",
   "mode": "delivered",
-  "outcome": "running",
-  "replays": [],
+  "outcome": "needs a human",
+  "replays": [
+    {
+      "duration_s": 146.516,
+      "partial": [],
+      "round": 0,
+      "selected": [
+        "lint",
+        "format",
+        "types",
+        "tests",
+        "file length",
+        "docs: references"
+      ],
+      "skipped": []
+    }
+  ],
   "rounds": 0,
-  "sessions": [],
+  "sessions": [
+    {
+      "cache_read_tokens": 6649566,
+      "cache_write_tokens": 155073,
+      "cost_usd": 3.703190400000001,
+      "duration_s": 954.261,
+      "input_tokens": 136,
+      "model": "claude-opus-5-5",
+      "output_tokens": 56591,
+      "role": "implementer",
+      "round": 0,
+      "runtime": "claude-code",
+      "stop_reason": "finished"
+    },
+    {
+      "billing": "plan",
+      "cache_read_tokens": null,
+      "cache_write_tokens": null,
+      "changed_lines": 937,
+      "cost_usd": 0.0,
+      "duration_s": 7.6,
+      "input_tokens": null,
+      "model": "gpt-6-astra",
+      "output_tokens": null,
+      "role": "reviewer",
+      "round": 0,
+      "runtime": "codex",
+      "stop_reason": "quota"
+    }
+  ],
   "started": "2026-10-20T16:33:20Z",
   "steps": [
     {
       "at": "2026-10-20T16:33:21Z",
       "name": "folder opened"
+    },
+    {
+      "at": "2026-10-20T16:49:16Z",
+      "name": "implementer session 1 stopped"
+    },
+    {
+      "at": "2026-10-20T16:51:43Z",
+      "name": "checks replayed"
+    },
+    {
+      "at": "2026-10-20T16:51:51Z",
+      "name": "reviewer session 2 stopped"
+    },
+    {
+      "at": "2026-10-20T16:51:51Z",
+      "name": "outcome: needs a human"
     }
   ],
   "surviving_processes": 0,
