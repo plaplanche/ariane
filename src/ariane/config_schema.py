@@ -105,6 +105,7 @@ _STR: dict[str, Any] = {"type": "string", "minLength": 1}
 _ARGV: dict[str, Any] = {"type": "array", "minItems": 1, "items": _STR}
 _POSITIVE: dict[str, Any] = {"type": "number", "exclusiveMinimum": 0}
 _GLOBS: dict[str, Any] = {"type": "array", "minItems": 1, "items": _STR}
+_COUNT: dict[str, Any] = {"type": "integer", "exclusiveMinimum": 0}
 
 _AGENT: dict[str, Any] = {
     "type": "object",
@@ -394,6 +395,33 @@ SCHEMA: dict[str, Any] = {
                 },
             },
         },
+        "checks_policy": {
+            "type": "object",
+            "additionalProperties": False,
+            "description": "What makes a round's risk tier high (ADR 0056); without this table"
+            " every round is high.",
+            "properties": {
+                "max_changed_lines": {
+                    **_COUNT,
+                    "default": 300,
+                    "description": "More added plus removed lines than this is high.",
+                },
+                "max_modules": {
+                    **_COUNT,
+                    "default": 3,
+                    "description": "More modules touched than this is high.",
+                },
+                "module_roots": {
+                    **_GLOBS,
+                    "description": "Globs of the folders whose children count as modules, such"
+                    ' as "src/*/"; by default the repository root.',
+                },
+                "critical_paths": {
+                    **_GLOBS,
+                    "description": "Path globs whose change makes the round high.",
+                },
+            },
+        },
         "checks": {
             "type": "array",
             "minItems": 1,
@@ -427,6 +455,12 @@ SCHEMA: dict[str, Any] = {
                         "const": True,
                         "description": "The check runs whatever changed (the default without"
                         " paths). Not with paths.",
+                    },
+                    "full_when": {
+                        "enum": ["high", "always"],
+                        "default": "high",
+                        "description": "When the check gets ARIANE_FULL_SUITE=1: on a high"
+                        " risk tier only (the default), or always (ADR 0056).",
                     },
                 },
             },

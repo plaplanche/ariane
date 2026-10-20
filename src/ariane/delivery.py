@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ariane import checks, git, process, review, ticket
 from ariane.redact import redact
+from ariane.risk import Tier
 from ariane.tracker import Issue, Tracker, TrackerError
 
 _STATUS_DESCRIPTION_MAX = 140
@@ -51,6 +52,7 @@ class Delivery:
     guard: Callable[[], None] = lambda: None
     truncated: Sequence[str] = ()  # the files whose hunks the reviewed diff lacked
     on_pushed: Callable[[], None] = lambda: None  # once the branch is on the remote
+    tier: Tier | None = None  # the last round's risk tier, stated in the body (ADR 0056)
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
@@ -208,9 +210,11 @@ class Delivery:
         report = f"{ticket.relative_folder(number)}/{ticket.CHECKS}"
         skipped = ", ".join(checks.skipped_names(results))
         not_run = f"Skipped, {checks.SKIPPED}: {skipped}.\n\n" if skipped else ""
+        tier = f"Risk tier: {self.tier.text()}.\n\n" if self.tier is not None else ""
         return (
             f"Closes #{number}\n\n"
             f"Implemented by an Ariane implementer session; checks replayed by Ariane.\n\n"
+            f"{tier}"
             f"{checks.summary_table(results)}\n\n{checks.summary_line(results)}\n\n{not_run}"
             f"{self._review_section()}"
             f"Full report: [{report}]({self.tracker.file_url(self.branch, report)}). "

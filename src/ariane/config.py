@@ -24,8 +24,10 @@ from ariane.config_schema import (
     agent_problem,
     model_problem,
 )
+from ariane.risk import FULL_WHEN, ChecksPolicy, PolicyError
+from ariane.risk import parse as parse_policy
 
-__all__ = ["CODEX", "OPENCODE", "PI", "SCHEMA", "CacheConfig"]
+__all__ = ["CODEX", "OPENCODE", "PI", "SCHEMA", "CacheConfig", "ChecksPolicy"]
 
 CONFIG_FILE = "ariane.toml"
 CONFIG_ENV = "ARIANE_CONFIG"
@@ -79,6 +81,7 @@ class CheckConfig:
     setup: tuple[str, ...] | None = None  # replaces project.setup in this check's replay tree
     not_run_locally: tuple[str, ...] = ()  # globs of the files whose tests only CI runs
     paths: tuple[str, ...] = ()  # globs of the files it covers; () selects it always
+    full_when: str = "high"  # "high" or "always": when it gets ARIANE_FULL_SUITE=1 (ADR 0056)
 
 
 @dataclass(frozen=True)
@@ -193,6 +196,7 @@ class Config:
     parallel_checks: int = 1  # checks replayed at the same time (ADR 0052)
     caches: tuple[CacheConfig, ...] = ()  # `[[project.cache]]`: dependency folders (ADR 0054)
     check_all_paths: tuple[str, ...] = ()  # globs whose change selects every check
+    checks_policy: ChecksPolicy | None = None  # `[checks_policy]`; None: every round is high
 
 
 def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:
@@ -219,15 +223,11 @@ def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:
 
 
 def parse(data: dict[str, Any]) -> Config:
-    _only(
-        data, "", {"project", "tracker", "agents", "checks", "definition_of_done", "documentation"}
-    )
+    tables = {"project", "tracker", "agents", "checks", "definition_of_done", "documentation"}
+    _only(data, "", {*tables, "checks_policy"})
     project = _table(data, "project")
-    _only(
-        project,
-        "project",
-        {"base_branch", "setup", "env", "parallel_checks", "cache", "check_all_paths"},
-    )
+    keys = {"base_branch", "setup", "env", "parallel_checks", "cache", "check_all_paths"}
+    _only(project, "project", keys)
     tracker = _table(data, "tracker")
     _only(tracker, "tracker", {"kind", "repository", "token_env", "api_url", "ready_label"})
     agents = _table(data, "agents")
@@ -290,9 +290,10 @@ def parse(data: dict[str, Any]) -> Config:
         definition_of_done=_definition_of_done(data, names),
         documentation=documentation,
         env=_env(project),
-        parallel_checks=_parallel_checks(project),
+        parallel_checks=_count(project, "parallel_checks", "project") or 1,
         caches=_caches(project),
         check_all_paths=_globs(project, "project", "check_all_paths"),
+        checks_policy=_checks_policy(data),
     )
 
 
@@ -303,11 +304,11 @@ def _caches(project: dict[str, Any]) -> tuple[CacheConfig, ...]:
         raise ConfigError(f"{CONFIG_FILE}: {exc}") from None
 
 
-def _parallel_checks(project: dict[str, Any]) -> int:
-    value = project.get("parallel_checks", 1)
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ConfigError(f"{CONFIG_FILE}: project.parallel_checks: expected a positive integer")
-    return value
+def _checks_policy(data: dict[str, Any]) -> ChecksPolicy | None:
+    try:
+        return parse_policy(data.get("checks_policy"))
+    except PolicyError as exc:
+        raise ConfigError(f"{CONFIG_FILE}: {exc}") from None
 
 
 def _env(project: dict[str, Any]) -> tuple[str, ...]:
@@ -362,7 +363,7 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
         tools=tools,
         max_budget_usd=_positive(table, "max_budget_usd", prefix),
         timeout_minutes=timeout_minutes,
-        max_tokens=_max_tokens(table, where),
+        max_tokens=_count(table, "max_tokens", where),
         api_key_env=api_key_env,
         idle_minutes=_idle_minutes(table, where, timeout_minutes),
         small=_small(table, where, runtime, api_key_env) if "small" in table else None,
@@ -378,11 +379,9 @@ def _small(table: dict[str, Any], where: str, runtime: str, api_key_env: str | N
         prefix[:-1],
         {"max_lines", "model", "max_budget_usd", "max_tokens", "timeout_minutes"},
     )
-    lines = small.get("max_lines")
+    lines = _count(small, "max_lines", prefix[:-1])
     if lines is None:
         raise ConfigError(f"{CONFIG_FILE}: {prefix}max_lines: missing key")
-    if isinstance(lines, bool) or not isinstance(lines, int) or lines <= 0:
-        raise ConfigError(f"{CONFIG_FILE}: {prefix}max_lines: expected a positive integer")
     model = _str(small, "model", prefix) if "model" in small else None
     problem = model and model_problem(runtime, model, api_key_env)
     if problem:
@@ -390,7 +389,7 @@ def _small(table: dict[str, Any], where: str, runtime: str, api_key_env: str | N
     numbers = {
         k: _positive(small, k, prefix) for k in ("max_budget_usd", "timeout_minutes") if k in small
     }
-    return SmallReview(lines, model, max_tokens=_max_tokens(small, prefix[:-1]), **numbers)
+    return SmallReview(lines, model, max_tokens=_count(small, "max_tokens", prefix[:-1]), **numbers)
 
 
 def _idle_minutes(table: dict[str, Any], where: str, timeout_minutes: float) -> float | None:
@@ -432,7 +431,9 @@ def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:
         if not isinstance(item, dict):
             raise ConfigError(f"{CONFIG_FILE}: {where}: expected a table")
         keys = {"name", "command", "blocking", "timeout_minutes", "setup", "not_run_locally"}
-        _only(item, where, {*keys, "paths", "always"})
+        _only(item, where, {*keys, "paths", "always", "full_when"})
+        if item.get("full_when", "high") not in FULL_WHEN:
+            raise ConfigError(f'{CONFIG_FILE}: {where}.full_when: expected "high" or "always"')
         if "paths" in item and "always" in item:
             raise ConfigError(f"{CONFIG_FILE}: {where}: give either paths or always, not both")
         if item.get("always", True) is not True:
@@ -459,6 +460,7 @@ def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:
                 setup=_str_list(item, "setup", where + ".") if "setup" in item else None,
                 not_run_locally=_globs(item, where, "not_run_locally"),
                 paths=_globs(item, where, "paths"),
+                full_when=item.get("full_when", "high"),
             )
         )
     return tuple(checks)
@@ -571,12 +573,13 @@ def _str_list(table: dict[str, Any], key: str, prefix: str) -> tuple[str, ...]:
     return tuple(value)
 
 
-def _max_tokens(table: dict[str, Any], where: str) -> int | None:
-    value = table.get("max_tokens")
+def _count(table: dict[str, Any], key: str, where: str) -> int | None:
+    """A positive integer, or None when `key` is absent."""
+    value = table.get(key)
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ConfigError(f"{CONFIG_FILE}: {where}.max_tokens: expected a positive integer")
+        raise ConfigError(f"{CONFIG_FILE}: {where}.{key}: expected a positive integer")
     return value
 
 
