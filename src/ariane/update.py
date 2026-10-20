@@ -174,7 +174,22 @@ def _refuse_or_read(
         return Heads(url, refs, local, remote, listed)
     git.fetch(repo_root, REMOTE, base_branch)
     base = git.out(["rev-parse", f"refs/remotes/{REMOTE}/{base_branch}"], repo_root)
+    if incoming := _base_records(worktree, local, base, number):
+        raise Refused(
+            f"{REMOTE}/{base_branch} changes the ticket's records ({', '.join(incoming)}),"
+            " which the update rewrites from the ticket's own",
+            f"undo those changes on {base_branch}, then retry",
+        )
     return Heads(url, refs, local, remote, base)
+
+
+def _base_records(worktree: Path, local: str, base: str, number: int) -> list[str]:
+    """The paths under `work/<number>/` the base changed since it forked from the ticket: the
+    update rewrites that folder from the ticket's records, so the merge must bring none
+    (ADR 0033)."""
+    diff = ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-only"]
+    own = ticket.relative_folder(number) + "/"
+    return git.out([*diff, f"{local}...{base}", "--", own], worktree).splitlines()
 
 
 def _not_records(folder: Path) -> list[str]:

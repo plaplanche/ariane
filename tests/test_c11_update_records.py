@@ -40,3 +40,18 @@ def test_c11_update_refuses_a_folder_in_the_records_and_keeps_it(
     assert "work/7/ holds attachments, which are not plain record files" in outcome.line
     assert (nested / "evidence.md").read_text(encoding="utf-8") == "kept\n"
     assert head(project) == local and pushes == [] and runtime.sessions == []
+
+
+def test_c11_update_refuses_a_base_that_changes_the_tickets_records(
+    project: Project,
+    tracker: InMemoryTracker,
+    pushes: list[str],  # noqa: F811
+) -> None:
+    runtime = delivered(project, tracker, pushes)
+    move_base(project, {"work/7/evidence.md": "from the base\n"})
+    local = head(project)
+    outcome = run_update(project, tracker, runtime)
+    assert outcome.exit_code == 1, outcome.line
+    assert "origin/main changes the ticket's records (work/7/evidence.md)" in outcome.line
+    assert head(project) == local and pushes == [] and runtime.sessions == []
+    assert not (worktree(project) / "work" / "7" / "evidence.md").exists()

@@ -285,7 +285,7 @@ branch again: the pull request updates by itself, with one status per check on t
 the issue gate, so add the label `ariane` again first (the pull request referenced the issue).
 It refuses, before changing anything, a ticket whose pull request is merged, closed or missing,
 whose working tree is missing, dirty or on another branch, whose `work/<n>/` holds a folder or a
-link (the update would remove it), or whose local branch has commits the
+link (the update would remove it), whose base branch changed `work/<n>/`, or whose local branch has commits the
 remote branch lacks beyond Ariane's own records in `work/<n>/`. When the base branch is merged
 already it says so and writes nothing. A conflict (the merge is aborted, the paths named; if the abort fails, the
 merge is left as is for you and nothing is written), a red
