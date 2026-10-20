@@ -12,6 +12,7 @@ flowchart TD
   __main__ --> cli
   checks --> config
   checks --> process
+  checks --> risk
   checks --> stop
   checks --> ticket
   claude_code --> attempts
@@ -36,6 +37,7 @@ flowchart TD
   codex --> runtime
   config --> cache
   config --> config_schema
+  config --> risk
   context --> config
   context --> git
   context --> tracker
@@ -44,6 +46,7 @@ flowchart TD
   delivery --> process
   delivery --> redact
   delivery --> review
+  delivery --> risk
   delivery --> ticket
   delivery --> tracker
   flow --> checks
@@ -59,6 +62,7 @@ flowchart TD
   flow --> restart
   flow --> review
   flow --> review_session
+  flow --> risk
   flow --> runs
   flow --> runtime
   flow --> slots
@@ -94,6 +98,7 @@ flowchart TD
   replay --> restart
   replay --> review
   replay --> review_session
+  replay --> risk
   replay --> slots
   replay --> stop
   replay --> ticket
@@ -110,6 +115,7 @@ flowchart TD
   review --> checks
   review --> config
   review --> context
+  review --> risk
   review --> ticket
   review --> tracker
   review_session --> checks
@@ -117,6 +123,7 @@ flowchart TD
   review_session --> git
   review_session --> metrics
   review_session --> review
+  review_session --> risk
   review_session --> runtime
   review_session --> ticket
   review_session --> tracker
@@ -153,6 +160,7 @@ flowchart TD
   verify --> replay
   verify --> review
   verify --> review_session
+  verify --> risk
   verify --> runtime
   verify --> slots
   verify --> stop

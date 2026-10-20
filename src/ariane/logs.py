@@ -88,6 +88,11 @@ FUNCTIONAL_TYPES = _declare(
             "info",
             "The checks not run because no changed file matches their paths.",
         ),
+        (
+            "ticket.checks.risk_tier",
+            "info",
+            "The round's risk tier (low or high) and its reasons, given to every check.",
+        ),
         ("ticket.checks.replayed", "info", "The checks were replayed by Ariane, with the result."),
         ("ticket.review.started", "info", "A reviewer session started, with its model and limits."),
         (

@@ -115,6 +115,22 @@ command = ["uv", "run", "pytest", "-q"]
 # always runs. Every check that runs gets ARIANE_CHANGED_FILES, the path of a file listing the
 # changed files, one per line, to run only the related tests if it wants.
 # paths = ["src/**", "tests/**", "pyproject.toml"]
+# Every check also gets ARIANE_RISK_TIER (low or high, see [checks_policy] below) and
+# ARIANE_FULL_SUITE: 1 on a high round, else 0, so that it can run only the related tests. With
+# full_when = "always" the check gets ARIANE_FULL_SUITE=1 on every round (default "high").
+# full_when = "always"
+
+# Optional: what makes a round's risk tier high (ADR 0056). Without this table every round is
+# high, and every check gets ARIANE_FULL_SUITE=1. A round is high when its diff has more than
+# max_changed_lines added and removed lines, touches more than max_modules modules (the first path
+# segment under each module_roots folder; by default the repository root), touches a
+# critical_paths file, ariane.toml or a check_all_paths file, or when an earlier round of the
+# ticket failed a check; it is low otherwise. A high round keeps the full review.
+# [checks_policy]
+# max_changed_lines = 300
+# max_modules = 3
+# module_roots = ["src/*/"]
+# critical_paths = ["src/auth/**"]
 
 # Optional: what a change must satisfy to be done. Each item is a declared check ({ check = "name" })
 # or a sentence ({ text = "..." }). The implementer receives every item. Without this table,

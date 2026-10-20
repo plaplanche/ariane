@@ -12,6 +12,7 @@ from pathlib import Path
 from ariane import checks, git, review, ticket
 from ariane.config import AgentConfig, CheckConfig, DoneItem
 from ariane.metrics import Metrics
+from ariane.risk import Tier
 from ariane.runtime import (
     AgentRuntime,
     SessionResult,
@@ -86,13 +87,16 @@ class ReviewSession:
     round: int = 0  # the review round, for the metrics
     changed_lines: int | None = None  # added plus deleted lines of the reviewed diff (ADR 0046)
     small_env: Mapping[str, str] | None = None  # the small reviewer's environment (its login)
+    tier: Tier | None = None  # the round's risk tier, stated in the prompt (ADR 0056)
 
     @property
     def small(self) -> bool:
-        """The change is at most `[agents.reviewer.small]`'s `max_lines` (ADR 0046)."""
+        """The change is at most `[agents.reviewer.small]`'s `max_lines` (ADR 0046), and not a
+        `high` tier measured by `[checks_policy]`, which keeps the full review (ADR 0056)."""
         small = self.agent.small
         lines = self.changed_lines
-        return small is not None and lines is not None and lines <= small.max_lines
+        full = self.tier is not None and self.tier.measured and self.tier.high
+        return small is not None and lines is not None and lines <= small.max_lines and not full
 
     @property
     def reviewer(self) -> AgentConfig:
@@ -120,6 +124,8 @@ class ReviewSession:
         small = self.agent.small
         if self.changed_lines is None:
             return "changed lines not counted"
+        if small is not None and not self.small and self.changed_lines <= small.max_lines:
+            return f"{self.changed_lines} changed lines, risk tier high: full review"
         if small is None or not self.small:
             return f"{self.changed_lines} changed lines"
         return (
@@ -205,6 +211,7 @@ class ReviewSession:
                     tree=replay,
                     name_status=diff[1],
                     small_lines=self.changed_lines if self.small else None,
+                    tier=self.tier,
                 ),
                 env=self.small_env if self.small and self.small_env is not None else self.env,
                 json_schema=review.SCHEMA,

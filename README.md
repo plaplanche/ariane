@@ -65,6 +65,30 @@ A check can declare `not_run_locally`, path globs of tests that only CI runs: `c
 
 A check can also declare `paths`, path globs of the files it covers: when a ticket changes none of them, Ariane skips it, records it as `skipped` in `checks.md`, the pull request body and the reviewer's prompt, and posts a `success` status saying "skipped by Ariane: no changed file matches `paths`". A check without `paths` (or with `always = true`) and the documentation checks always run, and a change to `ariane.toml` or to a file of `project.check_all_paths` (lock files, CI files) runs every check. Every check that runs gets `ARIANE_CHANGED_FILES`, the path of a file listing the changed files one per line, to choose its own tests (ADR 0056).
 
+Each round also has a risk tier, `low` or `high`, computed from its diff and the optional `[checks_policy]` table: `high` when the diff has more than `max_changed_lines` added and removed lines (default 300), touches more than `max_modules` modules (default 3; a module is the first path segment under each `module_roots` folder, by default the repository root), touches a `critical_paths` file, `ariane.toml` or a `check_all_paths` file, or when an earlier round of the ticket failed a check; `low` otherwise. Without the table every round is `high`. Every check gets `ARIANE_RISK_TIER` and `ARIANE_FULL_SUITE`: `1` on a `high` round, or always for a check declaring `full_when = "always"`, else `0`. `checks.md`, the journal, the pull request body and the reviewer's prompt state the tier and its reasons, and a `high` round keeps the full review even when the diff is small enough for `[agents.reviewer.small]`. Ariane never picks tests itself: the check's command decides what a related-tests run is, for example (ADR 0056):
+
+```toml
+[checks_policy]
+max_changed_lines = 300
+module_roots = ["src/*/"]
+critical_paths = ["src/auth/**"]
+
+[[checks]]
+name = "tests"
+command = ["uv", "run", "python", "scripts/tests.py"]
+```
+
+```python
+# scripts/tests.py: the full suite on a high round, else the tests of the changed files
+import os, pathlib, subprocess, sys
+
+args = ["pytest", "-q"]
+if os.environ.get("ARIANE_FULL_SUITE", "1") == "0":
+    changed = pathlib.Path(os.environ["ARIANE_CHANGED_FILES"]).read_text().splitlines()
+    args += [p for p in changed if p.startswith("tests/") and p.endswith(".py")] or ["tests"]
+sys.exit(subprocess.call(args))
+```
+
 The reviewer is given the ticket's Out of scope section, and a finding about out-of-scope work is never blocking.
 The reviewer also checks the order of side effects: a write before the check that should guard it, or a retry that can write twice, is a blocking finding.
 

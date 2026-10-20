@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 
 from ariane import process
 from ariane.config import CONFIG_FILE, CheckConfig, matching_paths
+from ariane.risk import HIGH, LOW, UNMEASURED, ChecksPolicy, Tier
 from ariane.stop import Stop
 from ariane.ticket import fenced
 
@@ -174,6 +175,57 @@ def selected(
     return [c for c in all_checks if not c.paths or matching_paths(c.paths, changed)]
 
 
+def risk_tier(
+    policy: ChecksPolicy | None,
+    changed: Sequence[str],
+    changed_lines: int,
+    check_all_paths: Sequence[str] = (),
+    failed_before: bool = False,
+) -> Tier:
+    """The round's tier from its diff (ADR 0056): `high` for each reason found, else `low`;
+    always `high`, and not `measured`, without `[checks_policy]`."""
+    if policy is None:
+        return UNMEASURED
+    reasons = []
+    if changed_lines > policy.max_changed_lines:
+        reasons.append(f"{changed_lines} changed lines (more than {policy.max_changed_lines})")
+    touched = modules(changed, policy.module_roots)
+    if len(touched) > policy.max_modules:
+        names = ", ".join(f"`{m}`" for m in touched)
+        reasons.append(f"{len(touched)} modules (more than {policy.max_modules}): {names}")
+    for glob in policy.critical_paths:
+        if matching_paths([glob], changed):
+            reasons.append(f"touches `critical_paths` `{glob}`")
+    if CONFIG_FILE in changed:
+        reasons.append(f"touches `{CONFIG_FILE}`")
+    for glob in check_all_paths:
+        if matching_paths([glob], changed):
+            reasons.append(f"touches `check_all_paths` `{glob}`")
+    if failed_before:
+        reasons.append("a previous round failed a check")
+    if reasons:
+        return Tier(HIGH, tuple(reasons))
+    lines = f"{changed_lines} changed line{'s' if changed_lines != 1 else ''}"
+    return Tier(LOW, (f"{lines}, {len(touched)} module{'s' if len(touched) != 1 else ''}",))
+
+
+def modules(changed: Sequence[str], roots: Sequence[str] = ()) -> list[str]:
+    """The modules the `changed` paths touch: under the deepest folder matching one of the
+    `roots` globs, the root and the path's first segment below it; a path under no root counts
+    none. Without `roots`, the repository root is the only one: the first segment."""
+    found: list[str] = []
+    for path in changed:
+        parts = path.split("/")
+        module = parts[0] if not roots else None
+        for depth in range(1, len(parts)):  # each folder above the file, outermost first
+            folder = "/".join(parts[:depth])
+            if roots and matching_paths([r.rstrip("/") for r in roots], [folder]):
+                module = "/".join(parts[: depth + 1])
+        if module is not None and module not in found:
+            found.append(module)
+    return found
+
+
 def skipped_result(check: CheckConfig) -> CheckResult:
     """The result of a check the change did not select: not run, so it blocks nothing."""
     return CheckResult(
@@ -279,10 +331,17 @@ def _not_run_lines(r: CheckResult, changed: Sequence[str]) -> list[str]:
     return [f"- Not run by this replay (CI only): {globs}", f"- Changed files it skips: {files}"]
 
 
-def report(results: Sequence[CheckResult], commit: str, changed: Sequence[str] = ()) -> str:
-    """The full report: one section per check with its complete output, then a summary line."""
+def report(
+    results: Sequence[CheckResult],
+    commit: str,
+    changed: Sequence[str] = (),
+    tier: Tier | None = None,
+) -> str:
+    """The full report: the round's risk tier, one section per check with its complete output,
+    then a summary line."""
+    shown = f"Risk tier: {tier.text()}.\n\n" if tier is not None else ""
     parts = [
-        f"# Checks\n\nReplayed by Ariane on commit `{commit}`.\n\n"
+        f"# Checks\n\n{shown}Replayed by Ariane on commit `{commit}`.\n\n"
         f"Each check was replayed in its own clean working tree at `{commit}`, after the setup.\n",
         summary_table(results),
         "",

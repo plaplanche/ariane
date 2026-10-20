@@ -17,6 +17,8 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 | `changed_files_listing(tree, records, changed)` | context manager | `<records>/changed-files.txt` in `tree`, listing `changed` one per line, made new for the block and never removed by name (the replay tree's removal takes it); on POSIX each folder is opened by handle without following a link and the file made relative to the last one, on Windows by path (ADR 0056). |
 | `without_listing(status, records)` | function | A replay tree's `git status --porcelain` without the listing's path (and anything under it, if a check put a folder there): what the post-check verification compares (ADR 0056). |
 | `selected(all_checks, changed, check_all_paths)` | function | The checks a change selects (ADR 0056): every one when it touches `ariane.toml` or a `project.check_all_paths` file, else those without `paths` and those whose `paths` match a changed file. |
+| `risk_tier(policy, changed, changed_lines, check_all_paths=(), failed_before=False)` | function | The round's `risk.Tier` (ADR 0056): `high` with one reason per rule met (more than `max_changed_lines` changed lines, more than `max_modules` modules, a `critical_paths` file, `ariane.toml`, a `check_all_paths` file, a failed earlier round), else `low` with the counts ("2 changed lines, 1 module"); `risk.UNMEASURED` (`high`, "no `[checks_policy]`") when `policy` is `None`. |
+| `modules(changed, roots=())` | function | The modules the changed paths touch, in order: for each path, the deepest folder matching a `roots` glob (a trailing `/` ignored) and the path's first segment below it; a path under no root counts none; without `roots`, the path's first segment. |
 | `skipped_result(check)` | function | The `CheckResult` of a check not selected. |
 | `skipped_names(results)` | function | The names of the skipped checks. |
 | `run_checks(checks, cwd, env)` | function | Runs the declared checks in a working tree, in order. |
@@ -25,7 +27,7 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 | `summary_line(results)` | function | One line: how many checks passed and which blocking ones failed, and how many were skipped when some were. |
 | `summary_table(results)` | function | A Markdown table of the results; a skipped check shows `skipped`. |
 | `unrun_files(results, changed)` | function | The changed files matching a check's `not_run_locally` globs. |
-| `report(results, commit, changed=())` | function | The committed `checks.md` text for a commit, with the globs a check does not run and the matching changed files, and each skipped check with its reason; it says each check was replayed in its own clean working tree, after the setup. |
+| `report(results, commit, changed=(), tier=None)` | function | The committed `checks.md` text for a commit, starting with "Risk tier: <tier>: <reasons>." when given the round's `tier` (ADR 0056), with the globs a check does not run and the matching changed files, and each skipped check with its reason; it says each check was replayed in its own clean working tree, after the setup. |
 | `parse_summary_table(text)` | function | Reads a committed report back as (name, blocking, outcome) tuples; a skipped check counts as passed. |
 
 ## Behaviour and errors
@@ -34,6 +36,7 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 - `run_checks`, `run_check`: run the declared commands in a working tree; `run_check` is called from the replay's worker threads when `project.parallel_checks` is above 1 (ADR 0052), each with its tree and its slot's environment; the flow also passes the generated-documentation commands as checks named `docs: <name>` (C25), so they appear in the report and the statuses like any check.
 - A check runs after its tree's dependency caches were copied from the store or built (`[[project.cache]]`, ADR 0054) and after its setup; neither is part of its duration, and its report is the same with or without caches.
 - `selected`, `skipped_result`: the replay runs only the selected checks and records the others as skipped (ADR 0056); a skipped check never fails, so it never blocks. `changed_files` turns the round's `--name-status` listing into the changed files the selection and `ARIANE_CHANGED_FILES` use.
+- `risk_tier` (C9, ADR 0056): the round's tier from the same changed files and the changed lines of `git.changes`; the replay gives it to every check as `ARIANE_RISK_TIER` and `ARIANE_FULL_SUITE` (`risk.Tier.variables`). At a threshold is still `low`: only more than `max_changed_lines` lines or `max_modules` modules is `high`. Each critical or `check_all_paths` glob matched is its own reason.
 - `changed_files_listing`: the listing a check gets. On POSIX (`os.supports_dir_fd`), the tree is opened, then each folder of `records` is made if missing and opened with `O_DIRECTORY | O_NOFOLLOW` relative to the previous one; the file is created with `O_EXCL | O_NOFOLLOW` in the last folder's handle. Ariane never removes it by name: a check could have swapped it, and the replay tree is removed after each check anyway. Another check that moves or replaces a folder on the way at any moment (parallel checks, ADR 0052) therefore never makes Ariane create a file outside the tree: a link met on the way, or a file the commit holds, stops with "the replayed commit holds work/<n>/changed-files.txt, or its folder leads outside the replay tree". Windows has no such call in Python's standard library: there the folder is checked inside the tree before it is made, a narrower guarantee.
 - `blocking_failures`, `summary_line`, `summary_table`, `report`: read and render results.
 - `parse_summary_table`: read a committed report back.
@@ -80,11 +83,13 @@ class checks {
   without_listing(status, records) str
   changed_files_listing(tree, records, changed) Iterator
   selected(all_checks, changed, check_all_paths) list
+  risk_tier(policy, changed, changed_lines) Tier
+  modules(changed, roots) list
   skipped_result(check) CheckResult
   blocking_failures(results) list
   summary_line(results) str
   summary_table(results) str
-  report(results, commit) str
+  report(results, commit, changed, tier) str
   parse_summary_table(text) list
 }
 checks ..> CheckResult
@@ -99,6 +104,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 flowchart LR
   checks --> config
   checks --> process
+  checks --> risk
   checks --> stop
   checks --> ticket
   delivery --> checks

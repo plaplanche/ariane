@@ -64,7 +64,45 @@ written over a file) lands where that check moved it. Only a check of the projec
 the user's rights, can do this, and it could write that file itself; closing it needs an
 operating-system sandbox, as the residuals of ADR 0017, and waits for slice 7.
 
-## Consequences
+**Amendment: the risk tier of a round (#185).** Selection by `paths` skips the checks a ticket
+cannot affect; the risk tier sizes how much of each selected check runs.
+- **The tier.** Before its checks, each round gets a tier, `low` or `high`, from the same diff
+  (start commit to replayed commit, without `work/`; `ariane verify`: base to head) and the
+  optional `[checks_policy]` table (`risk.ChecksPolicy`, computed by `checks.risk_tier`). It is
+  `high` when any of these holds, each recorded as a reason: more than `max_changed_lines` lines
+  added and removed (default 300, `git diff --numstat` as in ADR 0046); more than `max_modules`
+  modules touched (default 3); a changed file matching `critical_paths`; a change to
+  `ariane.toml` or to a `check_all_paths` file; a previous round of the same ticket failed a
+  check (any check, blocking or not, not a skipped one). It is `low` otherwise, with the counts as
+  its reason. Without the table every round is `high` (reason "no `[checks_policy]`"): no
+  behaviour change.
+- **Modules.** `module_roots` lists globs of folders (`"src/*/"`); a changed file's module is
+  the deepest matching root and the file's first path segment below it, and a file under no root
+  counts as no module (documentation and tests beside the code do not widen the reach). Without
+  `module_roots`, the repository root is the only root: the module is the first path segment.
+- **Effect.** Every check gets `ARIANE_RISK_TIER=low|high` and `ARIANE_FULL_SUITE`: `1` when the
+  tier is `high` or the check declares `full_when = "always"`, else `0` (`full_when` defaults to
+  `"high"`). Selection by `paths` still comes first. The project's command decides what a
+  related-tests run is; Ariane picks no test.
+- **Records.** `checks.md` starts with "Risk tier: <tier>: <reasons>."; the journal logs
+  `ticket.checks.risk_tier`; the pull request body and the reviewer's prompt state it.
+- **Review sizing (ADR 0046).** A `high` tier measured by `[checks_policy]` keeps the full
+  review even when the diff is within `[agents.reviewer.small] max_lines`; the journal's
+  `ticket.review.started` then says "risk tier high: full review". The tier without the table is
+  not measured and leaves the sizing by lines as it was, so a configuration without
+  `[checks_policy]` behaves exactly as before.
+- **Why from the diff, not from the implementer.** The implementer is the party whose work is
+  being checked: a tier it declares could be lowered to skip tests. The diff is what Ariane
+  already reads for the selection, it is deterministic (C9), and the same commit always gets the
+  same tier.
+- **Why a failed round forces `high`.** A failed check shows the change broke something its
+  related tests may not cover; the fix that follows is small by construction, so a size threshold
+  alone would let the fix round run fewer tests than the round that failed.
+- **Why these defaults.** 300 changed lines and 3 modules are about the size of one coherent
+  feature in one area; above either, the related tests are less likely to cover what the change
+  reaches. Both are the project's to tune.
+- **Choosing the implementer's model from the tier** is not done: it needs measurements on the
+  benchmark first.
 A project that declares `paths` waits only for the checks a ticket can affect. A wrong `paths`
 lets a change through untested by that check; the project's own CI still runs everything on the
 pull request. Existing configurations, without `paths`, keep running every check. Ariane's own
