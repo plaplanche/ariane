@@ -89,7 +89,10 @@ throwaway workflow on `main` for it. Making those runs cheaper is #214.
   `tmp_path`, branch `main` checked out, one commit `initial` by the test identity, `app.txt`
   and `.gitignore`, a clean tree, `origin` pointing at its own remote. The template sets its own
   isolated git configuration and identity, since a session fixture runs before the per-test
-  `isolated_git`.
+  `isolated_git`. That configuration sets `gc.auto = 0`, `maintenance.auto = false` and
+  `gc.autoDetach = false` before the first git command, so no background maintenance started by
+  a template's git command changes its folders while `project` copies them (a copy once met a
+  `maintenance.lock` being removed).
 - **Why the copy is safe under xdist.** Each worker is a separate process with its own base
   temp directory (`popen-gwN`), so each builds its own template; the template is never given to
   a test, only copied, and nothing writes to it after it is built. Each test gets its own

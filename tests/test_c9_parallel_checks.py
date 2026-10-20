@@ -8,6 +8,7 @@ import dataclasses
 import json
 import shutil
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -25,12 +26,13 @@ from conftest import FakeRuntime, Project, make_config, sh
 from test_flow import environ, journal, start, worktree
 
 PY = sys.executable
-# Records the slot it was given and when it ran, then sleeps argv[2] seconds.
+# Sleeps argv[2] seconds, then records the slot it was given and when it ran in its own
+# `<argv[1]>.<pid>`: no two checks write to one file.
 RECORD = """
 import json, os, sys, time
 began = time.time()
 time.sleep(float(sys.argv[2]))
-with open(sys.argv[1], "a", encoding="utf-8") as out:
+with open(f"{sys.argv[1]}.{os.getpid()}", "w", encoding="utf-8") as out:
     out.write(json.dumps({"slot": os.environ.get("ARIANE_SLOT"), "began": began,
                           "ended": time.time()}) + "\\n")
 """
@@ -55,7 +57,9 @@ def recording(out: Path, *seconds: float) -> tuple[CheckConfig, ...]:
 
 
 def records(out: Path) -> list[dict[str, Any]]:
-    return [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    """The record of each check, one `<out>.<pid>` file each, sorted by name."""
+    files = sorted(out.parent.glob(f"{out.name}.*"), key=lambda p: p.name)
+    return [json.loads(p.read_text(encoding="utf-8")) for p in files]
 
 
 def trees(project: Project) -> str:
@@ -113,6 +117,16 @@ def test_c9_parallel_checks_flow_with_three_takes_less_than_one_by_one(
         assert outcome.exit_code == 0, outcome.line
     assert spent[0] >= 3
     assert spent[1] < spent[0] - 1.5, spent
+
+
+def test_c9_parallel_checks_each_recording_check_writes_its_own_file(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    running = [subprocess.Popen(list(c.command)) for c in recording(out, 0.5, 0.5, 0.5)]
+    assert [p.wait(timeout=30) for p in running] == [0, 0, 0]
+    files = sorted(p.name for p in tmp_path.iterdir())
+    assert files == sorted(f"out.{p.pid}" for p in running)
+    assert not out.exists()
+    assert len(records(out)) == 3
 
 
 def test_c9_parallel_checks_report_keeps_the_declared_order(
