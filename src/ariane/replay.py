@@ -385,6 +385,13 @@ def round_changes(run: _TicketRun, start_commit: str, checked: str) -> git.Chang
     return run.changes[checked]
 
 
+def sensitive(run: _TicketRun, checked: str) -> list[str]:
+    """The paths of replayed commit `checked` matching `[review] sensitive_paths`, for its review
+    and its delivery alike: decoded, and a rename or copy on both sides (ADR 0057)."""
+    paths = checks.changed_files(run.changes[checked].name_status)
+    return matching_paths(run.config.sensitive_paths, paths)
+
+
 def review_round(
     run: _TicketRun,
     checked: str,
@@ -424,7 +431,7 @@ def review_round(
             changed_lines=changes.changed_lines,
             tier=run.tier,
             residuals=run.residuals,
-            sensitive=matching_paths(run.config.sensitive_paths, checks.changed_files(name_status)),
+            sensitive=sensitive(run, checked),
         )
         try:
             answer = sessions.run(

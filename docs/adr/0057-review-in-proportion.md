@@ -31,7 +31,10 @@ README, with nothing pointing the owner to it.
 - **Sensitive paths.** An optional `[review] sensitive_paths` (path globs, the rules of
   `checks[].paths`). When the reviewed change touches one, the prompt says so and lists those
   files as data; when the delivered change touches one, the pull request gets the label
-  `owner-review` and its body says, above the review, which sensitive paths changed. The label is
+  `owner-review` and its body says, above the review, which sensitive paths changed. The review
+  and the delivery match the same paths: the decoded `git diff --name-status` listing of the
+  change, where a rename or copy counts on both sides, so moving a sensitive file out of its glob
+  is still labelled. The label is
   added after the pull request opens (GitHub creates it if the repository lacks it); a refusal is
   the journaled warning `ticket.warning.label_refused` and the delivery goes on, since the body
   already names the paths. Ariane's own `ariane.toml` lists the push guard (`git.py`,

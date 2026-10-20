@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ariane import checks, context, git, logs, process, replay, review, review_session, runs, ticket
-from ariane.config import CheckConfig, Config, matching_paths
+from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
@@ -542,7 +542,7 @@ class _TicketRun:
             self.truncated,
             lambda: setattr(self, "pushed", True),
             self.tier,
-            matching_paths(self.config.sensitive_paths, self.changed),
+            replay.sensitive(self, checked),
         )
         self.metrics.delivered_red(len(checks.blocking_failures(results)))
         self.metrics.finish("needs a human" if delivery.draft else "delivered")

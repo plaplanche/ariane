@@ -202,3 +202,59 @@ def test_c10_review_proportion_verify_gives_the_merge_base_residuals_and_sensiti
     listed = prompt.partition('kind="accepted-residuals">\n')[2].partition("</untrusted-ticket>")[0]
     assert listed.startswith("- ADR 0001: Until a sandbox,") and "Added by" not in listed
     assert '<untrusted-ticket kind="paths">\napp.txt\n</untrusted-ticket>' in prompt
+
+
+GUARD = "".join(f"guard line {i}\n" for i in range(20))
+
+
+def commit_guard(project: Project) -> None:
+    (project.root / "guard.py").write_text(GUARD, encoding="utf-8")
+    sh(["git", "add", "--all"], project.root)
+    sh(["git", "commit", "--quiet", "-m", "guard"], project.root)
+    sh(["git", "push", "--quiet", "origin", "main"], project.root)
+
+
+def move_guard(session: Session) -> None:
+    edit_app(session)
+    (session.cwd / "tools").mkdir(exist_ok=True)
+    sh(["git", "mv", "guard.py", "tools/moved.py"], session.cwd)
+    sh(["git", "commit", "--quiet", "-m", "Move the guard"], session.cwd)  # git sees a rename
+
+
+def test_c10_review_proportion_renaming_a_sensitive_file_away_is_labelled(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    commit_guard(project)
+    runtime = FakeRuntime(action=move_guard)
+    assert start(project, tracker, runtime, sensitive("guard.py")).exit_code == 0
+    assert "R100\tguard.py\ttools/moved.py" in reviewer_prompt(runtime)  # a rename, not a delete
+    assert tracker.labels == {1001: [OWNER_REVIEW_LABEL]}
+    assert "sensitive paths changed: `guard.py`." in str(tracker.opened[-1]["body"])
+    assert '<untrusted-ticket kind="paths">\nguard.py\n</untrusted-ticket>' in reviewer_prompt(
+        runtime
+    )
+
+
+def test_c10_review_proportion_verify_sees_a_sensitive_file_renamed_away(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commit_guard(project)
+    sh(["git", "switch", "--quiet", "-c", "hand/move"], project.root)
+    (project.root / "app.txt").write_text("version 2\n", encoding="utf-8")
+    (project.root / "tools").mkdir()
+    sh(["git", "mv", "guard.py", "tools/moved.py"], project.root)
+    sh(["git", "commit", "--quiet", "-am", "Move the guard"], project.root)
+    sh(["git", "switch", "--quiet", "main"], project.root)
+    monkeypatch.setattr(git, "push", lambda *a, **k: None)
+    runtime = FakeRuntime()
+    outcome = verify.verify(
+        "hand/move",
+        repo_root=project.root,
+        config=sensitive("guard.py"),
+        runtime=runtime,
+        environ=environ(),
+    )
+    assert outcome.exit_code == 0, outcome.line
+    prompt = reviewer_prompt(runtime)
+    assert "R100\tguard.py\ttools/moved.py" in prompt
+    assert '<untrusted-ticket kind="paths">\nguard.py\n</untrusted-ticket>' in prompt

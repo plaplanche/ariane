@@ -327,7 +327,9 @@ class _Verification:
             raise Refused(f"the reviewer working tree already exists at {tree}", "remove it")
         git.add_reviewer_worktree(self.repo_root, tree, self.head)
         try:
-            return self._review_in(tree, records, folder, all_checks, results, changed, changes)
+            return self._review_in(
+                tree, records, folder, all_checks, results, changed, changes, files
+            )
         finally:
             git.remove_worktree(self.repo_root, tree)
 
@@ -340,6 +342,7 @@ class _Verification:
         results: list[checks.CheckResult],
         changed: list[str],
         changes: git.Changes,
+        files: Sequence[str],
     ) -> Outcome:
         tree_before = git.status(tree)
         sessions = ReviewSession(
@@ -356,7 +359,7 @@ class _Verification:
             changed_lines=changes.changed_lines,
             tier=self.tier,
             residuals=review.accepted_residuals(self.repo_root, self.base),
-            sensitive=matching_paths(self.config.sensitive_paths, changed),
+            sensitive=matching_paths(self.config.sensitive_paths, files),  # both sides of a rename
         )
         try:
             answer = sessions.run(
