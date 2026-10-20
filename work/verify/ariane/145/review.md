@@ -1,18 +1,22 @@
 # Review 0
 
-- Reviewed commit: `d69b3d2f06199720398c6c5e6c70cc6c4e625fa9`
+- Reviewed commit: `14aed46849415033ccb1ac01463dc5cad674cbfb`
 - Reviewer model: gpt-6-astra
 - Verdict: **no-go** (the reviewer answered no-go)
 
 ## Findings
 
-- **blocking** (`src/ariane/ticket.py:98`) Loading existing records silently discards directories that restore then deletes
+- **blocking** (`src/ariane/update.py:229`) Restoring pre-merge records deletes records brought by the base
 
-  load() retains only immediate regular files, but restore() recursively removes every entry absent from that snapshot. A clean delivered tree can contain committed work/7/attachments/evidence.md (explicitly permitted by _only_records_beyond), or ignored local attachments. The sequence is: load omits attachments; merge, replay and review run; push_update calls _commit_record; restore recursively deletes attachments; git.commit stages the deletion; _require_replayed permits it because it is under work/7/; the deletion is pushed. A recorded failure also invokes the destructive restore. Ignored contents are lost without any Git recovery. This remains blocking under the proportionality rule because it loses data. A read-only mocked execution confirmed that an existing directory omitted by load is subsequently passed to _remove. Preserve existing contents recursively without following links, or refuse unsupported entries before merging; add regression coverage for tracked and ignored nested contents.
+  The folder is loaded before the merge and never reconciled afterward. If the base adds work/7/evidence.md, the clean merge writes that file and creates its merge commit. Ariane then writes journal, metrics, checks and review records. Delivery.commit_record calls TicketFolder.restore(), which deletes evidence.md because it is absent from the pre-merge snapshot, then commits that deletion. _require_replayed permits it because it is inside work/7/, and the leased push publishes it. The stop-record path also performs this destructive restore. This is blocking because it loses data from the resulting branch, even though recovery from Git history remains possible. Preserve incoming records or refuse such changes before merging; add regression coverage for both successful delivery and a post-merge stop.
 
-- **minor** (`src/ariane/update.py:93`) Concurrent Linux runs do not recognize update registrations
+- **blocking** (`tests/test_c11_update.py:1`) The required blocking test replay failed
 
-  The update registers its process with runs.registered, but runs._started_as only accepts a command line containing start <number>. During concurrent start A and update B, B registers and writes its merge commit to ariane/B; A's watcher rejects B as nongenuine, so A's next guard treats B's legitimate branch movement as unauthorized and stops A. Two concurrent updates have the same problem. Extend process recognition to the new command while preserving the existing identity checks, and cover this with separate-process tests. Classified minor because simultaneous update execution is not an explicit acceptance criterion here; this is distinct from the accepted registry-spoofing residual.
+  The current replay supplied with this review reports tests failing with exit 1 after 149.1 seconds. Ticket #145 explicitly requires every blocking check to pass. The passing reports committed under work/145/ and work/verify/ariane/145/ refer to older commits and cannot supersede this result. Diagnose the current failure and obtain a passing replay on the reviewed revision. I did not rerun tests because their fixtures write files, contrary to this review's read-only restriction.
+
+- **blocking** Definition of done not met: check tests passes
+
+  Replayed by Ariane: exit 1.
 
 ## Definition of done
 
@@ -28,9 +32,9 @@
 
   Replayed by Ariane: exit 0.
 
-- met: check tests passes
+- **not met**: check tests passes
 
-  Replayed by Ariane: exit 0.
+  Replayed by Ariane: exit 1.
 
 - met: check file length passes
 
@@ -38,21 +42,21 @@
 
 - met: The change is covered by tests that fail without it.
 
-  tests/test_c11_update.py adds substantive coverage for merging, replay, review, statuses, refusals, conflicts, metrics and remote lease races; the base lacks the imported update module and command. Ariane reports the full checks passing. I did not rerun filesystem-writing tests in this read-only review. Missing coverage includes record-directory preservation and concurrent command recognition. Side-effect audit: command logging and lock/slot files precede eligibility checks; the up-to-date path performs no ticket-record or Git fetch writes. An update then fetches objects/tracking refs/FETCH_HEAD, registers the run, merges into the index/tree/history, writes journal and metrics, creates replay trees and any setup/cache outputs, removes those trees, writes check records, creates/removes the reviewer tree and writes review/session records. Success writes delivery metrics and pushing status, restores and commits records, runs the final guard, performs the leased push, journals the push, publishes statuses, then commits delivered status locally. Red checks/no-go write and commit stop records without pushing. Conflict handling aborts before ticket-record writes; failed abort or unresolved interruption leaves merge state intact. Registry cleanup writes its ended record and removes the live entry. The destructive restore identified above occurs on both success and recorded-stop paths.
+  There are 22 test_c11_update_* test functions, with additional parametrized cases. They exercise the new command, merge ancestry, refusals, conflicts, failed checks, no-go review, remote races, numbering and metrics; they depend on functionality absent from the base. This establishes targeted coverage, not a passing suite: the current blocking replay failed, and incoming-record preservation is untested.
 
 - met: The documentation the change affects is updated (C25).
 
-  README includes PowerShell and bash usage. The new update module document, affected module documents, C4 views, CLI reference and log catalogue are updated. The supplied docs-reference check passed.
+  README includes PowerShell and bash usage; the CLI reference, log catalogue, architecture views, affected module documents and new update module document are updated. Ariane reports the generated-reference check passing.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0033's amendment records review numbering, refusals, the atomic leased fast-forward push, no-op logging, incoming-file check selection, residual provenance, metrics continuation and unresolved-merge handling. The destructive record restoration is an implementation defect rather than an acceptable additional design choice.
+  ADR 0033's amendment records the remote-enforced lease, refusals, review numbering, technical up-to-date log, selective checks, residual source, metrics continuation and interrupted-merge handling. The traced success path is merge writes, journal/metrics writes, replay trees and check outputs, reviewer tree and review records, records commit, remote guard, leased push, pushed journal entry, commit statuses, then local delivery-record commit. Conflict handling aborts before record writes; unresolved merges avoid record commits; red/no-go paths commit stop records without pushing.
 
 ## Proposed learnings (not decided)
 
-- Proposed: test load-and-restore round trips against all existing content, including nested and ignored files, before using restoration on resumed work.
-- Proposed: when adding a registered command, test that concurrent processes recognize its identity and tolerate its authorized branch writes.
+- Proposed: When restoring an in-memory record snapshot after a merge, test additions and edits arriving from the base; a records-only delivery exemption can otherwise conceal data loss.
+- Proposed: Treat check results as evidence for their exact revision; an older committed green report cannot override a current failed replay.
 
 ## Run
 
-Slot 0 (`ARIANE_SLOT=0` for the setup, the checks and the reviewer, ADR 0050).
+Slot 1 (`ARIANE_SLOT=1` for the setup, the checks and the reviewer, ADR 0050).
