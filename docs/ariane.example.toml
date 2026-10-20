@@ -96,7 +96,8 @@ timeout_minutes = 20
 
 # Each [[checks]] entry is a check Ariane replays on the result before opening the pull request.
 [[checks]]
-# Name of the check, shown in the pull request statuses.
+# Name of the check, shown in the pull request statuses as ariane/<name>. "full-replay" and names
+# starting with "docs: " are reserved.
 name = "lint"
 # Command to run (list of arguments, run from the repository root).
 command = ["uv", "run", "ruff", "check", "."]

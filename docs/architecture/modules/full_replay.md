@@ -7,7 +7,7 @@ The sampled full replay after delivery (C9, C19, ADR 0056): when the last round 
 | Name | Kind | What it does |
 | --- | --- | --- |
 | `RECORD` | constant | `full-replay.md`, the record in the ticket folder. |
-| `STATUS` | constant | `ariane/full-replay`, the commit status it publishes. |
+| `STATUS` | constant | `ariane/full-replay` (`config.FULL_REPLAY_CHECK`, a name no check may take), the commit status it publishes. |
 | `SKIPPED` | constant | `skipped`: the selective round did not run the check. |
 | `PARTIAL` | constant | `partial`: the round ran it with `ARIANE_FULL_SUITE=0`. |
 | `RAN` | constant | `ran in full`: the round ran it with `ARIANE_FULL_SUITE=1`. |
@@ -24,7 +24,7 @@ The sampled full replay after delivery (C9, C19, ADR 0056): when the last round 
 - Nothing happens when the last round has no skipped or partial check, or a blocking check failed. Otherwise `sampled` decides; not sampled, `metrics.json` gets `full_replay` `{"ran": false}` and the journal `ticket.checks.full_replay` "Full replay not sampled".
 - Sampled: `replay.replay(..., full=True)` replays every check at the replayed commit, each in a fresh tree, with `risk.FULL_REPLAY` (`ARIANE_RISK_TIER=high`, `ARIANE_FULL_SUITE=1`) and `ARIANE_CHANGED_FILES`, in the run's slot (and more with `parallel_checks`). The guard's baseline is git and the remote as the delivery left them; each tree is verified as in a round.
 - An escape (a check failing only in the full replay) is written to `full-replay.md` with its output (redacted by the ticket folder), journaled `ticket.checks.escape`, commented on the pull request naming the checks (redacted), and published as a failing `ariane/full-replay` status on the pushed commit; a passing full replay publishes a success. A refused status or comment is a journaled warning (`ticket.warning.statuses_refused`, `ticket.warning.comment_refused`).
-- The push, the pull request, its body, the review and the run's outcome are never changed. A stop or Ctrl-C during the full replay is recorded (`full_replay.stopped`, the journal, `full-replay.md`) and ends only the full replay. Whatever stops it after the replay (Ctrl-C or an error while recording, publishing or committing, or while recording a stop) is journaled when it can be ("Full replay stopped: <reason>", then the commit is tried again) and never reaches the run: the delivered outcome, status and exit code stay. Its records go in one local commit, "record the full replay", never pushed by Ariane.
+- The push, the pull request, its body, the review and the run's outcome are never changed. A stop or Ctrl-C during the full replay is recorded (`full_replay.stopped`, the journal, `full-replay.md`) and ends only the full replay. The checks that finished before it are kept (`replay(..., ran=)`): one that failed is still an escape, recorded with its output, journaled, commented and published as a failing status, before the stop is journaled and added to `full-replay.md` ("## Stopped"); a stop without an escape publishes no status. Whatever stops it after the replay (Ctrl-C or an error while recording, publishing or committing, or while recording a stop) is journaled when it can be ("Full replay stopped: <reason>", then the commit is tried again) and never reaches the run: the delivered outcome, status and exit code stay. Its records go in one local commit, "record the full replay", never pushed by Ariane.
 
 ## Workflow
 
@@ -35,7 +35,7 @@ A[delivered: push, pull request, statuses] --> B{last round skipped or partial, 
   B -->|yes| C{sampled from ticket and commit?}
   C -->|no| D[metrics: not sampled]
   C -->|yes| E[replay every check, ARIANE_FULL_SUITE=1]
-  E -->|stop| F[record the stop]
+  E -->|stop| F[record the stop, and the escapes of the checks done before it]
   E --> G{a check fails only here?}
   G -->|yes| H[full-replay.md, journal escape, comment, failing status]
   G -->|no| I[full-replay.md, success status]

@@ -4,6 +4,7 @@ the escapes, publishes them, and `ariane report` shows the time saved and the es
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 import sys
@@ -11,9 +12,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from test_config import VALID
 
 from ariane import flow, full_replay, git, report, risk
-from ariane.config import CheckConfig, ChecksPolicy, Config
+from ariane.config import CheckConfig, ChecksPolicy, Config, ConfigError, parse
 from ariane.tracker import InMemoryTracker
 
 from conftest import FakeRuntime, Project, make_config, sh
@@ -161,6 +163,59 @@ def test_c19_full_replay_never_changes_the_pushed_commit_or_the_review_result(
     assert sh(["git", "log", "-1", "--format=%s"], tree).strip() == "#7: record the full replay"
     assert sh(["git", "merge-base", "--is-ancestor", pushed, "HEAD"], tree) == ""
     assert "work/7/full-replay.md" in sh(["git", "show", "--name-only", "HEAD"], tree)
+
+
+def test_c19_full_replay_a_later_stop_keeps_an_escape_already_seen(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    """Both skipped in the round: `a` fails the full suite, then `b`'s setup stops the full
+    replay. `a`'s failure is still an escape, recorded, journaled and published."""
+    cfg = config(
+        1.0,
+        CheckConfig("app", PASS, True, 1, full_when="always"),
+        CheckConfig("a", FULL_FAILS, True, 1, paths=("docs/**",)),
+        CheckConfig("b", PASS, True, 1, setup=(PY, "-c", "raise SystemExit(3)"), paths=("x/**",)),
+    )
+    outcome = start(project, tracker, FakeRuntime(), cfg)
+    assert outcome.exit_code == 0 and "review go" in outcome.line
+    log = journal(project)
+    assert "Escape: a" in log and "- a (skipped): exit 1" in log
+    assert log.index("Escape: a") < log.index("Full replay stopped")
+    record = (worktree(project) / "work/7/full-replay.md").read_text(encoding="utf-8")
+    assert "| a | skipped | **fail** (exit 1) | yes |" in record
+    assert "## a (escape)" in record and "full suite broke" in record and TOKEN not in record
+    assert "## Stopped" in record and "| b |" not in record
+    [status] = statuses(tracker, "ariane/full-replay")
+    assert status["state"] == "failure"
+    [comment] = tracker.comments[1001]
+    assert "`a` (skipped): exit 1" in comment
+    done = metrics(project)
+    assert done["full_replay"]["escapes"] == ["a"] and done["full_replay"]["stopped"]
+    assert done["outcome"] == "delivered"
+
+
+def test_c19_full_replay_a_stop_without_an_escape_publishes_no_status(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    cfg = config(
+        1.0,
+        CheckConfig("app", PASS, True, 1, full_when="always"),
+        CheckConfig("b", PASS, True, 1, setup=(PY, "-c", "raise SystemExit(3)"), paths=("x/**",)),
+    )
+    assert start(project, tracker, FakeRuntime(), cfg).exit_code == 0
+    assert "Full replay stopped" in journal(project) and "Escape" not in journal(project)
+    assert statuses(tracker, "ariane/full-replay") == []
+    assert metrics(project)["full_replay"]["escapes"] == []
+
+
+def test_c19_full_replay_its_status_name_is_no_check_name() -> None:
+    """A check is published as `ariane/<name>`: one named `full-replay` would share the full
+    replay's status, whose success could hide the check's failure."""
+    data = copy.deepcopy(VALID)
+    data["checks"] = [{"name": "full-replay", "command": ["x"]}]
+    with pytest.raises(ConfigError, match=r"checks\[0\]\.name: 'full-replay' is reserved"):
+        parse(data)
+    assert full_replay.STATUS == "ariane/full-replay"
 
 
 def test_c19_full_replay_a_refused_comment_is_a_warning(

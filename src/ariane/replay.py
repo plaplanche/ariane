@@ -51,6 +51,7 @@ def replay_each(
     records: str = "",
     tier: Tier | None = None,
     every: bool = False,
+    ran: list[checks.CheckResult] | None = None,
 ) -> list[checks.CheckResult]:
     """C9: each check in its own fresh tree: create, set up, run that check only, verify, then
     remove the tree, also on a stop or Ctrl-C. `trees` fills as the trees are made; `setup`
@@ -65,7 +66,9 @@ def replay_each(
     the others are recorded as skipped. Each check that runs gets `ARIANE_CHANGED_FILES`, a file
     in its tree's ticket folder `records` listing them, and with the round's `tier`
     `ARIANE_RISK_TIER` and `ARIANE_FULL_SUITE` (ADR 0056). With `every`, the full replay after
-    delivery, every check runs and still gets the list (#186)."""
+    delivery, every check runs and still gets the list (#186). Each check that ran and was
+    verified is appended to `ran` as it finishes, so a caller keeps them when a later one stops
+    the replay."""
     if changed is not None and (broken := checks.unlistable(changed)):
         raise Stop(
             f"a changed file's name holds a line break: {checks.CHANGED_FILES} cannot list it",
@@ -102,6 +105,8 @@ def replay_each(
             trees.append(ReplayTree(check.name, tree, time.monotonic() - started, slot, used))
             results[k] = _run_check(check, tree, env_k, changed, records, tier)
             verify(tree)
+            if ran is not None:
+                ran.append(results[k])
         except BaseException as exc:
             stop_all(exc)  # before this tree is removed: the others stop at once
             raise
@@ -223,6 +228,7 @@ def replay(
     refs_before: dict[str, str],
     *,
     full: bool = False,
+    ran: list[checks.CheckResult] | None = None,
 ) -> list[checks.CheckResult]:
     """C9: run each check this round's change selects (the diff from `start_commit`, without
     `work/`) in its own clean working tree at the delivered commit; the others are skipped.
@@ -232,7 +238,8 @@ def replay(
 
     `full` is the full replay after delivery (#186): every check, with `risk.FULL_REPLAY`
     (`ARIANE_FULL_SUITE=1`), the ticket tree's head expected where the delivery left it; it
-    changes neither the round's tier nor its measures."""
+    changes neither the round's tier nor its measures. `ran` gets each check as it finishes
+    (`replay_each`)."""
     trees: list[ReplayTree] = []
 
     def tree_for(k: int) -> Path:
@@ -308,6 +315,7 @@ def replay(
                 records=ticket.relative_folder(run.number),
                 tier=tier,
                 every=full,
+                ran=ran,
             )
             if not full:
                 run.check_failed |= any(not r.passed for r in results)

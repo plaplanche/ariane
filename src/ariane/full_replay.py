@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from ariane import checks, git, replay, ticket
-from ariane.config import Config
+from ariane.config import FULL_REPLAY_CHECK, Config
 from ariane.delivery import FAILURES, Delivered
 from ariane.redact import redact
 from ariane.risk import DEFAULT_FULL_REPLAY_SAMPLE, FULL_SUITE_VARIABLE
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from ariane.flow import _TicketRun
 
 RECORD = "full-replay.md"
-STATUS = "ariane/full-replay"
+STATUS = f"ariane/{FULL_REPLAY_CHECK}"
 _STATUS_DESCRIPTION_MAX = 140
 SKIPPED = "skipped"
 PARTIAL = "partial"
@@ -72,7 +72,8 @@ def after_delivery(
     skipped or partial, draw the sample, then fully replay, record, journal and publish. Every
     record goes in a local commit. Whatever stops it (Ctrl-C, an error, even while recording or
     publishing) ends the full replay only: it is journaled when it can be, and never reaches
-    the run, so the delivered outcome stays (ADR 0056)."""
+    the run, so the delivered outcome stays (ADR 0056). A check that failed before a later
+    one stopped the full replay is still an escape, recorded and published."""
     try:
         _after_delivery(run, checked, results, done)
     except (KeyboardInterrupt, Exception) as exc:
@@ -108,32 +109,41 @@ def _after_delivery(
         f"\n\n{_round_line(round_)}",
     )
     began = time.monotonic()
+    ran: list[checks.CheckResult] = []
+    stopped: tuple[str, str] | None = None
     try:
         guard = run.state().snapshot  # after the delivery: the pushed branch is the baseline
         refs = git.remote_refs(run.worktree, run.url)
-        full = replay.replay(run, checked, run.start_commit, guard, refs, full=True)
+        full = replay.replay(run, checked, run.start_commit, guard, refs, full=True, ran=ran)
     except (Stop, KeyboardInterrupt, *FAILURES) as exc:
         reason, _ = describe(exc)
-        detail = exc.detail if isinstance(exc, Stop) else str(exc)
-        run.metrics.full_replayed(True, time.monotonic() - began, stopped=reason)
-        run.folder.write(RECORD, f"# Full replay\n\nStopped: {reason}.\n\n{detail}\n")
-        run.folder.log("ticket.checks.full_replay", f"Full replay stopped: {reason}", detail)
-        run._commit_record(f"#{run.number}: record the full replay")
-        return
+        stopped = (reason, exc.detail if isinstance(exc, Stop) else str(exc))
+        order = [c.name for c in run.all_checks()]
+        full = sorted(ran, key=lambda r: order.index(r.name))  # what finished before the stop
     escaped = escapes(results, full)
-    run.metrics.full_replayed(True, time.monotonic() - began, [r.name for r in escaped])
-    run.folder.write(RECORD, record(full, escaped, round_, checked, fraction))
+    elapsed = time.monotonic() - began
+    names = [r.name for r in escaped]
+    run.metrics.full_replayed(True, elapsed, names, stopped=stopped[0] if stopped else "")
+    text = record(full, escaped, round_, checked, fraction)
+    if stopped is not None:
+        text += f"## Stopped\n\nStopped: {stopped[0]}.\n\n{stopped[1]}\n"
+    run.folder.write(RECORD, text)
     if escaped:
         run.folder.log(
             "ticket.checks.escape",
-            f"Escape: {', '.join(r.name for r in escaped)}",
+            f"Escape: {', '.join(names)}",
             "\n".join(f"- {r.name} ({how(r.name, round_)}): {r.detail}" for r in escaped),
         )
-    else:
+    if stopped is not None:
+        run.folder.log(
+            "ticket.checks.full_replay", f"Full replay stopped: {stopped[0]}", stopped[1]
+        )
+    elif not escaped:
         run.folder.log(
             "ticket.checks.full_replay", "Full replay passed", checks.summary_table(full)
         )
-    _publish(run, done, escaped, round_, checked)
+    if escaped or stopped is None:  # a stop without an escape has no verdict to publish
+        _publish(run, done, escaped, round_, checked)
     run._commit_record(f"#{run.number}: record the full replay")
 
 
