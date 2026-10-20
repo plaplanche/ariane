@@ -252,10 +252,8 @@ def replay(
     changes = round_changes(run, start_commit, checked)
     changed = checks.changed_files(changes.name_status)
     if incoming := getattr(run, "incoming_from", ""):  # an update: what the base brought too
-        brought = git.changed_between(run.worktree, incoming, checked)
-        own = ticket.WORK_DIR + "/"
-        changed += [p for p in map(checks.git_path, brought) if p and p not in changed]
-        changed = [p for p in changed if not p.startswith(own)]
+        brought = git.changes(run.worktree, incoming, checked, ticket.WORK_DIR).name_status
+        changed += [p for p in checks.changed_files(brought) if p not in changed]  # both sides
     chosen = checks.selected(all_checks, changed, run.config.check_all_paths)
     run.tier = checks.risk_tier(
         run.config.checks_policy,

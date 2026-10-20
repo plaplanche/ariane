@@ -534,3 +534,58 @@ def test_c11_update_a_check_scoped_to_files_only_the_base_changed_still_runs(
     assert outcome.exit_code == 1, outcome.line
     assert "src still works" in outcome.line
     assert pushes == [] and project.remote_branches()["ariane/7"] == remote
+
+
+def test_c11_update_residuals_come_from_the_base_not_the_ticket(
+    project: Project, tracker: InMemoryTracker, pushes: list[str]
+) -> None:
+    """A ticket that adds an accepted-residual marker cannot exempt itself: the update's review
+    lists the residuals of the base commit only (ADR 0057), not the delivered ticket's."""
+    from test_c10_review_proportion import add_residual, reviewer_prompt
+
+    outcome = start(project, tracker, FakeRuntime(action=add_residual), config())
+    assert outcome.exit_code == 0, outcome.line
+    tracker.pull_states["ariane/7"] = OPEN
+    move_base(project, {"other.txt": "base moved\n"})
+    runtime = FakeRuntime()
+    run_update(project, tracker, runtime)
+    prompt = reviewer_prompt(runtime)
+    listed = prompt.partition('kind="accepted-residuals">')[2].partition("</untrusted-ticket>")[0]
+    assert "Added by the change itself." not in listed
+
+
+def test_c11_update_a_rename_out_of_a_checks_scope_still_selects_it(
+    project: Project, tracker: InMemoryTracker, pushes: list[str]
+) -> None:
+    """The base moves `src/a.py` to `lib/a.py`: the source side of the rename selects the check
+    scoped to `src/**`, which then runs and stops the push when it fails."""
+    (project.root / "src").mkdir()
+    (project.root / "src/a.py").write_text("x = 1\n", encoding="utf-8")
+    sh(["git", "add", "--all"], project.root)
+    sh(["git", "commit", "--quiet", "-m", "src"], project.root)
+    sh(["git", "push", "--quiet", "origin", "main"], project.root)
+    scoped = CheckConfig(
+        "src kept",
+        (PY, "-c", "import os, sys; sys.exit(0 if os.path.exists('src/a.py') else 1)"),
+        True,
+        1.0,
+        paths=("src/**",),
+    )
+    scoped_config = make_config(checks=(*make_config().checks, scoped))
+    assert start(project, tracker, FakeRuntime(), scoped_config).exit_code == 0
+    tracker.pull_states["ariane/7"] = OPEN
+    pushes.clear()
+    (project.root / "lib").mkdir()
+    sh(["git", "mv", "src/a.py", "lib/a.py"], project.root)
+    sh(["git", "commit", "--quiet", "-m", "move a.py"], project.root)
+    sh(["git", "push", "--quiet", "origin", "main"], project.root)
+    outcome = update.update(
+        7,
+        repo_root=project.root,
+        config=scoped_config,
+        tracker=tracker,
+        runtime=FakeRuntime(),
+        environ=environ(),
+    )
+    assert outcome.exit_code == 1, outcome.line
+    assert "src kept" in outcome.line and pushes == []

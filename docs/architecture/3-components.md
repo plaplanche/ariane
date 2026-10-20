@@ -161,6 +161,7 @@ flowchart TD
   update --> process
   update --> replay
   update --> restart
+  update --> review
   update --> runs
   update --> runtime
   update --> slots

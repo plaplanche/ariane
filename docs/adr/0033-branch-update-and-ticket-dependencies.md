@@ -69,8 +69,11 @@ until an implementer session takes them (#146).
   clean working tree). Its diff is the merge commit's from the fetched base, without `work/`.
 - **Checks selected.** With selective checks (ADR 0056), the checks an update replays are chosen
   from the ticket's diff from the base and from what the merge brings from the base (the ticket's
-  head before the merge to the merge commit): a check scoped to files only the base changed still
-  runs, so a combination the base breaks is not pushed with a skipped check reported green.
+  head before the merge to the merge commit, both sides of a rename): a check scoped to files only
+  the base changed, or moved out of, still runs, so a combination the base breaks is not pushed with a skipped check reported green.
+- **Accepted residuals.** The update's review gets the accepted residuals of the base commit
+  (ADR 0057), read at the fetched base: the ticket's working tree holds the delivered change, so a
+  marker the ticket added never exempts it.
 - **Metrics.** `metrics.json` is read back and extended (steps, sessions), with a count `updates`,
   written for every ticket (0 when never updated); its outcome becomes the update's.
 - **A merge left half done.** Ctrl-C or an error once the merge began, while the tree holds a

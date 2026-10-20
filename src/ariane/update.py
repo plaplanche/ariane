@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ariane import checks, context, git, logs, process, replay, runs, ticket
+from ariane import checks, context, git, logs, process, replay, review, runs, ticket
 from ariane.config import Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.flow import (
@@ -97,6 +97,8 @@ def update(
                 issue, config, tracker, runtime, environ, worktree, branch, heads.url, slot
             )
             run.heads = heads
+            # The worktree holds the delivered ticket, not the base: residuals from the base only.
+            run.residuals = review.accepted_residuals(repo_root, heads.base)
             run.base_instructions = instructions
             run.witnessed = witnessed
         except Refused as exc:
