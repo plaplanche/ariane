@@ -20,7 +20,8 @@ project knows which files each check covers; Ariane knows which files a ticket c
   `work/` (Ariane's records), read from `git diff --raw` (`git.changes`): a rename or copy counts
   on both sides, so a check covering the old path still runs. A path git quotes (one holding a
   double quote, a backslash or a control character, even with `core.quotepath=off`) is decoded
-  back to the real path, so the globs and the list see the file's own name. The selection is computed in each
+  back to the real path, so the globs and the list see the file's own name; a glob's `*` and `**`
+  match a line break in it too. The selection is computed in each
   round from that round's diff; `ariane verify` selects the same way from the base to the head.
 - **Configuration changes select everything.** A change to `ariane.toml`, or to a file matching
   the new `[project] check_all_paths` globs (lock files, CI files), selects every check.
@@ -29,10 +30,17 @@ project knows which files each check covers; Ariane knows which files a ticket c
   line relative to the repository root. Ariane does not interpret it: a check may use it to run
   only the related tests. The variable is added after the environment is built (it is not a
   `[project] env` entry). The file is written just before the check and removed after it, so the
-  replay tree is verified clean as before; it is never written through a folder leading outside
-  the tree, nor over a file the commit holds (that stops the replay). It is removed only while it
-  is still the file written, in the same folder: a check that moves the folder, or replaces it by
-  a link leading outside the tree, leaves it to the tree's removal, and no file outside is touched.
+  replay tree is verified clean as before; it is never written over a file the commit holds nor
+  through a link (that stops the replay). With parallel checks another check may move or replace
+  a folder at any moment, so a path checked first and used after is not enough: on POSIX each
+  folder of `work/<n>/` is opened by handle without following a link, and the file is created and
+  later removed relative to the last handle, only while it is still the file written. On Windows,
+  whose Python standard library has no such calls, the same steps go by path, checked before and
+  after: a narrower guarantee, accepted because the check already runs with the user's rights.
+- **Names the list cannot hold.** A changed path whose name holds a line break would read as two
+  paths in a one-per-line list: the replay stops before any check, naming it, rather than give a
+  check an ambiguous list. Such names are rare and a NUL-separated list would surprise the usual
+  tools (`vitest related`, `xargs`).
 - **Records and statuses.** A skipped check is a result with `skipped` set, which passes: it never
   blocks. `checks.md` shows it as `skipped` in the summary table with the reason "no changed file
   matches `paths`", the journal names the skipped checks (`ticket.checks.skipped`), the commit

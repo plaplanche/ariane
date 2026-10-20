@@ -17,7 +17,7 @@ Loads and validates `ariane.toml` (C22). Every error names the faulty key.
 | `DoneItem` | dataclass | One item of the definition of done (C26): a declared check or a sentence; `label()` is its text. |
 | `DocMapEntry` | dataclass | Source files (a glob) and the documents that cover them; `documents_for(path)` expands them. |
 | `GeneratedDoc` | dataclass | A `[[documentation.generated]]` entry: `name` and the `check` command. |
-| `matching_paths(globs, paths)` | function | The paths matching at least one glob (same glob rules as `documentation.map`). |
+| `matching_paths(globs, paths)` | function | The paths matching at least one glob (same glob rules as `documentation.map`); a line break in a path is matched like any other character (ADR 0056). |
 | `Documentation` | dataclass | The optional `[documentation]` table (C25, ADR 0026): `paths`, `map`, `generated`; `documents_for(path)`, `not_updated(changed)`, `checks()`. |
 | `NO_DOCUMENTATION` | constant | The empty `Documentation`, used without the table. |
 | `DEFAULT_DEFINITION_OF_DONE` | constant | The definition of done when the table is absent (C26). |

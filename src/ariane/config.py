@@ -169,7 +169,7 @@ def _glob_regex(glob: str) -> re.Pattern[str]:
         c = glob[i]
         out.append("[^/]*" if c == "*" else "[^/]" if c == "?" else re.escape(c))
         i += 1
-    return re.compile("".join(out))
+    return re.compile("".join(out), re.DOTALL)  # a line break in a file name is matched too
 
 
 DEFAULT_DEFINITION_OF_DONE = (

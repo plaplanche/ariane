@@ -12,6 +12,7 @@ flowchart TD
   __main__ --> cli
   checks --> config
   checks --> process
+  checks --> stop
   checks --> ticket
   claude_code --> attempts
   claude_code --> process

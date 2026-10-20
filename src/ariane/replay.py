@@ -61,6 +61,12 @@ def replay_each(
     With the `changed` files of the ticket, only the checks they select run (`checks.selected`);
     the others are recorded as skipped. Each check that runs gets `ARIANE_CHANGED_FILES`, a file
     in its tree's ticket folder `records` listing them (ADR 0056)."""
+    if changed is not None and (broken := checks.unlistable(changed)):
+        raise Stop(
+            f"a changed file's name holds a line break: {checks.CHANGED_FILES} cannot list it",
+            "rename it on the branch, then retry",
+            "\n".join(f"- {path!r}" for path in broken),
+        )
     chosen = (
         all_checks if changed is None else checks.selected(all_checks, changed, check_all_paths)
     )
@@ -172,40 +178,12 @@ def _run_check(
     written in the tree's ticket folder for this check only and removed after it."""
     if changed is None:
         return checks.run_check(check, tree, env)
-    listing = tree / records / checks.CHANGED_FILES
-    inside = listing.parent.resolve().is_relative_to(tree.resolve())  # before any folder is made
-    if inside:
-        listing.parent.mkdir(parents=True, exist_ok=True)
-    if not inside or os.path.lexists(listing):
-        raise Stop(
-            f"the replayed commit holds {records}/{checks.CHANGED_FILES}, or its folder leads"
-            " outside the replay tree",
-            "remove it from the branch, then retry",
-        )
-    folder = os.stat(listing.parent)
-    with listing.open("x", encoding="utf-8", errors="surrogateescape", newline="\n") as out:
-        out.write("".join(f"{path}\n" for path in changed))
-    written = os.lstat(listing)
-    variables = {
-        **(os.environ if env is None else env),
-        checks.CHANGED_FILES_VARIABLE: str(listing),
-    }
-    try:
+    with checks.changed_files_listing(tree, records, changed) as listing:
+        variables = {
+            **(os.environ if env is None else env),
+            checks.CHANGED_FILES_VARIABLE: str(listing),
+        }
         return checks.run_check(check, tree, variables)
-    finally:
-        _remove_listing(listing, folder, written)
-
-
-def _remove_listing(listing: Path, folder: os.stat_result, written: os.stat_result) -> None:
-    """Remove the listing only if it is still the file written in the same folder: a check may
-    have moved the folder, or replaced it by a link leading outside the tree, meanwhile; what it
-    left is removed with the tree."""
-    try:
-        same = os.path.samestat(os.stat(listing.parent), folder)
-        if same and os.path.samestat(os.lstat(listing), written):
-            listing.unlink()
-    except (FileNotFoundError, NotADirectoryError):
-        pass
 
 
 def _with_slot(env: Mapping[str, str] | None, slot: int) -> dict[str, str]:

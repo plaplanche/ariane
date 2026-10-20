@@ -4,6 +4,7 @@ changes none of them, and gives every check it runs the list of changed files (A
 from __future__ import annotations
 
 import copy
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -260,3 +261,114 @@ def test_c9_selective_checks_cleanup_spares_a_listing_outside_after_its_folder_m
     assert results[0].passed, results[0].output
     assert seen == [True]
     assert (outside / checks.CHANGED_FILES).read_text(encoding="utf-8") == "keep\n"
+
+
+by_handle = pytest.mark.skipif(
+    not checks._BY_HANDLE, reason="folders are opened by handle on POSIX only (ADR 0056)"
+)
+
+
+def _swap_to_link(folder: Path, outside: Path) -> None:
+    """What a parallel check may do: move `folder` away and put a link to `outside` there."""
+    folder.rename(folder.with_name(folder.name + "-moved"))
+    folder.symlink_to(outside, target_is_directory=True)
+
+
+@by_handle
+@pytest.mark.parametrize("swapped", ["work", "work/7"])
+def test_c9_selective_checks_listing_never_lands_outside_when_a_folder_swaps_while_made(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, swapped: str
+) -> None:
+    """A parallel check replaces a folder of the listing's path by a link to an outside folder
+    right after Ariane made it: the listing is never written outside the tree."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    real_mkdir = os.mkdir
+
+    def mkdir(path: Any, *args: Any, **kwargs: Any) -> None:
+        real_mkdir(path, *args, **kwargs)
+        if Path(path).name == Path(swapped).name and not (tree / swapped).is_symlink():
+            _swap_to_link(tree / swapped, outside)
+
+    monkeypatch.setattr(os, "mkdir", mkdir)
+    with (
+        pytest.raises(Stop, match="leads outside the replay tree"),
+        checks.changed_files_listing(tree, "work/7", ["a"]),
+    ):
+        pass
+    assert list(outside.iterdir()) == []
+
+
+@by_handle
+def test_c9_selective_checks_cleanup_never_removes_outside_when_a_folder_swaps_at_removal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A parallel check swaps `work/7` for a link to an outside folder holding a file of the
+    listing's name after Ariane checked the listing and before it removes it: Ariane removes
+    its own listing in the moved folder, and the outside file survives."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / checks.CHANGED_FILES).write_text("keep\n", encoding="utf-8")
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    real_unlink = os.unlink
+
+    def unlink(path: Any, *args: Any, **kwargs: Any) -> None:
+        if Path(path).name == checks.CHANGED_FILES and not (tree / "work/7").is_symlink():
+            _swap_to_link(tree / "work/7", outside)
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", unlink)
+    with checks.changed_files_listing(tree, "work/7", ["a"]) as listing:
+        assert listing.read_text(encoding="utf-8") == "a\n"
+    assert (outside / checks.CHANGED_FILES).read_text(encoding="utf-8") == "keep\n"
+    assert list((tree / "work/7-moved").iterdir()) == []
+
+
+@by_handle
+def test_c9_selective_checks_listing_refuses_a_linked_folder_of_the_commit(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (tmp_path / "tree/work").mkdir(parents=True)
+    (tmp_path / "tree/work/7").symlink_to(outside, target_is_directory=True)
+    with (
+        pytest.raises(Stop, match="leads outside the replay tree"),
+        checks.changed_files_listing(tmp_path / "tree", "work/7", ["a"]),
+    ):
+        pass
+    assert list(outside.iterdir()) == []
+
+
+def test_c9_selective_checks_listing_by_path_writes_and_removes_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows goes by path: the same listing, removed after the check."""
+    monkeypatch.setattr(checks, "_BY_HANDLE", False)
+    with checks.changed_files_listing(tmp_path, "work/7", ["a", "b c"]) as listing:
+        assert listing.read_bytes() == b"a\nb c\n"
+    assert not listing.exists()
+    (tmp_path / "work/7" / checks.CHANGED_FILES).write_text("forged\n", encoding="utf-8")
+    with (
+        pytest.raises(Stop, match="holds work/7/changed-files"),
+        checks.changed_files_listing(tmp_path, "work/7", ["a"]),
+    ):
+        pass
+
+
+def test_c9_selective_checks_a_line_break_in_a_name_is_matched_and_stops_the_listing(
+    tmp_path: Path,
+) -> None:
+    """`**` matches a file name holding a line break, and the replay stops before any check
+    rather than give a list where that name reads as two paths."""
+    broken = "src/line\nbreak.py"
+    assert names(checks.selected([check("web", ("src/**",))], [broken], ())) == ["web"]
+    assert names(checks.selected([check("web", ("src/*.py",))], [broken], ())) == ["web"]
+    assert checks.git_path('"src/line\\nbreak.py"') == broken
+    with pytest.raises(Stop, match="holds a line break") as stopped:
+        replay_plain(tmp_path, [check("show", ("src/**",), SHOW)], ["a.py", broken])
+    assert repr(broken) in stopped.value.detail
+    assert not (tmp_path / "tree-1").exists()
