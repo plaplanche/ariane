@@ -317,8 +317,8 @@ sequenceDiagram
     D->>M: read metrics.json back
     D->>G: git merge --no-ff --no-edit origin/base (untrusted environment)
     alt conflict
-      D->>G: git merge --abort
-      D-->>CLI: Outcome: needs a human, the conflicting paths
+      D->>G: the conflicting paths, git merge --abort, check it restored the head and the tree
+      D-->>CLI: Outcome: needs a human, the conflicting paths (not restored: nothing written)
     else merged
       D->>P: replay the checks at the merge commit
       D->>P: review round k (review-k.md, k one more than the highest)

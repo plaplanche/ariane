@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from test_fix_rounds import NO_GO
 
-from ariane import cli, delivery, flow, git, replay, update
+from ariane import cli, delivery, flow, git, process, replay, update
 from ariane.config import CheckConfig, Config
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker, PullRequestState
@@ -327,7 +327,49 @@ def test_c11_update_remote_branch_moved_after_the_last_guard_pushes_nothing(
         )
     else:
         assert "ariane/7" not in project.remote_branches()
-    assert "Stopped" in (worktree(project) / "work/7/journal.md").read_text(encoding="utf-8")
+    tree = worktree(project)
+    assert "Stopped" in (tree / "work/7/journal.md").read_text(encoding="utf-8")
+    status = (tree / "work/7/status.md").read_text(encoding="utf-8")
+    assert "Last action: needs a human" in status
+
+
+@pytest.mark.parametrize("abort", ["fails", "leaves a file"])
+def test_c11_update_conflict_not_undone_by_the_abort_keeps_it_and_writes_nothing(
+    project: Project,
+    tracker: InMemoryTracker,
+    pushes: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    abort: str,
+) -> None:
+    runtime = delivered(project, tracker, pushes)
+    move_base(project, {"app.txt": "version 3\n"})
+    tree = worktree(project)
+    local = head(project)
+    records = {n: (tree / "work/7" / n).read_text("utf-8") for n in ("journal.md", "status.md")}
+    real = git.git
+
+    def aborting(args: list[str], cwd: Path, **kwargs: Any) -> process.Completed:
+        if args != ["merge", "--abort"]:
+            return real(args, cwd, **kwargs)
+        if abort == "fails":
+            return process.Completed(("git", *args), 128, "", "error: abort refused", False, 0.0)
+        done = real(args, cwd, **kwargs)
+        (cwd / "left.txt").write_text("left by a hook\n", encoding="utf-8")
+        return done
+
+    monkeypatch.setattr(git, "git", aborting)
+    outcome = run_update(project, tracker, runtime)
+    assert outcome.exit_code == 1, outcome.line
+    assert "`git merge --abort` did not restore ariane/7" in outcome.line
+    assert "needs a human" in outcome.line and "conflicts in app.txt" in outcome.line
+    assert head(project) == local and pushes == [] and runtime.sessions == []
+    assert {n: (tree / "work/7" / n).read_text("utf-8") for n in records} == records
+    if abort == "fails":  # the unresolved merge is kept, not reset by a record commit
+        assert git.git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], tree, check=False).ok
+        assert "<<<<<<<" in (tree / "app.txt").read_text(encoding="utf-8")
+        assert "app.txt" in git.out(["diff", "--name-only", "--diff-filter=U"], tree)
+    else:
+        assert (tree / "left.txt").is_file()
 
 
 def test_c11_update_refused_delivery_is_recorded_as_a_stop(

@@ -260,7 +260,8 @@ the issue gate, so add the label `ariane` again first (the pull request referenc
 It refuses, before changing anything, a ticket whose pull request is merged, closed or missing,
 whose working tree is missing, dirty or on another branch, or whose local branch has commits the
 remote branch lacks beyond Ariane's own records in `work/<n>/`. When the base branch is merged
-already it says so and writes nothing. A conflict (the merge is aborted, the paths named), a red
+already it says so and writes nothing. A conflict (the merge is aborted, the paths named; if the abort fails, the
+merge is left as is for you and nothing is written), a red
 blocking check or a `no-go` stops with status `needs a human` and pushes nothing; the review's record
 continues the ticket's numbering (`review-<k>.md`) and `metrics.json` counts the `updates`.
 

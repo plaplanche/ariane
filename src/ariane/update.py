@@ -34,6 +34,10 @@ NEEDS_A_HUMAN = "needs a human"
 _REVIEW = re.compile(r"review-(\d+)\.md")
 
 
+class Unresolved(Stop):
+    """A failed merge that `git merge --abort` did not undo: the state is left for a human."""
+
+
 class Refused(Exception):
     """The ticket cannot be updated; nothing was changed."""
 
@@ -188,6 +192,7 @@ class _UpdateRun(_TicketRun):
 
     restartable = False
     heads: Heads
+    merge_began = False
 
     def execute_update(self) -> Outcome:
         try:
@@ -199,8 +204,33 @@ class _UpdateRun(_TicketRun):
             guard = self.state().snapshot
             merged = self._merge(guard)
             return self._replay_review_push(merged, guard)
+        except Unresolved as exc:
+            return self._left_unresolved(exc)
         except (Stop, KeyboardInterrupt, *FAILURES) as exc:
             return self._stopped(exc)
+
+    def _stopped(self, exc: BaseException) -> Outcome:
+        """The stop of `flow`; once the merge began, a stop or an error needs a human (the
+        merge may be kept on the local branch), Ctrl-C stays `stopped`."""
+        plain = not isinstance(exc, Stop) or exc.status == "stopped"
+        if self.merge_began and plain and not isinstance(exc, KeyboardInterrupt):
+            reason, next_action = describe(exc)
+            detail = exc.detail if isinstance(exc, Stop) else str(exc)
+            exc = Stop(reason, next_action, detail, status=NEEDS_A_HUMAN)
+        return super()._stopped(exc)
+
+    def _left_unresolved(self, exc: Unresolved) -> Outcome:
+        """`git merge --abort` did not restore the tree: nothing is written or committed (a
+        record commit would reset the unresolved merge and hide it), the state is kept."""
+        logs.emit("run.stopped", f"ticket #{self.number}: {exc.reason}")
+        process.kill_survivors(self.processes_before)
+        process.take_killed()
+        return Outcome(
+            EXIT_STOPPED,
+            f"Stopped ticket #{self.number} ({NEEDS_A_HUMAN}): {exc.reason}. Next:"
+            f" {exc.next_action}.",
+            exc.detail,
+        )
 
     def verify(
         self,
@@ -218,8 +248,11 @@ class _UpdateRun(_TicketRun):
         may run); a conflict is aborted and stops the ticket, naming the paths."""
         base = f"{REMOTE}/{self.config.base_branch}"
         env = {**self.untrusted_env, **git._identity(os.environ), "LC_ALL": "C"}
-        done = git.git(["merge", "--no-ff", "--no-edit", base], self.worktree, env=env, check=False)
+        self.merge_began = True
         self.metrics.updates += 1
+        done = git.git(["merge", "--no-ff", "--no-edit", base], self.worktree, env=env, check=False)
+        if not done.ok:
+            conflicts = self._abort(base, done.output, env)  # before any record is written
         self.folder.log(
             "ticket.update.started",
             "Update started",
@@ -228,9 +261,6 @@ class _UpdateRun(_TicketRun):
             f" `{self.worktree}`, slot {self.slot} (`{context.SLOT_VARIABLE}`).",
         )
         if not done.ok:
-            listing = git.out(["diff", "--name-only", "--diff-filter=U"], self.worktree)
-            conflicts = [p for p in listing.splitlines() if p]
-            git.git(["merge", "--abort"], self.worktree, env=env, check=False)
             self.verify("the merge", "", guard, self.heads.refs, expected_head=self.heads.local)
             if conflicts:
                 raise Stop(
@@ -258,6 +288,29 @@ class _UpdateRun(_TicketRun):
         self.metrics.step("base merged")
         self.folder.log("ticket.update.merged", "Base branch merged", f"Merge commit `{merged}`.")
         return merged
+
+    def _abort(self, base: str, output: str, env: dict[str, str]) -> list[str]:
+        """The conflicting paths of a failed merge, read before `git merge --abort`; raises
+        `Unresolved` unless the abort restored the head, the tree and the index."""
+        listing = git.out(["diff", "--name-only", "--diff-filter=U"], self.worktree)
+        conflicts = [p for p in listing.splitlines() if p]
+        aborted = git.git(["merge", "--abort"], self.worktree, env=env, check=False)
+        pending = git.git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], self.worktree, check=False)
+        left = git.status(self.worktree)
+        if (
+            aborted.ok
+            and not pending.ok
+            and not left
+            and git.head(self.worktree) == self.heads.local
+        ):
+            return conflicts
+        named = f" (conflicts in {', '.join(conflicts)})" if conflicts else ""
+        raise Unresolved(
+            f"merging {base} failed{named} and `git merge --abort` did not restore {self.branch}",
+            f"finish or undo the merge by hand in {self.worktree} (`git status`); Ariane wrote"
+            " and pushed nothing",
+            ticket.fenced(output + aborted.output + left),
+        )
 
     def _replay_review_push(self, merged: str, guard: dict[str, str]) -> Outcome:
         base, refs = self.heads.base, self.heads.refs
