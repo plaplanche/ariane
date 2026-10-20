@@ -197,6 +197,13 @@ class _UpdateRun(_TicketRun):
 
     restartable = False
     heads: Heads
+
+    @property
+    def incoming_from(self) -> str:
+        """The ticket's head before the merge: the checks are selected from what the merge brings
+        from the base too, not only from the ticket's own diff (ADR 0056)."""
+        return self.heads.local
+
     merge_began = False
 
     def execute_update(self) -> Outcome:
@@ -274,8 +281,9 @@ class _UpdateRun(_TicketRun):
         super().verify(after, self.heads.local, guard, refs_before, expected_head)
 
     def _merge(self, guard: dict[str, str]) -> str:
-        """`git merge --no-ff --no-edit <remote>/<base>` with the untrusted environment (hooks
-        may run); a conflict is aborted and stops the ticket, naming the paths."""
+        """`git merge --no-ff --no-edit <remote>/<base>` with the untrusted environment; no hook
+        runs (every git command Ariane runs has `core.hooksPath` set to the null device); a
+        conflict is aborted and stops the ticket, naming the paths."""
         base = f"{REMOTE}/{self.config.base_branch}"
         env = {**self.untrusted_env, **git._identity(os.environ), "LC_ALL": "C"}
         self.merge_began = True

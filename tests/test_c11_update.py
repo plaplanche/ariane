@@ -499,3 +499,38 @@ def test_c11_update_a_merge_left_half_done_writes_no_record(
     monkeypatch.setattr(git, "git", real)
     assert git.git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], tree, check=False).ok
     assert "app.txt" in git.out(["diff", "--name-only", "--diff-filter=U"], tree)
+
+
+def test_c11_update_a_check_scoped_to_files_only_the_base_changed_still_runs(
+    project: Project, tracker: InMemoryTracker, pushes: list[str]
+) -> None:
+    """The checks are selected from what the merge brings from the base too: a blocking check
+    scoped to `src/**`, which the ticket never touched, runs once the base changes `src/` and
+    stops the push when the combination breaks it (ADR 0033, ADR 0056)."""
+    scoped = CheckConfig(
+        "src still works",
+        (PY, "-c", "import os, sys; sys.exit(1 if os.path.exists('src/broken.txt') else 0)"),
+        True,
+        1.0,
+        paths=("src/**",),
+    )
+    base = make_config()
+    scoped_config = make_config(checks=(*base.checks, scoped))
+    outcome = start(project, tracker, FakeRuntime(), scoped_config)
+    assert outcome.exit_code == 0, outcome.line
+    tracker.pull_states["ariane/7"] = OPEN
+    pushes.clear()
+    remote = project.remote_branches()["ariane/7"]
+    move_base(project, {"src/broken.txt": "the base broke src\n"})
+    runtime = FakeRuntime()
+    outcome = update.update(
+        7,
+        repo_root=project.root,
+        config=scoped_config,
+        tracker=tracker,
+        runtime=runtime,
+        environ=environ(),
+    )
+    assert outcome.exit_code == 1, outcome.line
+    assert "src still works" in outcome.line
+    assert pushes == [] and project.remote_branches()["ariane/7"] == remote
