@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from test_c11_update import delivered, head, move_base, pushes, run_update  # noqa: F401 (fixture)
 
+from ariane import metrics
 from ariane.tracker import InMemoryTracker
 
 from conftest import Project, sh
@@ -90,3 +91,14 @@ def test_c11_update_a_failed_read_of_the_records_writes_and_removes_nothing(
     assert outcome.exit_code in (1, 130) and "Did not update ticket #7" in outcome.line
     assert {p.name: p.read_bytes() for p in folder.iterdir()} == before
     assert head(project) == local and pushes == [] and runtime.sessions == []
+
+
+@pytest.mark.parametrize(
+    "text", ["not json", "[]", '{"steps": []}', '{"started": 1, "rounds": "x"}']
+)
+def test_c11_update_unreadable_metrics_are_left_out_whole(text: str) -> None:
+    measured = metrics.Metrics(7, "delivered", lambda _: None)
+    started = measured.started
+    measured.resume(text)
+    assert (measured.started, measured.steps, measured.sessions) == (started, [], [])
+    assert (measured.rounds, measured.updates) == (0, 0)

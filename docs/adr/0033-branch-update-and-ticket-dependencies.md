@@ -79,7 +79,11 @@ until an implementer session takes them (#146).
   (ADR 0057), read at the fetched base: the ticket's working tree holds the delivered change, so a
   marker the ticket added never exempts it.
 - **Metrics.** `metrics.json` is read back and extended (steps, sessions), with a count `updates`,
-  written for every ticket (0 when never updated); its outcome becomes the update's.
+  written for every ticket (0 when never updated); its outcome becomes the update's. A
+  `metrics.json` that cannot be read back (not JSON, a field missing or of the wrong type) is left
+  out whole, never half taken: the update's measurements start empty and replace it, and the
+  earlier ones stay in the branch's history. Refusing the update for it would block a ticket on a
+  measurement, which never decides a delivery (C19).
 - **A merge left half done.** Ctrl-C or an error once the merge began, while the tree holds a
   `MERGE_HEAD` or unmerged paths (or git cannot tell), writes and commits nothing, as an abort that
   did not restore the tree: a record commit's `git reset` would drop the merge state a human needs
