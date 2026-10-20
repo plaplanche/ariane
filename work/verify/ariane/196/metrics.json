@@ -13,16 +13,17 @@
   "rounds": 0,
   "sessions": [
     {
+      "at": "2026-10-20T17:29:18Z",
       "billing": "plan",
-      "cache_read_tokens": 419712,
+      "cache_read_tokens": 440960,
       "cache_write_tokens": 0,
-      "changed_lines": 937,
+      "changed_lines": 1094,
       "cost_usd": 0.0,
-      "duration_s": 82.542,
-      "findings": 7,
-      "input_tokens": 79592,
+      "duration_s": 101.57,
+      "findings": 2,
+      "input_tokens": 82215,
       "model": "gpt-6-astra",
-      "output_tokens": 2490,
+      "output_tokens": 2936,
       "role": "reviewer",
       "round": 0,
       "runtime": "codex",
@@ -30,14 +31,14 @@
       "verdict": "no-go"
     }
   ],
-  "started": "2026-10-20T17:10:51Z",
+  "started": "2026-10-20T17:25:03Z",
   "steps": [
     {
-      "at": "2026-10-20T17:14:48Z",
+      "at": "2026-10-20T17:29:17Z",
       "name": "reviewer session 1 stopped"
     },
     {
-      "at": "2026-10-20T17:14:48Z",
+      "at": "2026-10-20T17:29:18Z",
       "name": "outcome: stopped"
     }
   ],

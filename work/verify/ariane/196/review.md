@@ -1,38 +1,18 @@
 # Review 0
 
-- Reviewed commit: `7b13bdaf0c2bc5a1e899469b01e200a2dcffae93`
+- Reviewed commit: `04c992c26fc55f6f73b15de46344a88e5d54373c`
 - Reviewer model: gpt-6-astra
 - Verdict: **no-go** (the reviewer answered no-go)
 
 ## Findings
 
-- **blocking** (`src/ariane/flow.py:96`) Early start failures never record a stop category
+- **blocking** (`src/ariane/report.py:77`) Concurrent refusal records can be replaced by the active run
 
-  Issue-gate refusals return at line 71, and lock, slot, registry and preparation failures return here before Metrics exists. None writes category-bearing metrics. The ticket explicitly requires spec for issue-gate failures and infra for unavailable slots or locks. The new tests exercise failures after run construction, so they miss these paths. Record these attempts separately without overwriting an active run's metrics.
+  The newly loaded refusal records pass through _with_local, which identifies runs solely by (ticket, started). Metrics.started has only second precision. Interleaving: A acquires the ticket lock, registers and prepares its worktree, then starts its metrics at time T; B attempts the same ticket within that second, fails the lock, creates a unique refused directory and writes its infra metrics with started=T; A writes its own metrics with the same identity. Reporting replaces B's refusal with A's worktree record. If A is running or delivered green, the infra stop disappears; when A also has a merged record, its reviews and costs can instead be duplicated. An in-memory reproduction returned no category lines for this refusal. Preserve refusal identities separately from merged/worktree deduplication and add a same-second concurrent-attempt regression test.
 
-- **blocking** (`src/ariane/report.py:37`) The report excludes externally saved stop metrics
+- **blocking** (`src/ariane/flow.py:68`) Interrupting issue lookup records no stop category
 
-  An interrupted first setup logs the stop, kills survivors, then writes categorized metrics to <repo>.ariane/stopped/<n>/metrics.json. A refused verification similarly writes to <repo>.ariane/verify/<slug>/metrics.json. This discovery list reads neither location, so those stops never reach category_lines; with only such records, the report says no metrics exist. Include these records with appropriate identity and deduplication. tests/test_c10_stopped_metrics.py already establishes the first-setup storage path, but no new test checks its report visibility.
-
-- **blocking** (`src/ariane/github.py:245`) Historical changes requests are attributed to later go verdicts
-
-  changes_requested accepts any human CHANGES_REQUESTED review, without its submission time or a boundary identifying Ariane's go. A human can request changes, the owner can fix them, and ariane verify can then record go; the report still counts the earlier request as an escape of that later review. This violates 'go followed ... by'. The request path records reviewer-session metrics, validates the session, records the settled review and commits verification records; report-time GETs then inspect all historical reviews without comparing their order. Preserve the go time and PR identity and filter subsequent events. Looking up only the latest PR by branch also cannot guarantee the event belongs to the same PR.
-
-- **blocking** (`src/ariane/review_escapes.py:108`) The five-ticket threshold counts records instead of distinct tickets
-
-  group.tickets increments for every qualifying row, although group.seen separately tracks distinct ticket numbers. Multiple takeover records for one ticket can therefore satisfy MIN_TICKETS. A read-only in-memory reproduction with five rows for ticket 7 prints '5 reviews over 1 tickets' and 'escape rate 5/5 (100%) over 5 tickets'. The acceptance criterion forbids rates below five tickets. Track distinct eligible tickets for the threshold and define how repeated observations contribute to escapes and the denominator.
-
-- **minor** (`docs/architecture/modules/replay.md:33`) Affected replay and checks documentation was not updated
-
-  The replay documentation still describes recording only the first-pass verdict, omitting the newly recorded per-session verdict and findings and propagation of stop categories. docs/architecture/modules/checks.md likewise omits the new guard category. Both mapped module documents were untouched despite the explicit documentation requirement.
-
-- **blocking** Definition of done not met: The change is covered by tests that fail without it.
-
-  The new tests directly exercise new output and category fields and would fail without the implementation; Ariane reports all checks passing. Coverage is incomplete for explicitly required early stop paths, external stop-record discovery, event ordering and distinct-ticket thresholds. I ran read-only in-memory reproductions, not the filesystem-writing test suite.
-
-- **blocking** Definition of done not met: The documentation the change affects is updated (C25).
-
-  README, benchmark, ADR and most affected architecture documents are updated. The mapped checks and replay module documents omit their changed behavior. Generated references reportedly pass their consistency check; unchanged generated files alone are not a defect.
+  Ctrl-C during tracker.read_issue takes this return path without calling keep_refused. The sequence is tracker read, KeyboardInterrupt, return exit 130: there is no metrics directory creation or metrics write. This contradicts the requirement that every non-green start outcome records a category and ADR 0058's explicit classification of interrupts as infra. A mocked read-only reproduction confirmed exit 130 and zero keep_refused calls. Record this interruption through the unique refusal-record path and test that the report includes it.
 
 ## Definition of done
 
@@ -56,23 +36,22 @@
 
   Replayed by Ariane: exit 0.
 
-- **not met**: The change is covered by tests that fail without it.
+- met: The change is covered by tests that fail without it.
 
-  The new tests directly exercise new output and category fields and would fail without the implementation; Ariane reports all checks passing. Coverage is incomplete for explicitly required early stop paths, external stop-record discovery, event ordering and distinct-ticket thresholds. I ran read-only in-memory reproductions, not the filesystem-writing test suite.
+  The new test_c19_review_escapes_* tests assert newly introduced escape counts, grouping, thresholds, reviewer-session fields and stop categories, so they fail without the implementation. Ariane reports the suite green. The concurrent-identity and interrupted-lookup cases above remain uncovered; filesystem-writing tests were not rerun during this read-only review.
 
-- **not met**: The documentation the change affects is updated (C25).
+- met: The documentation the change affects is updated (C25).
 
-  README, benchmark, ADR and most affected architecture documents are updated. The mapped checks and replay module documents omit their changed behavior. Generated references reportedly pass their consistency check; unchanged generated files alone are not a defect.
+  README, benchmark documentation and affected architecture modules are updated. PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python scripts/generate_docs.py --check passed, confirming generated references and logs remain current despite having no textual diff.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0058 records escape attribution, categories, grouping, thresholds, tracker-time reads, the normal-report section and compatibility with older metrics. Its exclusion of issue-gate refusals does not override the ticket's explicit requirement, as identified above.
+  ADR 0058 records the escape definition, grouping and threshold, tracker reads, temporal ordering, categories, refusal storage, legacy handling and reserved merge/CI categories. The findings concern implementation gaps in those decisions.
 
 ## Proposed learnings (not decided)
 
-- Proposed: Test measurement features from failure entry point through persisted record discovery to report output.
-- Proposed: Attribute later outcomes using stable PR identity and event timestamps.
-- Proposed: Test minimum-sample thresholds with repeated records for the same ticket.
+- Proposed: Give attempts a durable unique identity; second-resolution timestamps are insufficient for deduplicating concurrent metrics records.
+- Proposed: Test stop-category completeness at early returns as well as exceptions inside an established run, including interrupts during tracker lookup.
 
 ## Run
 
