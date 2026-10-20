@@ -258,3 +258,23 @@ def test_c10_review_proportion_verify_sees_a_sensitive_file_renamed_away(
     prompt = reviewer_prompt(runtime)
     assert "R100\tguard.py\ttools/moved.py" in prompt
     assert '<untrusted-ticket kind="paths">\nguard.py\n</untrusted-ticket>' in prompt
+
+
+@pytest.mark.parametrize("linked", ["docs", "docs/adr", "docs/adr/0001-guard.md"])
+def test_c10_review_proportion_residuals_behind_a_link_are_not_read(
+    tmp_path: Path, linked: str
+) -> None:
+    outside = tmp_path / "outside"
+    (outside / "adr").mkdir(parents=True)
+    (outside / "adr/0001-guard.md").write_text(BASE_ADR, encoding="utf-8")
+    plain = tmp_path / "plain/docs/adr"
+    plain.mkdir(parents=True)
+    (plain / "0001-guard.md").write_text(BASE_ADR, encoding="utf-8")
+    assert len(review.residuals_in(tmp_path / "plain")) == 1  # the same file, committed
+    tree = tmp_path / "tree"
+    target = {"docs": outside, "docs/adr": outside / "adr"}.get(
+        linked, outside / "adr/0001-guard.md"
+    )
+    (tree / linked).parent.mkdir(parents=True)
+    (tree / linked).symlink_to(target, target_is_directory=target.is_dir())
+    assert review.residuals_in(tree) == []

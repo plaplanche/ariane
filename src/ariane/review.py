@@ -242,9 +242,11 @@ def accepted_residuals(cwd: Path, commit: str) -> list[Residual]:
 
 def residuals_in(tree: Path) -> list[Residual]:
     """The accepted residuals of the ADRs in `tree`'s `docs/adr/`, read from the files: for a
-    tree checked out at the base commit, before any setup or agent runs (no git process)."""
+    tree checked out at the base commit, before any setup or agent runs (no git process). A link
+    on the way (`docs`, `docs/adr` or the file) is skipped: its target was never committed."""
     folder = tree / ADR_FOLDER
-    paths = sorted(folder.glob("*.md")) if folder.is_dir() and not folder.is_symlink() else []
+    linked = any((tree / part).is_symlink() for part in ("docs", ADR_FOLDER))
+    paths = sorted(folder.glob("*.md")) if folder.is_dir() and not linked else []
     return [
         Residual(path.name.partition("-")[0], text)
         for path in paths
