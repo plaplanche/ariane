@@ -1,18 +1,22 @@
 # Review 0
 
-- Reviewed commit: `e9b7a15d0c3d2c1b0e4d0e5ea5b772c4873d8fce`
+- Reviewed commit: `73b51519e4bf2d0bbb2a1164cad14b04ced14a88`
 - Reviewer model: gpt-6-astra
-- Verdict: **no-go** (the reviewer answered no-go)
+- Verdict: **no-go** (the reviewer answered go)
 
 ## Findings
 
-- **blocking** (`src/ariane/replay.py:255`) Incoming changes select checks but do not contribute to their risk tier
+- **minor** (`src/ariane/update.py:94`) Concurrent runs do not recognize update processes on Linux
 
-  The update adds incoming paths to `changed` but discards their changed-line count. `risk_tier` therefore receives the ticket-only line count. With a two-line ticket and 1,000 incoming lines in the same module, a policy threshold of 300 incorrectly produces `low` and `ARIANE_FULL_SUITE=0`. A blocking check that runs integration tests only for the full suite can consequently pass without testing the merged combination, and that success is published after pushing. This makes a check pass wrongly. Compute the update's risk from both relevant diffs, with documented counting semantics, and add a regression test where the omitted full suite would fail.
+  The update registers itself, but runs._started_as accepts only command lines containing `start <number>`. Interleaving: another ticket snapshots the repository; update registers and writes its merge commit; the other ticket checks its guard. The update is excluded from genuine runs, so its branch movement stops the other ticket as an unauthorized change. Two concurrent updates can likewise stop each other. Extend process recognition to update and test this interaction. Minor because concurrent updates are not an acceptance criterion and this fails closed.
 
-- **minor** (`src/ariane/update.py:93`) Concurrent runs do not recognize an update process on Linux
+- **minor** (`src/ariane/metrics.py:44`) Malformed-metrics recovery policy is missing from ADR 0033
 
-  Updates register themselves, but `runs._started_as` recognizes only `start <number>`. Read-only probes confirmed that `ariane update 7` is rejected while `ariane start 7` is recognized. Interleaving: another ticket snapshots refs; the update registers and writes its merge commit; the other ticket verifies its snapshot, excludes the update from genuine runs, and stops on its legitimate branch change. Two updates can similarly stop each other. Extend registry recognition and its tests to the new command. This is not the accepted ADR 0017 impersonation residual.
+  resume silently starts measurements empty when existing JSON cannot be parsed or converted. The next metrics write replaces that file. The module documentation describes this fallback, but ADR 0033 only promises that earlier measurements are continued. Record the fallback decision and its consequences in the ADR, with a test establishing the intended behavior.
+
+- **blocking** Definition of done not met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
+
+  ADR 0033 records the lease, numbering, record preservation, check selection, risk calculation and interrupted-merge behavior, but omits the malformed-metrics fallback identified above.
 
 ## Definition of done
 
@@ -38,20 +42,20 @@
 
 - met: The change is covered by tests that fail without it.
 
-  The new test modules cover successful merging, replay, review, statuses, refusals, conflicts, interrupted merges, remote movement including the final push race, record preservation, metrics and CLI dispatch. They depend on the new implementation. Ariane reports the suite passing; I did not rerun filesystem-writing tests in this read-only review. The findings identify additional missing regression cases.
+  The three new test modules cover the command, merge parents, replay, review numbering, statuses, refusals, conflicts, interrupted aborts, remote races, metrics continuation and selective checks. They depend on the new implementation. Ariane reports passing checks; I did not rerun tests because this review permits only reads. Side-effect trace: CLI logging and lock files precede refusals; fetch writes objects, FETCH_HEAD and tracking metadata when needed; registration writes registry records; merge writes index, tree and commit; journal/status/metrics writes follow; replay and review create and remove separate trees and write their records; delivery commits records, checks guards, performs the leased push, writes the pushed journal entry, publishes statuses, then commits delivered status locally. Conflict handling aborts and verifies restoration before writing stop records; unresolved merges bypass record commits. Red checks and no-go reviews record a local stop without pushing. The known up-to-date path avoids fetch, merge and ticket-record writes.
 
 - met: The documentation the change affects is updated (C25).
 
-  README includes PowerShell and bash usage; architecture views, affected module documents, the new update module document, CLI reference and log catalogue are updated. Side-effect trace: CLI logging and lock/slot bookkeeping precede refusal checks; a needed fetch writes objects and tracking metadata; registration writes registry records; merge writes the tree, index and commit; journal/status/metrics writes follow; replay creates and removes clean trees and writes check records; review creates and removes its tree and writes review records; delivery restores and commits records, checks the guard, performs the leased push, writes the push journal, publishes statuses, and commits local delivery records. Conflict handling aborts before recording the stop; unresolved merges avoid record commits. Red/no-go paths commit stop records without pushing. Up-to-date exits before fetch and ticket-record writes, with technical logging and lock bookkeeping only.
+  README includes PowerShell and bash usage. CLI reference, log catalogue, context/container/component views, touched-module documentation and the new update module documentation are updated.
 
-- met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
+- **not met**: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0033's amendment records lease enforcement, additional record-preservation refusals, up-to-date logging, review numbering, incoming-path selection, residual provenance, metrics continuation and interrupted-merge handling. The risk-tier finding is an implementation inconsistency requiring correction and clarified counting semantics.
+  ADR 0033 records the lease, numbering, record preservation, check selection, risk calculation and interrupted-merge behavior, but omits the malformed-metrics fallback identified above.
 
 ## Proposed learnings (not decided)
 
-- When combining diffs for check selection, test that risk measurements and full-suite decisions cover the same changes.
-- Adding a registered command requires testing its recognition by concurrent-run guards using its real command-line shape.
+- When adding an orchestrator command, update process-authentication rules as well as run registration.
+- Keep remote-head comparison atomic with the push, and verify merge restoration before any record commit can reset the index.
 
 ## Run
 

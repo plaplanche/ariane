@@ -2,24 +2,24 @@
 
 Risk tier: high: no `[checks_policy]`.
 
-Replayed by Ariane on commit `e9b7a15d0c3d2c1b0e4d0e5ea5b772c4873d8fce`.
+Replayed by Ariane on commit `73b51519e4bf2d0bbb2a1164cad14b04ced14a88`.
 
-Each check was replayed in its own clean working tree at `e9b7a15d0c3d2c1b0e4d0e5ea5b772c4873d8fce`, after the setup.
+Each check was replayed in its own clean working tree at `73b51519e4bf2d0bbb2a1164cad14b04ced14a88`, after the setup.
 
 | Check | Blocking | Result | Duration |
 | --- | --- | --- | --- |
-| lint | yes | pass | 0.1 s |
+| lint | yes | pass | 0.2 s |
 | format | yes | pass | 0.1 s |
-| types | yes | pass | 3.5 s |
-| tests | yes | pass | 133.6 s |
+| types | yes | pass | 4.8 s |
+| tests | yes | pass | 172.8 s |
 | file length | yes | pass | 0.1 s |
-| docs: references | yes | pass | 0.5 s |
+| docs: references | yes | pass | 1.4 s |
 
 ## lint
 
 - Command: `uv run ruff check .`
 - Blocking: yes
-- Result: passed (exit 0, 0.1 s)
+- Result: passed (exit 0, 0.2 s)
 
 ```text
 All checks passed!
@@ -32,24 +32,24 @@ All checks passed!
 - Result: passed (exit 0, 0.1 s)
 
 ```text
-747 files already formatted
+748 files already formatted
 ```
 
 ## types
 
 - Command: `uv run mypy`
 - Blocking: yes
-- Result: passed (exit 0, 3.5 s)
+- Result: passed (exit 0, 4.8 s)
 
 ```text
-Success: no issues found in 118 source files
+Success: no issues found in 119 source files
 ```
 
 ## tests
 
 - Command: `uv run pytest -q`
 - Blocking: yes
-- Result: passed (exit 0, 133.6 s)
+- Result: passed (exit 0, 172.8 s)
 
 ```text
 bringing up nodes...
@@ -59,17 +59,17 @@ bringing up nodes...
 ........................................................................ [ 15%]
 ........................................................................ [ 22%]
 ........................................................................ [ 30%]
-......................................s................................. [ 37%]
+......................................................s................. [ 37%]
 ........................................................................ [ 45%]
 ........................................................................ [ 52%]
 ........................................................................ [ 60%]
 ........................................................................ [ 68%]
 ........................................................................ [ 75%]
 ........................................................................ [ 83%]
-...............................................................s........ [ 90%]
-........................................................................ [ 98%]
-...............                                                          [100%]
-949 passed, 2 skipped in 132.79s (0:02:12)
+........................................................................ [ 90%]
+.........................................s.............................. [ 98%]
+................                                                         [100%]
+950 passed, 2 skipped in 171.81s (0:02:51)
 ```
 
 ## file length
@@ -86,7 +86,7 @@ file length OK: no file over 600 lines under src, tests, scripts
 
 - Command: `uv run python scripts/generate_docs.py --check`
 - Blocking: yes
-- Result: passed (exit 0, 0.5 s)
+- Result: passed (exit 0, 1.4 s)
 
 ```text
 
