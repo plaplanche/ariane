@@ -38,6 +38,7 @@ class Metrics:
         self.blocking_red = 0
         self.first_pass_verdict = NOT_REVIEWED
         self.outcome = "running"
+        self.category = ""  # why it did not end delivered green (`stop.CATEGORIES`, ADR 0058)
         self.restarted_from: dict[str, str | float] | None = None  # the run this one started over
         self.replays: list[dict[str, Any]] = []  # per replayed round: its selection, its time
         self.full_replay: dict[str, Any] | None = None  # None: no full replay was considered
@@ -78,8 +79,12 @@ class Metrics:
         self.step(f"{session.role} session {len(self.sessions)} stopped")
         return result
 
-    def reviewed(self, go: bool) -> None:
-        """The first review's verdict is the first-pass verdict."""
+    def reviewed(self, go: bool, findings: int = 0) -> None:
+        """The first review's verdict is the first-pass verdict; the reviewer session that
+        answered (the last one) records its verdict and its number of findings (ADR 0058)."""
+        reviewers = [s for s in self.sessions if s["role"] == "reviewer"]
+        if reviewers:
+            reviewers[-1] |= {"verdict": "go" if go else "no-go", "findings": findings}
         if self.first_pass_verdict == NOT_REVIEWED:
             self.first_pass_verdict = "go" if go else "no-go"
 
@@ -137,16 +142,20 @@ class Metrics:
         } | ({"stopped": stopped} if stopped else {})
         self.step("full replay " + ("ran" if ran else "not sampled"))
 
-    def keep_stopped(self, path: Path) -> None:
-        """Write the metrics, outcome `stopped`, to `path` outside the repository, without the
-        usual writer (best effort: a failure to record must not hide the stop; ADR 0031)."""
+    def keep_stopped(self, path: Path, category: str) -> None:
+        """Write the metrics, outcome `stopped` and its `category`, to `path` outside the
+        repository, without the usual writer (best effort: a failure to record must not hide
+        the stop; ADR 0031)."""
         self.outcome = "stopped"
+        self.category = category
         with contextlib.suppress(OSError):
             path.parent.mkdir(parents=True, exist_ok=True)
             ticket.write_file(path, self.render())
 
-    def finish(self, outcome: str) -> None:
+    def finish(self, outcome: str, category: str = "") -> None:
+        """The outcome; anything but delivered green names its `category` (ADR 0058)."""
         self.outcome = outcome
+        self.category = category
         self.step(f"outcome: {outcome}")
 
     def render(self) -> str:
@@ -169,6 +178,8 @@ class Metrics:
             "outcome": self.outcome,
             "replays": self.replays,
         }
+        if self.category:
+            data["category"] = self.category
         if self.full_replay is not None:
             data["full_replay"] = self.full_replay
         if self.restarted_from is not None:

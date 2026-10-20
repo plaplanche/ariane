@@ -16,9 +16,10 @@
 
 - `build` reads `work/*/metrics.json`, `work/verify/**/metrics.json` (a hand-takeover record shows its branch), the ticket worktrees (`<repo>.ariane/worktrees/<n>/work/<n>/metrics.json`) and the shadow clones (`<repo>.ariane/shadow/<n>/work/<n>/metrics.json`); it writes nothing. A ticket worktree holds the latest record of its run: the full replay after delivery is committed only there, after the push (ADR 0056). Its record replaces the merged record of the same run (same ticket and `started`), and a run not merged yet is added. It keeps tickets started on or after `since` and prints number, mode, outcome, cost ("partly not reported" when a session's cost is null), agent time, rounds and first-pass verdict.
 - Before the totals it prints `Human time:` (waiting, restarts, shadow minutes judged, per merged pull request), `Gates bypassed:` and the `Shadow:` totals with `shadow pass: yes|no` (C19, ADR 0038). Each delivered ticket's line gets its human time and gates bypassed; a shadow ticket's line gets its judgement. Then the "Selective checks" line (`measures.selective_lines`: tickets with selection, replay time with selection versus the full replays' time on the sampled tickets, full replays, escapes and escape rate), with a warning when the rate is above `max_escape_rate` (`[checks_policy]`, read by `cli`; ADR 0056).
+- Then the review escapes (C10, C19, ADR 0058, `review_escapes.lines`): one line per implementer model, reviewer model and reviewer runtime with recorded verdicts (reviews, tickets, `go` verdicts, findings per review, escapes, and the escape rate, escapes over the `go` tickets the tracker described, shown from 5 tickets), a line when the tracker or the CI data is missing, and "Escape rates compared:" when two groups or more show a rate. Then "Stopped by category:" over the tickets that did not end delivered green, and the same per implementer model (`review_escapes.category_lines`).
 - Plan-billed sessions (`billing` = `plan`) are not summed in dollars: a ticket or the totals show "covered by plan" instead of an amount, or after the amount of the other sessions (ADR 0043). Totals give tickets, cost, agent time, rounds and the first-pass go rate (go / reviewed).
 - Without a tracker (no token, no configuration) or when it fails, the waiting time reads "not available".
-- A file that cannot be read or has a field of the wrong type (a `full_replay` object included, `measures.check_full_replay`) is named and skipped, and the exit code is 1. No metrics file at all gives one line and exit code 0.
+- A file that cannot be read or has a field of the wrong type (a `category` that is not a string, a `full_replay` object included, `measures.check_full_replay`) is named and skipped, and the exit code is 1. No metrics file at all gives one line and exit code 0.
 
 ## Workflow
 
@@ -29,7 +30,9 @@ A[metrics files: work, verify, ticket worktrees, shadow clones] --> B[read and c
   B --> D[keep tickets since the date]
   D --> E[measures: human time, gates bypassed]
   D --> F[one line per ticket]
+  D --> H[review_escapes: escapes per model pair, stop categories]
   E --> G[measure lines, totals, summary]
+  H --> G
   F --> G
 ```
 
@@ -50,6 +53,7 @@ class build {
 }
 build --> Report
 build ..> measures
+build ..> review_escapes
 build ..> risk
 build ..> metrics
 build ..> shadow
@@ -66,6 +70,7 @@ flowchart LR
   cli --> report
   report --> measures
   report --> metrics
+  report --> review_escapes
   report --> risk
   report --> shadow
   report --> ticket
@@ -75,4 +80,4 @@ flowchart LR
 
 ## Serves
 
-C19, C23; ADR 0012, ADR 0030, ADR 0035, ADR 0038, ADR 0056. See [the component view](../3-components.md).
+C10, C19, C23; ADR 0012, ADR 0030, ADR 0035, ADR 0038, ADR 0056, ADR 0058. See [the component view](../3-components.md).

@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 from ariane import process
 from ariane.config import CONFIG_FILE, CheckConfig, matching_paths
 from ariane.risk import FULL_SUITE_VARIABLE, HIGH, LOW, UNMEASURED, ChecksPolicy, Tier
-from ariane.stop import Stop
+from ariane.stop import GUARD, Stop
 from ariane.ticket import fenced
 
 PASSING_OUTPUT_LINES = 20
@@ -161,6 +161,7 @@ def _refused(records: str) -> Stop:
         f"the replayed commit holds {records}/{CHANGED_FILES}, or its folder leads"
         " outside the replay tree",
         "remove it from the branch, then retry",
+        category=GUARD,
     )
 
 

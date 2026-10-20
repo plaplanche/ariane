@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ariane import measures, metrics, shadow, ticket
+from ariane import measures, metrics, review_escapes, shadow, ticket
 from ariane.risk import DEFAULT_MAX_ESCAPE_RATE
 from ariane.tracker import Tracker
 
@@ -86,6 +86,8 @@ def build(
     rounds = sum(d["rounds"] for d in rows)
     lines.extend(_measure_lines(rows, recent, delivered, people, flagged))
     lines.extend(measures.selective_lines(rows, max_escape_rate))
+    lines.extend(review_escapes.lines(rows, tracker))
+    lines.extend(review_escapes.category_lines(rows))
     reviewed = [d for d in rows if d["first_pass_verdict"] != metrics.NOT_REVIEWED]
     go = sum(1 for d in reviewed if d["first_pass_verdict"] == "go")
     rate = f"{go}/{len(reviewed)}" + (f" ({100 * go // len(reviewed)}%)" if reviewed else "")
@@ -142,6 +144,8 @@ def _read(path: Path) -> dict[str, Any]:
     for key in ("mode", "outcome", "first_pass_verdict"):
         if not isinstance(data[key], str):
             raise TypeError(f"{key} is not a string")
+    if "category" in data and not isinstance(data["category"], str):
+        raise TypeError("category is not a string")
     for session in data["sessions"]:
         if not isinstance(session, dict):
             raise TypeError("a session is not an object")

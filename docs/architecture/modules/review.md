@@ -22,6 +22,7 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 | `validate(data)` | function | The problems of an answer against the schema; empty when valid. |
 | `parse(data)` | function | Turns a valid answer into a `Review`. |
 | `settle(review, items, results)` | function | Applies Ariane's rules to a review and the check results. |
+| `not_green(settled, results)` | function | The stop category of a delivery (C19, ADR 0058): `checks` when blocking checks are still red, else `review` unless the review is `go`; empty when green. Used by `flow`, `shadow`. |
 | `prompt(issue, diff, results, check_configs, items, ...)` | function | The reviewer's instructions with the untrusted data; with `changed`, a block naming the changed files whose tests no replay ran (`not_run_locally`, ADR 0042); with `name_status`, the full list of changed files; with `small_lines`, the narrower review of a small change (ADR 0046); with `residuals` and `sensitive`, the accepted residuals of the base commit and the changed sensitive paths (ADR 0057). |
 | `small_note(lines)` | function | The sentence a small change's prompt adds (ADR 0046). |
 | `truncated_paths(diff, limit=MAX_DIFF_CHARS)` | function | The files whose hunks are missing or incomplete when the diff is cut at `limit` characters; empty when it is not cut. |
@@ -122,6 +123,7 @@ flowchart LR
   review --> context
   review --> git
   review --> risk
+  review --> stop
   review --> ticket
   review --> tracker
   review_session --> review
@@ -136,4 +138,4 @@ See the generated [JSON Schema of the answer](../../reference/review-answer.sche
 
 ## Serves
 
-C10, C26; ADR 0015, ADR 0016, ADR 0025, ADR 0027, ADR 0056. See [the component view](../3-components.md).
+C10, C19, C26; ADR 0015, ADR 0016, ADR 0025, ADR 0027, ADR 0056, ADR 0058. See [the component view](../3-components.md).

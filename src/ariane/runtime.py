@@ -11,6 +11,7 @@ from typing import Any, Protocol
 
 from ariane.attempts import Attempts
 from ariane.config import AgentConfig
+from ariane.stop import BUDGET, RUNTIME
 
 OUTPUT_TAIL_CHARS = 2000
 _TOKEN_CAP_PREFIX = "Ariane token cap"
@@ -93,6 +94,13 @@ class StopReason(StrEnum):
     ERROR = "error"
 
 
+def category(reason: StopReason) -> str:
+    """The stop category of a session that did not finish: a limit is `budget`, a quota or an
+    error is `runtime` (ADR 0058)."""
+    limits = (StopReason.BUDGET, StopReason.TURNS, StopReason.TIMEOUT)
+    return BUDGET if reason in limits else RUNTIME
+
+
 @dataclass(frozen=True)
 class Session:
     role: str
@@ -139,6 +147,10 @@ class SessionResult:
         if self.stop_reason is StopReason.TIMEOUT:
             return f"{self.stop_reason.value} ({self.summary})"
         return self.stop_reason.value
+
+    def stop_category(self) -> str:
+        """The stop category of this session when it did not finish (`category`, ADR 0058)."""
+        return category(self.stop_reason)
 
     def usage_text(self) -> str:
         """The cap line, then the cost and the tokens, as the journal words them."""

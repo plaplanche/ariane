@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ariane import git, process, restart
-from ariane.stop import Stop
+from ariane.stop import GUARD, Stop
 
 FOLDER = "runs"
 LOCK = ".lock"  # serializes every read and write of the registry
@@ -362,14 +362,28 @@ def guard_stop(after: str, changes: list[str], quiet: str) -> Stop | None:
             "inspect and remove them (they are outside the repository); Ariane pushed"
             f" nothing; {quiet}",
             "\n".join(f"- {line}" for line in written),
+            category=GUARD,
         )
     if changes:
         return Stop(
             f"{after} changed git configuration, hooks or local branches",
             f"inspect .git/config, .git/hooks and the branches; Ariane pushed nothing; {quiet}",
             "\n".join(f"- {line}" for line in changes),
+            category=GUARD,
         )
     return None
+
+
+def survivors_stop(after: str, killed: dict[int, str]) -> Stop:
+    """The stop of a run whose step `after` left the `killed` processes (pid to name) running,
+    which Ariane killed (C10, ADR 0031): a guard violation."""
+    listing = "\n".join(f"- {name} (pid {pid})" for pid, name in sorted(killed.items()))
+    return Stop(
+        f"{after} left {len(killed)} process(es) running after it ended; Ariane killed them",
+        "find what started them in the background; Ariane pushed nothing",
+        listing,
+        category=GUARD,
+    )
 
 
 def remote_stop(after: str, changed: list[str], quiet: str) -> Stop:
@@ -377,6 +391,7 @@ def remote_stop(after: str, changed: list[str], quiet: str) -> Stop:
     return Stop(
         f"the remote changed during {after} ({', '.join(changed)})",
         f"check it was not the agent; if a person pushed, start the ticket again; {quiet}",
+        category=GUARD,
     )
 
 

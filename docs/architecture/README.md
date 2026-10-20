@@ -74,6 +74,7 @@ flowchart LR
 - [`report`](modules/report.md)
 - [`restart`](modules/restart.md)
 - [`review`](modules/review.md)
+- [`review_escapes`](modules/review_escapes.md)
 - [`review_session`](modules/review_session.md)
 - [`risk`](modules/risk.md)
 - [`runs`](modules/runs.md)

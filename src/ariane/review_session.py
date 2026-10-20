@@ -17,20 +17,25 @@ from ariane.runtime import (
     AgentRuntime,
     SessionResult,
     StopReason,
+    category,
     describe,
     for_role,
     is_token_cap,
     login_for,
     session_for,
 )
+from ariane.stop import BUDGET, RUNTIME
 from ariane.tracker import Issue
 
 
 class ReviewFailed(Exception):
     """No valid answer: the ticket goes to a human."""
 
-    def __init__(self, reason: str, next_action: str, detail: str = "") -> None:
+    def __init__(
+        self, reason: str, next_action: str, detail: str = "", category: str = RUNTIME
+    ) -> None:
         super().__init__(reason)
+        self.category = category  # the stop category (ADR 0058)
         self.reason = reason
         self.next_action = next_action
         self.detail = detail
@@ -251,6 +256,7 @@ class ReviewSession:
                     f"raise `{key}` ({kind}) in ariane.toml; the work is kept on branch"
                     f" ariane/{number}",
                     ticket.fenced(result.summary),
+                    BUDGET,
                 )
             if result.stop_reason is StopReason.QUOTA:
                 raise ReviewFailed(
@@ -265,6 +271,7 @@ class ReviewSession:
                     f"the reviewer session stopped: {result.stop_text()}",
                     f"read work/{number}/journal.md; Ariane pushed nothing",
                     ticket.fenced(result.summary),
+                    category(result.stop_reason),
                 )
             answer, error = read_answer(result)
             if answer is not None:

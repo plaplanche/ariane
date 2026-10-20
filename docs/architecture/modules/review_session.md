@@ -6,7 +6,7 @@ The reviewer sessions of one review round (C10): a fresh read-only session on th
 
 | Name | Kind | What it does |
 | --- | --- | --- |
-| `ReviewFailed` | exception | No valid answer; carries `reason`, `next_action` and `detail`. |
+| `ReviewFailed` | exception | No valid answer; carries `reason`, `next_action`, `detail` and `category` (the stop category, ADR 0058: `budget` for a cap or a time limit, else `runtime`). |
 | `read_answer(result)` | function | The validated answer of a session result, or the reason it is not one. |
 | `ReviewSession` | dataclass | What the reviewer sessions of a ticket share; `run` returns the validated `Review`; `changed_lines` is the size of the reviewed diff, `small` whether it is a small change and `reviewer` the settings its sessions use (ADR 0046); `tier` is the round's risk tier (ADR 0056); `residuals` (the base commit's accepted residuals) and `sensitive` (the changed files matching `[review] sensitive_paths`) go to the prompt (ADR 0057). |
 | `agent_logins(runtime, implementer, reviewer)` | function | The login variables of each kind of agent session: `implementer`, `reviewer` and `reviewer.small` (the small reviewer's model, or the reviewer's when the small table sets none), each from `runtime.login_for` (ADR 0046, ADR 0024). |
@@ -92,6 +92,7 @@ flowchart LR
   review_session --> review
   review_session --> risk
   review_session --> runtime
+  review_session --> stop
   review_session --> ticket
   review_session --> tracker
   verify --> review_session
@@ -100,4 +101,4 @@ flowchart LR
 
 ## Serves
 
-C10; ADR 0016, ADR 0025, ADR 0027. See [the component view](../3-components.md).
+C10, C19; ADR 0016, ADR 0025, ADR 0027, ADR 0058. See [the component view](../3-components.md).

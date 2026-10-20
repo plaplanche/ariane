@@ -10,6 +10,7 @@ from typing import Any
 from ariane import checks, context, git, ticket
 from ariane.config import CheckConfig, DoneItem
 from ariane.risk import Tier
+from ariane.stop import CHECKS, REVIEW
 from ariane.tracker import Issue
 
 MAX_DIFF_CHARS = 200_000
@@ -103,6 +104,14 @@ class Settled:
     @property
     def go(self) -> bool:
         return self.verdict == "go"
+
+
+def not_green(settled: Settled | None, results: Sequence[checks.CheckResult]) -> str:
+    """The stop category of a delivery that is not green: blocking checks still red after the
+    rounds, else a review still no-go (or none); empty when green (ADR 0058)."""
+    if checks.blocking_failures(results):
+        return CHECKS
+    return "" if settled is not None and settled.go else REVIEW
 
 
 def validate(data: Any) -> list[str]:

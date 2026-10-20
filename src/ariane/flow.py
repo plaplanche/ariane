@@ -19,7 +19,7 @@ from ariane.restart import Restarted, kept_name, lock_path, locked, prepare, wit
 from ariane.risk import Tier
 from ariane.runtime import AgentRuntime, SessionResult, StopReason, for_role, session_for
 from ariane.slots import held as held_slot
-from ariane.stop import Stop, describe
+from ariane.stop import CHECKS, GUARD, SPEC, Stop, category_of, describe
 from ariane.tracker import Issue, Tracker, TrackerError
 
 REMOTE = "origin"
@@ -225,12 +225,7 @@ class _TicketRun:
         if not killed:
             return None
         self.metrics.surviving_processes(len(killed))
-        listing = "\n".join(f"- {name} (pid {pid})" for pid, name in sorted(killed.items()))
-        return Stop(
-            f"{after} left {len(killed)} process(es) running after it ended; Ariane killed them",
-            "find what started them in the background; Ariane pushed nothing",
-            listing,
-        )
+        return runs.survivors_stop(after, killed)
 
     def setup(
         self, cwd: Path, command: tuple[str, ...] | None, guard: dict[str, str], env: _Env = None
@@ -325,12 +320,13 @@ class _TicketRun:
                 if expected_head is not None and now.head != expected_head:
                     raise Stop(f"{after} moved the ticket branch", keep)
                 stopped = self._unchanged(after, guard, now.snapshot)
-            if stopped is None:
-                stopped = self._remote_stop(after, refs_before)
+            if stopped is None and (changed := self._remote_changes(refs_before)):
+                stopped = runs.remote_stop(after, changed, QUIET)
             if stopped is not None:
                 raise stopped
-        except Stop:
+        except Stop as exc:
             self.metrics.guard_violation()
+            exc.category = GUARD  # every stop of the post-session check (ADR 0058)
             raise
         logs.emit("guard.verified", f"after {after}: branch, history, git and remote unchanged")
         self.folder.log(
@@ -338,10 +334,6 @@ class _TicketRun:
             f"Verified after {after}",
             "Same branch and history, git unchanged, remote unchanged.",
         )
-
-    def _remote_stop(self, after: str, refs_before: dict[str, str]) -> Stop | None:
-        changed = self._remote_changes(refs_before)
-        return runs.remote_stop(after, changed, QUIET) if changed else None
 
     def _unchanged(
         self, after: str, guard: dict[str, str], now: dict[str, str] | None = None
@@ -432,6 +424,7 @@ class _TicketRun:
             raise Stop(
                 f"the agent committed changes to ticket records ({', '.join(records)})",
                 "inspect the branch; Ariane pushed nothing",
+                category=GUARD,
             )
         changed = [
             p
@@ -449,9 +442,12 @@ class _TicketRun:
             raise Stop(
                 f"the implementer session stopped: {result.stop_text()}",
                 f"read work/{self.number}/journal.md; its work is kept on the branch",
+                category=result.stop_category(),
             )
         if not changed:
-            raise Stop("the agent changed no file", "clarify the issue, then start again")
+            raise Stop(
+                "the agent changed no file", "clarify the issue, then start again", category=SPEC
+            )
 
     def _flag_untouched_docs(self, changed: list[str]) -> None:
         """C25: journal the documents mapped to changed files that the ticket did not change."""
@@ -495,6 +491,7 @@ class _TicketRun:
                 raise Stop(
                     f"blocking checks failed: {names}",
                     f"read work/{self.number}/checks.md in {self.worktree}",
+                    category=CHECKS,
                 )
             if not failed:
                 reviewed = round_
@@ -544,7 +541,9 @@ class _TicketRun:
             replay.sensitive(self, checked),
         )
         self.metrics.delivered_red(len(checks.blocking_failures(results)))
-        self.metrics.finish("needs a human" if delivery.draft else "delivered")
+        self.metrics.finish(
+            "needs a human" if delivery.draft else "delivered", review.not_green(settled, results)
+        )
         try:
             done = delivery.deliver(results)
         except PullRequestRefused as exc:
@@ -589,11 +588,12 @@ class _TicketRun:
             with contextlib.suppress(*_FAILURES):
                 self.folder.log("ticket.stopped", f"Stopped: {reason}", detail)
                 status = exc.status if isinstance(exc, Stop) else "stopped"
-                self.metrics.finish(status)
+                self.metrics.finish(status, category_of(exc))
                 self.folder.set_status(status, reason, next_action)
                 self._commit_record(f"#{self.number}: record the stop")
         else:  # stopped in the first setup: the metrics go outside the repository (ADR 0031)
-            self.metrics.keep_stopped(stopped_metrics_path(self.worktree, self.number))
+            path = stopped_metrics_path(self.worktree, self.number)
+            self.metrics.keep_stopped(path, category_of(exc))
         code = EXIT_INTERRUPTED if isinstance(exc, KeyboardInterrupt) else EXIT_STOPPED
         return Outcome(
             code, f"Stopped ticket #{self.number}: {reason}. Next: {next_action}.", detail

@@ -117,6 +117,7 @@ flowchart TD
   replay --> ticket
   report --> measures
   report --> metrics
+  report --> review_escapes
   report --> risk
   report --> shadow
   report --> ticket
@@ -131,8 +132,11 @@ flowchart TD
   review --> context
   review --> git
   review --> risk
+  review --> stop
   review --> ticket
   review --> tracker
+  review_escapes --> stop
+  review_escapes --> tracker
   review_session --> checks
   review_session --> config
   review_session --> git
@@ -140,6 +144,7 @@ flowchart TD
   review_session --> review
   review_session --> risk
   review_session --> runtime
+  review_session --> stop
   review_session --> ticket
   review_session --> tracker
   runs --> git
@@ -148,6 +153,7 @@ flowchart TD
   runs --> stop
   runtime --> attempts
   runtime --> config
+  runtime --> stop
   shadow --> checks
   shadow --> config
   shadow --> flow
@@ -350,6 +356,7 @@ sequenceDiagram
   participant H as shadow
   participant T as tracker (github)
   participant E as measures
+  participant X as review_escapes
   U->>CLI: ariane report [--since]
   CLI->>P: report
   P->>M: take the metrics.json name (report reads and validates work/*/metrics.json and work/verify/**/metrics.json itself)
@@ -358,6 +365,9 @@ sequenceDiagram
   P->>E: lines and totals
   E->>T: read pull request states (human time)
   E-->>P: measures
+  P->>X: review escapes per model pair, stops per category
+  X->>T: read the pull request after each go (closed unmerged, human changes requested)
+  X-->>P: escape and category lines
   P-->>CLI: the report
   CLI-->>U: the table
 ```

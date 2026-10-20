@@ -10,7 +10,7 @@
 | `REVIEW` | constant | The name of the review record, `review.md`. |
 | `PUSH_NEXT` | constant | The next action after a green verification. |
 | `FIX_NEXT` | constant | The next action after findings or red checks. |
-| `Refused` | exception | The branch cannot be verified; carries `reason`, `next_action` and `exit_code`. |
+| `Refused` | exception | The branch cannot be verified; carries `reason`, `next_action`, `exit_code` and `category` (the stop category, ADR 0058: `guard` for the guard's refusals, a reviewer failure's own, else `infra`). |
 | `relative_folder(branch)` | function | The records folder of a branch, relative to the repository. |
 | `replay_path(repo_root, branch)` | function | Where the replay trees of a branch are (the name of tree `k` ends in `-<k>`). |
 | `stopped_metrics_path(repo_root, branch)` | function | Where a run that committed nothing keeps its `metrics.json`: `<repo>.ariane/verify/<branch slug>/metrics.json`. |
@@ -19,6 +19,7 @@
 ## Behaviour and errors
 
 - `verify`: the entry point; returns an `Outcome` whose line gives the checks' summary, the verdict and the next action. Exit 0 only for a `go` with green blocking checks. Ctrl-C (`KeyboardInterrupt`, also raised through a killed reviewer or setup process tree) gives exit 130 (`EXIT_INTERRUPTED`) and the line "Stopped verifying <branch>: interrupted by the user. Next: run verify again."; the replay tree and the temporary records folder are removed and nothing is committed or journaled.
+- Stop categories (C19, ADR 0058): the metrics a verification keeps outside the repository after a refusal record the refusal's category (any other error, Ctrl-C included, is `infra`); a committed verification that is not green records `checks` when a blocking check is red, else `review`. The review records its verdict and number of findings in the reviewer session (`Metrics.reviewed`).
 - `Refused`: carries the exit code and next action; a tracker refusal (`TrackerError`, `IssueRefused`) passes its own through, so an issue refused by the issue gate (C21, ADR 0032) gives exit 2 before any checkout or review. The branch cannot be verified (unknown branch, uncommitted changes in the working tree that holds it, failed setup or reviewer).
 - Metrics (C19): the records also hold `metrics.json` (mode `verify`, the reviewer sessions, survivors and guard violations, outcome `delivered` when green, else `stopped`); a refused or interrupted run writes it to `stopped_metrics_path` instead.
 - Changed files' listing (ADR 0056): after each check the replay tree must show no change but the listing's own path (`checks.without_listing`), which Ariane never removes by name: the tree's removal takes it.
@@ -106,4 +107,4 @@ flowchart LR
 
 ## Serves
 
-C10, C23; ADR 0016, ADR 0020, ADR 0028, ADR 0034, ADR 0046, ADR 0053, ADR 0054, ADR 0056, C19. See [the component view](../3-components.md).
+C10, C23; ADR 0016, ADR 0020, ADR 0028, ADR 0034, ADR 0046, ADR 0053, ADR 0054, ADR 0056, ADR 0058, C19. See [the component view](../3-components.md).
