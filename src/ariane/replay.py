@@ -269,6 +269,11 @@ def replay(
     all_checks = run.all_checks()
     changes = round_changes(run, start_commit, checked)
     changed = checks.changed_files(changes.name_status)
+    weighed = changes.changed_lines
+    if incoming := getattr(run, "incoming_from", ""):  # an update: what the base brought too
+        brought = git.changes(run.worktree, incoming, checked, ticket.WORK_DIR)
+        changed += [p for p in checks.changed_files(brought.name_status) if p not in changed]
+        weighed += brought.changed_lines  # the tier weighs the ticket's lines plus the base's
     after, head = ("the full replay", git.head(run.worktree)) if full else ("the checks", checked)
     chosen = (
         list(all_checks)
@@ -281,7 +286,7 @@ def replay(
         tier = run.tier = checks.risk_tier(
             run.config.checks_policy,
             changed,
-            changes.changed_lines,
+            weighed,
             run.config.check_all_paths,
             run.check_failed,
         )

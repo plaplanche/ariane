@@ -108,6 +108,42 @@ class Delivery:
         self._record_pull_request(pull.number, pull.url)
         return Delivered(pull.url, self.draft, pushed, pull.number)
 
+    def push_update(self, results: list[checks.CheckResult], expected: str) -> str:
+        """C11, ADR 0033: the second push of a delivered ticket, after `ariane update` merged
+        the base branch: the records committed, the head pushed to the branch as a
+        fast-forward from `expected`, leased on it (refused if the remote branch moved), one
+        status per check on it; the pull request follows by itself. The record of the push is
+        committed on the local branch only. Returns the pushed commit."""
+        number = self.issue.number
+        self.folder.set_status(
+            "pushing", f"pushing the update of {self.branch}", f"run ariane status {number}"
+        )
+        self.commit_record(f"#{number}: record the update")
+        self._require_replayed()
+        pushed = git.head(self.worktree)
+        self._last_guard()
+        way = git.push(
+            self.worktree,
+            self.url,
+            pushed,
+            self.branch,
+            token=self.token,
+            environ=self.environ,
+            expected=expected,
+        )
+        self.on_pushed()
+        self.folder.log(
+            "ticket.update.pushed", "Update pushed", f"Pushed `{self.branch}` at `{pushed}` {way}."
+        )
+        self._publish_statuses(results, pushed)
+        self.folder.set_status(
+            "delivered",
+            f"update pushed at {pushed}",
+            f"see the pull request, or run ariane status {number}",
+        )
+        self.commit_record(f"#{number}: record the update's push")
+        return pushed
+
     def _label(self, pull_number: int) -> None:
         """A change touching a sensitive path gets `owner-review`; a refusal is a journaled
         warning, as the body already names the paths (ADR 0057)."""

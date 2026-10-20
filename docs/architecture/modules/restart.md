@@ -88,6 +88,7 @@ flowchart LR
   restart --> stop
   restart --> ticket
   runs --> restart
+  update --> restart
 ```
 <!-- end generated -->
 

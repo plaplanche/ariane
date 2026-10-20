@@ -15,11 +15,11 @@ The ticket folder `work/<n>/` (C1, C10, C23): every document of a ticket, readab
 | `section(body, title)` | function | The text under the level-2 heading `## <title>` of an issue body (case and surrounding spaces ignored), up to the next level-2 heading; empty when absent. |
 | `folder_path(root, number)` | function | The folder of ticket `number` under `root`. |
 | `relative_folder(number)` | function | The folder as a path relative to the repository root. |
-| `review_file(round_)` | function | The record of review `round_` (`review-0.md`, then `review-1.md` and `review-2.md` after fix rounds). |
+| `review_file(round_)` | function | The record of review `round_` (`review-0.md`, then `review-1.md` and `review-2.md` after fix rounds; an `ariane update` continues the numbering). |
 | `now()` | function | The current time as the ISO string the records show. |
 | `fence(text)` | function | A backtick fence longer than any backtick run inside `text`. |
 | `fenced(text, info='text')` | function | `text` in a code block that it cannot close early (quotes untrusted text safely). |
-| `TicketFolder` | class | Ariane's records of one ticket: `create(issue)`, `exists()`, `log(kind, step, detail='')`, `set_status(state, detail, next_action)`, `write(name, text)`, `restore()`. |
+| `TicketFolder` | class | Ariane's records of one ticket: `create(issue)`, `exists()`, `log(kind, step, detail='')`, `set_status(state, detail, next_action)`, `write(name, text)`, `restore()`; `load()` takes the regular files already in the folder as its records, `read(name)` and `names()` give them back (`ariane update`, ADR 0033). |
 | `ensure_folder(root, path)` | function | Makes every folder from `root` down to `path` a real directory (a link or file in the way is removed). |
 | `write_file(target, text)` | function | Writes a record; a link or folder in its place is removed, never followed. Also used by `verify` (ADR 0028). |
 | `brief(issue)` | function | The issue as a document. |
@@ -109,6 +109,7 @@ flowchart LR
   ticket --> logs
   ticket --> redact
   ticket --> tracker
+  update --> ticket
   verify --> ticket
 ```
 <!-- end generated -->

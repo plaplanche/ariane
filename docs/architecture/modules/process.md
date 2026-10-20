@@ -110,6 +110,7 @@ flowchart LR
   process --> logs
   replay --> process
   runs --> process
+  update --> process
   verify --> process
 ```
 <!-- end generated -->
