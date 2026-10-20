@@ -168,12 +168,15 @@ would stop on it. The file grows by one line per run.
 
 Residuals, accepted by the owner until an operating-system sandbox (slice 7): every run and every
 agent runs as the same user, so nothing a run writes or shows can prove it is an Ariane run.
-- Another run's agent is not a descendant of this run: it can start a process whose arguments are
-  `start <m>`, register it as `m`, and have `ariane/<m>` and its two keys tolerated here.
-- On macOS and Windows a process's command line is not read and there is no subreaper: a live
-  entry naming any live process that is not a child of this run counts as genuine.
-- A run that starts and ends between two reads of the registry (0.2 s apart) is never seen live:
-  its branch stops the other run (the safe side), although it ran during the session.
+- **Accepted residual.** Until an operating-system sandbox (slice 7), another run's agent is not
+  a descendant of this run: it can start a process whose arguments are `start <m>`, register it
+  as `m` in the runs registry, and have `ariane/<m>` and its two keys tolerated by the guard.
+- **Accepted residual.** Until an operating-system sandbox (slice 7), on macOS and Windows a
+  process's command line is not read and there is no subreaper: a live registry entry naming any
+  live process that is not a child of this run counts as genuine.
+- **Accepted residual.** A run that starts and ends between two reads of the runs registry (0.2 s
+  apart) is never seen live: its branch stops the other run (the safe side), although it ran
+  during the session.
 Only a sandbox that runs agents as another user or in another namespace closes these.
 
 The base branch's remote-tracking ref, part of the snapshot, moves when another run fetches a base

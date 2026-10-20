@@ -115,6 +115,7 @@ flowchart TD
   review --> checks
   review --> config
   review --> context
+  review --> git
   review --> risk
   review --> ticket
   review --> tracker

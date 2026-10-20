@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ariane import cache, checks, context, git, process, review, slots, ticket
-from ariane.config import CheckConfig
+from ariane.config import CheckConfig, matching_paths
 from ariane.delivery import FAILURES
 from ariane.restart import command
 from ariane.review_session import ReviewFailed, ReviewSession
@@ -423,6 +423,8 @@ def review_round(
             small_env=run.agent_envs["reviewer.small"],
             changed_lines=changes.changed_lines,
             tier=run.tier,
+            residuals=run.residuals,
+            sensitive=matching_paths(run.config.sensitive_paths, checks.changed_files(name_status)),
         )
         try:
             answer = sessions.run(

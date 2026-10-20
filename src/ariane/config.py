@@ -197,6 +197,7 @@ class Config:
     caches: tuple[CacheConfig, ...] = ()  # `[[project.cache]]`: dependency folders (ADR 0054)
     check_all_paths: tuple[str, ...] = ()  # globs whose change selects every check
     checks_policy: ChecksPolicy | None = None  # `[checks_policy]`; None: every round is high
+    sensitive_paths: tuple[str, ...] = ()  # `[review]`: globs labelled for the owner (ADR 0057)
 
 
 def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:
@@ -224,7 +225,9 @@ def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:
 
 def parse(data: dict[str, Any]) -> Config:
     tables = {"project", "tracker", "agents", "checks", "definition_of_done", "documentation"}
-    _only(data, "", {*tables, "checks_policy"})
+    _only(data, "", {*tables, "checks_policy", "review"})
+    review = _table(data, "review") if "review" in data else {}
+    _only(review, "review", {"sensitive_paths"})
     project = _table(data, "project")
     keys = {"base_branch", "setup", "env", "parallel_checks", "cache", "check_all_paths"}
     _only(project, "project", keys)
@@ -294,6 +297,7 @@ def parse(data: dict[str, Any]) -> Config:
         caches=_caches(project),
         check_all_paths=_globs(project, "project", "check_all_paths"),
         checks_policy=_checks_policy(data),
+        sensitive_paths=_globs(review, "review", "sensitive_paths"),
     )
 
 
@@ -587,11 +591,7 @@ def _positive(table: dict[str, Any], key: str, prefix: str, default: float | Non
     value = table.get(key, default)
     if value is None:
         raise ConfigError(f"{CONFIG_FILE}: {prefix}{key}: missing key")
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, int | float)
-        or not math.isfinite(value)
-        or value <= 0
-    ):
+    numeric = isinstance(value, int | float) and not isinstance(value, bool)
+    if not numeric or not math.isfinite(value) or value <= 0:
         raise ConfigError(f"{CONFIG_FILE}: {prefix}{key}: expected a positive number")
     return float(value)

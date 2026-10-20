@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from ariane import cache, checks, context, git, process, review, slots, ticket
-from ariane.config import CheckConfig, Config
+from ariane.config import CheckConfig, Config, matching_paths
 from ariane.flow import (
     EXIT_INTERRUPTED,
     EXIT_OK,
@@ -355,6 +355,8 @@ class _Verification:
             small_env=self.small_reviewer_env,
             changed_lines=changes.changed_lines,
             tier=self.tier,
+            residuals=review.accepted_residuals(self.repo_root, self.base),
+            sensitive=matching_paths(self.config.sensitive_paths, changed),
         )
         try:
             answer = sessions.run(

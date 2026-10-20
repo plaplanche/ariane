@@ -88,6 +88,8 @@ class ReviewSession:
     changed_lines: int | None = None  # added plus deleted lines of the reviewed diff (ADR 0046)
     small_env: Mapping[str, str] | None = None  # the small reviewer's environment (its login)
     tier: Tier | None = None  # the round's risk tier, stated in the prompt (ADR 0056)
+    residuals: Sequence[review.Residual] = ()  # accepted at the base commit (ADR 0057)
+    sensitive: Sequence[str] = ()  # the changed paths matching `[review] sensitive_paths`
 
     @property
     def small(self) -> bool:
@@ -212,6 +214,8 @@ class ReviewSession:
                     name_status=diff[1],
                     small_lines=self.changed_lines if self.small else None,
                     tier=self.tier,
+                    residuals=self.residuals,
+                    sensitive=self.sensitive,
                 ),
                 env=self.small_env if self.small and self.small_env is not None else self.env,
                 json_schema=review.SCHEMA,
