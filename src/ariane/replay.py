@@ -175,7 +175,7 @@ def _run_check(
     records: str,
 ) -> checks.CheckResult:
     """Run `check`; with the `changed` files, give it their list as `ARIANE_CHANGED_FILES`,
-    written in the tree's ticket folder for this check only and removed after it."""
+    written in the tree's ticket folder for this check only and left for the tree's removal."""
     if changed is None:
         return checks.run_check(check, tree, env)
     with checks.changed_files_listing(tree, records, changed) as listing:

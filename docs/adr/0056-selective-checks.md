@@ -56,6 +56,14 @@ project knows which files each check covers; Ariane knows which files a ticket c
   reused by the review (`replay.round_changes`): the git process moves from the review phase to the
   replay phase of ADR 0053's counts, and the total per round is unchanged.
 
+**Accepted residual (owner, 20 October 2026).** The listing's containment holds against a
+link met on the way and a file the commit holds, not against another check of the same run
+moving a folder of `work/<n>/` out of the replay tree after Ariane opened it and before the file
+is created: the descriptor follows the moved folder, so the new listing (a list of paths, never
+written over a file) lands where that check moved it. Only a check of the project, running with
+the user's rights, can do this, and it could write that file itself; closing it needs an
+operating-system sandbox, as the residuals of ADR 0017, and waits for slice 7.
+
 ## Consequences
 A project that declares `paths` waits only for the checks a ticket can affect. A wrong `paths`
 lets a change through untested by that check; the project's own CI still runs everything on the
