@@ -149,9 +149,10 @@ def _seconds(value: Any) -> float:
 
 
 def full_replay(data: dict[str, Any]) -> dict[str, Any] | None:
-    """The `full_replay` object of a ticket's metrics when it ran to its end, or None."""
+    """The `full_replay` object of a ticket's metrics when it ran, stopped or not, or None: a
+    stopped one keeps the escapes it saw before its stop."""
     found = data.get("full_replay")
-    if not isinstance(found, dict) or found.get("ran") is not True or found.get("stopped"):
+    if not isinstance(found, dict) or found.get("ran") is not True:
         return None
     return found
 
@@ -181,16 +182,20 @@ def selective_lines(rows: list[dict[str, Any]], max_escape_rate: float) -> list[
         return []
     with_selection = sum(_seconds(r.get("duration_s")) for d in chosen for r in _rounds(d))
     sampled = [(d, f) for d in chosen if (f := full_replay(d)) is not None]
-    selective = sum(_seconds(_rounds(d)[-1].get("duration_s")) for d, _ in sampled)
-    full = sum(_seconds(f.get("duration_s")) for _, f in sampled)
+    complete = [(d, f) for d, f in sampled if not f.get("stopped")]  # a full duration only
+    selective = sum(_seconds(_rounds(d)[-1].get("duration_s")) for d, _ in complete)
+    full = sum(_seconds(f.get("duration_s")) for _, f in complete)
     escapes = sum(len(f.get("escapes", [])) for _, f in sampled)
     rate = escapes / len(sampled) if sampled else 0.0
     shown = f"{escapes}/{len(sampled)} ({100 * rate:.1f}%)" if sampled else "not measured"
+    stopped = len(sampled) - len(complete)
+    interrupted = f" ({stopped} interrupted, their escapes counted)" if stopped else ""
     lines = [
         f"Selective checks: {len(chosen)} tickets with selection, replay time"
-        f" {with_selection:.1f} s; on the {len(sampled)} sampled tickets {selective:.1f} s"
-        f" selective versus {full:.1f} s full ({full - selective:.1f} s saved);"
-        f" {len(sampled)} full replays, {escapes} escapes, escape rate {shown}."
+        f" {with_selection:.1f} s; on the {len(complete)} completed full replays"
+        f" {selective:.1f} s selective versus {full:.1f} s full ({full - selective:.1f} s"
+        f" saved); {len(sampled)} full replays{interrupted}, {escapes} escapes, escape rate"
+        f" {shown}."
     ]
     if sampled and rate > max_escape_rate:
         lines.append(

@@ -38,10 +38,13 @@ A[delivered: push, pull request, statuses] --> B{last round skipped or partial, 
   E -->|stop| F[record the stop, and the escapes of the checks done before it]
   E --> G{a check fails only here?}
   G -->|yes| H[full-replay.md, journal escape, comment, failing status]
-  G -->|no| I[full-replay.md, success status]
+  G -->|no| K{every check passed?}
+  K -->|yes| I[full-replay.md, success status]
+  K -->|no| L[full-replay.md, journal failed, failing status]
   D --> J[local commit of the records]
   F --> J
   H --> J
+  L --> J
   I --> J
 ```
 

@@ -134,16 +134,25 @@ def _after_delivery(
             f"Escape: {', '.join(names)}",
             "\n".join(f"- {r.name} ({how(r.name, round_)}): {r.detail}" for r in escaped),
         )
+    # The verdict is every full result's, apart from the escapes: a check failing in the full
+    # replay (an advisory one failing in both runs, say) never gives a passed full replay.
+    failed = [r.name for r in full if not r.passed and r not in escaped]
     if stopped is not None:
         run.folder.log(
             "ticket.checks.full_replay", f"Full replay stopped: {stopped[0]}", stopped[1]
         )
-    elif not escaped:
+    elif not escaped and not failed:
         run.folder.log(
             "ticket.checks.full_replay", "Full replay passed", checks.summary_table(full)
         )
-    if escaped or stopped is None:  # a stop without an escape has no verdict to publish
-        _publish(run, done, escaped, round_, checked)
+    elif failed:
+        run.folder.log(
+            "ticket.checks.full_replay",
+            f"Full replay failed: {', '.join(failed)}",
+            checks.summary_table(full),
+        )
+    if escaped or failed or stopped is None:  # a stop with no failure has no verdict
+        _publish(run, done, escaped, round_, checked, failed)
     run._commit_record(f"#{run.number}: record the full replay")
 
 
@@ -194,13 +203,20 @@ def _publish(
     escaped: Sequence[checks.CheckResult],
     round_: dict[str, Any],
     checked: str,
+    failed: Sequence[str] = (),
 ) -> None:
-    """The `ariane/full-replay` status on the pushed commit, and on an escape a comment on the
-    pull request naming the failing checks; a refusal is a journaled warning."""
+    """The `ariane/full-replay` status on the pushed commit (`success` only when every check of
+    the full replay passed), and on an escape a comment on the pull request naming the failing
+    checks; a refusal is a journaled warning."""
     names = ", ".join(r.name for r in escaped)
-    shown = f"escape: {names} failed only in the full replay" if escaped else "full replay passed"
+    if escaped:
+        shown = f"escape: {names} failed only in the full replay"
+    elif failed:
+        shown = f"full replay failed: {', '.join(failed)} (failing in the selective round too)"
+    else:
+        shown = "full replay passed"
     description = redact(shown, run.secrets)[:_STATUS_DESCRIPTION_MAX]
-    state = "failure" if escaped else "success"
+    state = "failure" if escaped or failed else "success"
     try:
         run.tracker.set_commit_status(done.pushed, STATUS, state, description, done.pull_url)
     except TrackerError as exc:

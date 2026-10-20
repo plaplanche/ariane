@@ -319,7 +319,7 @@ def selective_round(seconds: float, skipped: list[str] = ["docs"]) -> dict[str, 
     return {"round": 0, "selected": [], "skipped": skipped, "partial": [], "duration_s": seconds}
 
 
-@pytest.mark.parametrize(("rate", "warned"), [(0.02, True), (0.5, False)])
+@pytest.mark.parametrize(("rate", "warned"), [(0.02, True), (0.7, False)])
 def test_c19_full_replay_report_shows_time_saved_escapes_and_rate(
     tmp_path: Path, rate: float, warned: bool
 ) -> None:
@@ -331,14 +331,14 @@ def test_c19_full_replay_report_shows_time_saved_escapes_and_rate(
     lines = report.build(tmp_path, None, None, rate).lines
     [line] = [x for x in lines if x.startswith("Selective checks:")]
     assert line == (
-        "Selective checks: 4 tickets with selection, replay time 44.0 s; on the 2 sampled"
-        " tickets 30.0 s selective versus 90.0 s full (60.0 s saved); 2 full replays,"
-        " 1 escapes, escape rate 1/2 (50.0%)."
+        "Selective checks: 4 tickets with selection, replay time 44.0 s; on the 2 completed"
+        " full replays 30.0 s selective versus 90.0 s full (60.0 s saved); 3 full replays"
+        " (1 interrupted, their escapes counted), 2 escapes, escape rate 2/3 (66.7%)."
     )
     warning = [x for x in lines if x.startswith("Warning: the escape rate")]
     assert bool(warning) is warned
     if warned:
-        assert "50.0% is above max_escape_rate 2%" in warning[0]
+        assert "66.7% is above max_escape_rate 2%" in warning[0]
 
 
 def test_c19_full_replay_report_without_selection_has_no_section(tmp_path: Path) -> None:
@@ -354,3 +354,19 @@ def test_c19_full_replay_policy_keys_are_fractions() -> None:
     for bad in (1.5, -0.1, True, "0.2"):
         with pytest.raises(risk.PolicyError, match="full_replay_sample: expected a number"):
             risk.parse({"full_replay_sample": bad})
+
+
+def test_c19_full_replay_a_check_failing_in_both_runs_never_publishes_a_success(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    """An advisory check failing in the selective round and in the full replay is no escape,
+    but the full replay did not pass: its status is a failure, never a success."""
+    broken = CheckConfig("lint", (PY, "-c", "raise SystemExit(1)"), False, 1)
+    cfg = config(1.0, CheckConfig("app", PASS, True, 1), broken, skipped_docs())
+    assert start(project, tracker, FakeRuntime(), cfg).exit_code == 0
+    log = journal(project)
+    assert "Full replay failed: lint" in log and "Full replay passed" not in log
+    assert "Escape" not in log
+    [status] = statuses(tracker, "ariane/full-replay")
+    assert status["state"] == "failure"
+    assert status["description"].startswith("full replay failed: lint")

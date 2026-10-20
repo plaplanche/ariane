@@ -123,7 +123,9 @@ and measured.
   `work/<n>/full-replay.md` (every check's selective and full result, the escapes' outputs, redacted
   by the ticket folder), journaled `ticket.checks.escape`, commented on the pull request naming the
   checks (redacted), and published as a failing `ariane/full-replay` status on the pushed commit;
-  a full replay without an escape publishes a success. A check that failed before a later one
+  a full replay publishes a success only when every check of it passed: a check failing in the
+  full replay that also failed in the selective round (an advisory one) is no escape, but the
+  status is a failure ("full replay failed: <checks>") and the journal says so. A check that failed before a later one
   stopped the full replay is still an escape, recorded and published (the stop is recorded after
   it); a stop before any escape publishes no status. A check may not be named `full-replay`: a
   check is published as `ariane/<name>`, and the full replay's success would replace that check's
@@ -137,8 +139,9 @@ and measured.
   replay time, the last round's replay time against the full replay's on the sampled tickets (the
   time saved), the full replays, the escapes and the escape rate, escapes (failing checks, summed)
   / full replays, then a warning when the rate is above `[checks_policy] max_escape_rate` (default
-  0.02). A stopped full replay is not counted, nor its escapes: they are in its record, its
-  journal, its status and its comment.
+  0.02). A stopped full replay counts as a full replay with the escapes it saw before its stop,
+  and the line says how many were interrupted; only its duration is left out of the time
+  comparison, which uses the completed full replays.
 - **Why after delivery.** The full replay is a measure, not a gate: the project's CI still runs
   everything on the pull request and stays the safety net. Run before the push, it would cost the
   full replay's time on every sampled ticket, the time selection is meant to save, and a sampled
