@@ -127,7 +127,7 @@ and measured.
   full replay that also failed in the selective round (an advisory one) is no escape, but the
   status is a failure ("full replay failed: <checks>") and the journal says so. A check that failed before a later one
   stopped the full replay is still an escape, recorded and published (the stop is recorded after
-  it); a stop before any escape publishes no status. A check may not be named `full-replay`: a
+  it); a stop before any escape publishes no status. A check may not be named `full-replay`, in any case (status contexts ignore it): a
   check is published as `ariane/<name>`, and the full replay's success would replace that check's
   failure on the same commit. A refused status or comment is a journaled
   warning. The records go in one local commit, "record the full replay", which, like the record of

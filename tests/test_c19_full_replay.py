@@ -208,12 +208,14 @@ def test_c19_full_replay_a_stop_without_an_escape_publishes_no_status(
     assert metrics(project)["full_replay"]["escapes"] == []
 
 
-def test_c19_full_replay_its_status_name_is_no_check_name() -> None:
-    """A check is published as `ariane/<name>`: one named `full-replay` would share the full
-    replay's status, whose success could hide the check's failure."""
+@pytest.mark.parametrize("name", ["full-replay", "Full-Replay", "FULL-REPLAY"])
+def test_c19_full_replay_its_status_name_is_no_check_name(name: str) -> None:
+    """A check is published as `ariane/<name>`: one named `full-replay`, in any case (status
+    contexts ignore it), would share the full replay's status, whose success could hide the
+    check's failure."""
     data = copy.deepcopy(VALID)
-    data["checks"] = [{"name": "full-replay", "command": ["x"]}]
-    with pytest.raises(ConfigError, match=r"checks\[0\]\.name: 'full-replay' is reserved"):
+    data["checks"] = [{"name": name, "command": ["x"]}]
+    with pytest.raises(ConfigError, match=rf"checks\[0\]\.name: '{name}' is reserved"):
         parse(data)
     assert full_replay.STATUS == "ariane/full-replay"
 
