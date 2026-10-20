@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from test_fix_rounds import NO_GO
 
-from ariane import cli, flow, git, replay, update
+from ariane import cli, delivery, flow, git, replay, update
 from ariane.config import CheckConfig, Config
 from ariane.runtime import Session
 from ariane.tracker import InMemoryTracker, PullRequestState
@@ -198,6 +198,24 @@ def test_c11_update_refuses_a_local_branch_that_diverged_from_the_remote(
     assert not sh(["git", "log", "--merges", "--format=%H", "-1"], tree)
 
 
+def test_c11_update_refuses_extra_commits_that_change_then_revert_code(
+    project: Project, tracker: InMemoryTracker, pushes: list[str]
+) -> None:
+    runtime = delivered(project, tracker, pushes)
+    move_base(project, {"other.txt": "x\n"})
+    tree = worktree(project)
+    (tree / "app.txt").write_text("version 2\nby hand\n", encoding="utf-8")
+    sh(["git", "commit", "--quiet", "-am", "by hand"], tree)
+    sh(["git", "revert", "--quiet", "--no-edit", "HEAD"], tree)
+    local = head(project)
+    endpoints = git.changed_between(tree, project.remote_branches()["ariane/7"], local)
+    assert endpoints and all(p.startswith("work/7/") for p in endpoints)  # the revert hides it
+    outcome = run_update(project, tracker, runtime)
+    assert outcome.exit_code == 1
+    assert "the local branch ariane/7 diverged from origin/ariane/7" in outcome.line
+    assert head(project) == local and pushes == [] and runtime.sessions == []
+
+
 def test_c11_update_conflict_is_aborted_and_needs_a_human(
     project: Project, tracker: InMemoryTracker, pushes: list[str]
 ) -> None:
@@ -276,6 +294,63 @@ def test_c11_update_remote_branch_moved_during_the_update_pushes_nothing(
     assert outcome.exit_code == 1
     assert "ariane/7 moved on origin during the update" in outcome.line
     assert pushes == []
+
+
+@pytest.mark.parametrize("moved_to", ["parent", "deleted"])
+def test_c11_update_remote_branch_moved_after_the_last_guard_pushes_nothing(
+    project: Project,
+    tracker: InMemoryTracker,
+    monkeypatch: pytest.MonkeyPatch,
+    moved_to: str,
+) -> None:
+    runtime = delivered(project, tracker)
+    move_base(project, {"other.txt": "x\n"})
+    remote = project.remote_branches()["ariane/7"]
+    real = git.push
+
+    def racing(*args: Any, **kwargs: Any) -> str:
+        # Someone moves the branch back, or deletes it, between the last read and the push.
+        if moved_to == "parent":
+            sh(["git", "update-ref", "refs/heads/ariane/7", f"{remote}^"], project.remote)
+        else:
+            sh(["git", "branch", "-D", "ariane/7"], project.remote)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(git, "push", racing)
+    outcome = run_update(project, tracker, runtime)
+    assert outcome.exit_code == 1, outcome.line
+    assert "git push failed" in outcome.line
+    if moved_to == "parent":
+        assert (
+            project.remote_branches()["ariane/7"]
+            == sh(["git", "rev-parse", f"{remote}^"], project.remote).strip()
+        )
+    else:
+        assert "ariane/7" not in project.remote_branches()
+    assert "Stopped" in (worktree(project) / "work/7/journal.md").read_text(encoding="utf-8")
+
+
+def test_c11_update_refused_delivery_is_recorded_as_a_stop(
+    project: Project,
+    tracker: InMemoryTracker,
+    pushes: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = delivered(project, tracker, pushes)
+    remote = project.remote_branches()["ariane/7"]
+    move_base(project, {"other.txt": "x\n"})
+
+    def refused(self: delivery.Delivery) -> None:
+        raise delivery.PullRequestRefused("git configuration rewrites URLs", "remove them")
+
+    monkeypatch.setattr(delivery.Delivery, "_last_guard", refused)
+    outcome = run_update(project, tracker, runtime)
+    assert outcome.exit_code == 1
+    assert "rewrites URLs" in outcome.line and "Next: remove them" in outcome.line
+    assert pushes == [] and project.remote_branches()["ariane/7"] == remote
+    tree = worktree(project)
+    assert "needs a human" in (tree / "work/7/status.md").read_text(encoding="utf-8")
+    assert "Stopped" in (tree / "work/7/journal.md").read_text(encoding="utf-8")
 
 
 def test_c11_update_metrics_hold_the_delivery_and_the_update(

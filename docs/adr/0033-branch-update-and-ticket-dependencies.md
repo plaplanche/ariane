@@ -46,12 +46,18 @@ The clean-merge path is built; a conflict or a red check after the merge stops a
 until an implementer session takes them (#146).
 - **Second push.** The update's push is the documented second push of a ticket (C11): the head is
   pushed to `ariane/<n>` as a fast-forward with `git.push`, only on `go` with green blocking checks,
-  and only if `ariane/<n>` on the remote is still where it was when the update began. The pull
+  and only if `ariane/<n>` on the remote is still where it was when the update began. That
+  condition is enforced by the remote itself, atomically with the push: the push carries a lease
+  (`--force-with-lease=refs/heads/ariane/<n>:<head read at the start>`), so a branch moved or
+  deleted after Ariane's last read is refused, and `git.push` first checks that the pushed head
+  descends from that head, so the lease never allows anything but a fast-forward. The pull
   request updates by itself; none is opened. One commit status per check goes on the new head.
 - **Refusals**, each before any change, with one line and a next action: no pull request from
   `ariane/<n>`, or a merged or closed one; the ticket's working tree missing, dirty, or not on
   `ariane/<n>`; the local branch neither the remote branch's head nor a descendant of it whose
-  extra commits change only `work/<n>/` (the records committed after a push, ADR 0027); the ticket
+  extra commits each change only `work/<n>/` (the records committed after a push, ADR 0027;
+  every extra commit's own paths are read, a merge's against each parent, so a change and its
+  revert are refused although the two heads differ only there); the ticket
   lock held. The issue is read through the issue gate (ADR 0032), as for `ariane start`.
 - **Up to date.** When the remote base branch is an ancestor of the head, the command says so and
   exits 0. Nothing is written in the repository, so `ticket.update.up_to_date` is a technical

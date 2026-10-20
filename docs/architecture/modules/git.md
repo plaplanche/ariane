@@ -54,7 +54,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `SECRET_NAME` | constant | The pattern of credential variable names, shared with `context`; it includes `PAT` and `_AUTH` as whole name parts, `_KEY` at the end, `DSN`, `DATABASE_URL`, `KUBECONFIG`, `DOCKER_AUTH_CONFIG` (ADR 0024). |
 | `CREDENTIAL_CHANNELS` | constant | The credential channels (SSH agent, askpass) the filter withholds. |
 | `push_env(base, token)` | function | An environment carrying the push credential. |
-| `push(cwd, url, sha, branch, token, environ)` | function | The single authenticated push; returns the pushed commit. |
+| `push(cwd, url, sha, branch, token, environ, expected)` | function | The single authenticated push; returns how it went. With `expected`, only a fast-forward from it, leased on it (`--force-with-lease`): refused atomically when the remote branch is no longer there (ADR 0033). |
 | `fast_forwarded(cwd, url, branch, old, new)` | function | Whether a branch moved by fast-forward. |
 | `remote_changes(cwd, url, remote, branch, base_branch, refs_before)` | function | The push guard's check of the remote refs. |
 
@@ -136,7 +136,7 @@ class git {
   blocked_push_env(base, remote_names) dict
   commit(cwd, pathspec, message, env, tolerate_ignored, unstage) bool
   push_env(base, token) dict
-  push(cwd, url, sha, branch, token, environ) str
+  push(cwd, url, sha, branch, token, environ, expected) str
   remote_changes(cwd, url, remote, branch, base_branch, refs_before) list
 }
 class GitState {
