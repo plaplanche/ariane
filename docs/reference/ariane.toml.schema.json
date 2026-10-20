@@ -47,6 +47,15 @@
           "default": 1,
           "description": "Checks replayed at the same time, each in its own tree and run slot (ADR 0052); 1 replays them one by one."
         },
+        "check_all_paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Path globs, such as lock files and CI files, whose change selects every check (as a change to ariane.toml does)."
+        },
         "cache": {
           "type": "array",
           "description": "Dependency folders kept by the content of their key files (ADR 0054): a replay tree copies a stored folder instead of running its setup; project.setup then runs for what the caches do not cover.",
@@ -490,6 +499,13 @@
           "name",
           "command"
         ],
+        "not": {
+          "type": "object",
+          "required": [
+            "paths",
+            "always"
+          ]
+        },
         "properties": {
           "name": {
             "type": "string",
@@ -531,6 +547,19 @@
               "minLength": 1
             },
             "description": "Path globs of the files whose tests this check skips when Ariane replays it (only CI runs them)."
+          },
+          "paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Path globs of the files the check covers: Ariane skips it when no changed file of the ticket matches. Not with always."
+          },
+          "always": {
+            "const": true,
+            "description": "The check runs whatever changed (the default without paths). Not with paths."
           }
         }
       }

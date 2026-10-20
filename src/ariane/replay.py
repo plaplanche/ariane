@@ -45,6 +45,9 @@ def replay_each(
     env: Mapping[str, str] | None,
     trees: list[ReplayTree],
     slots: Sequence[int] = (),
+    changed: Sequence[str] | None = None,
+    check_all_paths: Sequence[str] = (),
+    records: str = "",
 ) -> list[checks.CheckResult]:
     """C9: each check in its own fresh tree: create, set up, run that check only, verify, then
     remove the tree, also on a stop or Ctrl-C. `trees` fills as the trees are made; `setup`
@@ -53,9 +56,22 @@ def replay_each(
     With several `slots`, as many worker threads replay the checks at the same time, each giving
     its slot as `ARIANE_SLOT` to its setup and check (ADR 0052); the results keep the declared
     order. A stop in one worker, or Ctrl-C, stops the others, kills their process trees and
-    removes every tree. `flow` and `verify` both replay with this function."""
-    pending = list(enumerate(all_checks, 1))
-    results: dict[int, checks.CheckResult] = {}
+    removes every tree. `flow` and `verify` both replay with this function.
+
+    With the `changed` files of the ticket, only the checks they select run (`checks.selected`);
+    the others are recorded as skipped. Each check that runs gets `ARIANE_CHANGED_FILES`, a file
+    in its tree's ticket folder `records` listing them (ADR 0056)."""
+    if changed is not None and (broken := checks.unlistable(changed)):
+        raise Stop(
+            f"a changed file's name holds a line break: {checks.CHANGED_FILES} cannot list it",
+            "rename it on the branch, then retry",
+            "\n".join(f"- {path!r}" for path in broken),
+        )
+    chosen = (
+        all_checks if changed is None else checks.selected(all_checks, changed, check_all_paths)
+    )
+    pending = [(k, c) for k, c in enumerate(all_checks, 1) if c in chosen]
+    results = {k: checks.skipped_result(c) for k, c in enumerate(all_checks, 1) if c not in chosen}
     serial = threading.Lock()  # creating, verifying, removing a tree: one worker at a time
     stopping = threading.Event()
     serial_stop = threading.Lock()
@@ -77,7 +93,7 @@ def replay_each(
             started = time.monotonic()
             used = setup(check, tree, env_k)
             trees.append(ReplayTree(check.name, tree, time.monotonic() - started, slot, used))
-            results[k] = checks.run_check(check, tree, env_k)
+            results[k] = _run_check(check, tree, env_k, changed, records)
             verify(tree)
         except BaseException as exc:
             stop_all(exc)  # before this tree is removed: the others stop at once
@@ -151,6 +167,25 @@ def _wait(finished: Sequence[threading.Event], *, interruptible: bool = True) ->
                     raise
 
 
+def _run_check(
+    check: CheckConfig,
+    tree: Path,
+    env: Mapping[str, str] | None,
+    changed: Sequence[str] | None,
+    records: str,
+) -> checks.CheckResult:
+    """Run `check`; with the `changed` files, give it their list as `ARIANE_CHANGED_FILES`,
+    written in the tree's ticket folder for this check only and left for the tree's removal."""
+    if changed is None:
+        return checks.run_check(check, tree, env)
+    with checks.changed_files_listing(tree, records, changed) as listing:
+        variables = {
+            **(os.environ if env is None else env),
+            checks.CHANGED_FILES_VARIABLE: str(listing),
+        }
+        return checks.run_check(check, tree, variables)
+
+
 def _with_slot(env: Mapping[str, str] | None, slot: int) -> dict[str, str]:
     return {**(os.environ if env is None else env), context.SLOT_VARIABLE: str(slot)}
 
@@ -176,7 +211,8 @@ def replay(
     guard: dict[str, str],
     refs_before: dict[str, str],
 ) -> list[checks.CheckResult]:
-    """C9: run every check in its own clean working tree at the delivered commit."""
+    """C9: run each check this round's change selects (the diff from `start_commit`, without
+    `work/`) in its own clean working tree at the delivered commit; the others are skipped."""
     trees: list[ReplayTree] = []
 
     def tree_for(k: int) -> Path:
@@ -204,7 +240,15 @@ def replay(
         run.verify("the checks", start_commit, guard, refs_before, expected_head=checked)
 
     all_checks = run.all_checks()
-    wanted = min(run.config.parallel_checks, len(all_checks))
+    changed = checks.changed_files(round_changes(run, start_commit, checked).name_status)
+    chosen = checks.selected(all_checks, changed, run.config.check_all_paths)
+    if skipped := [c.name for c in all_checks if c not in chosen]:
+        run.folder.log(
+            "ticket.checks.skipped",
+            "Checks skipped",
+            f"Not run, {checks.SKIPPED}:\n" + "\n".join(f"- {name}" for name in skipped),
+        )
+    wanted = max(1, min(run.config.parallel_checks, len(chosen)))
     try:
         with slots.several(wanted - 1) as more:  # each worker its own slot (ADR 0052)
             workers = [run.slot, *more]
@@ -221,6 +265,9 @@ def replay(
                 env=run.untrusted_env,
                 trees=trees,
                 slots=workers,
+                changed=changed,
+                check_all_paths=run.config.check_all_paths,
+                records=ticket.relative_folder(run.number),
             )
     finally:
         if trees:
@@ -309,6 +356,14 @@ def set_up_tree(
     return used, run.setup(tree, command, guard, env)
 
 
+def round_changes(run: _TicketRun, start_commit: str, checked: str) -> git.Changes:
+    """The round's diff from `start_commit` to `checked`, without `work/`: read once, for the
+    selection of its checks and for its review (ADR 0053)."""
+    if checked not in run.changes:
+        run.changes[checked] = git.changes(run.worktree, start_commit, checked, ticket.WORK_DIR)
+    return run.changes[checked]
+
+
 def review_round(
     run: _TicketRun,
     checked: str,
@@ -324,7 +379,7 @@ def review_round(
         raise Stop(f"the reviewer working tree already exists at {tree}", _leftover(run))
     git.add_reviewer_worktree(run.worktree, tree, checked)
     try:
-        changes = git.changes(run.worktree, start_commit, checked, ticket.WORK_DIR)
+        changes = round_changes(run, start_commit, checked)
         diff, name_status = changes.diff, changes.name_status
         run.truncated = record_truncation(run.folder, diff)
         tree_before = git.status(tree)

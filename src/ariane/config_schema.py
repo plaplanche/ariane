@@ -104,6 +104,7 @@ def model_problem(runtime: str, model: str, api_key_env: str | None) -> str | No
 _STR: dict[str, Any] = {"type": "string", "minLength": 1}
 _ARGV: dict[str, Any] = {"type": "array", "minItems": 1, "items": _STR}
 _POSITIVE: dict[str, Any] = {"type": "number", "exclusiveMinimum": 0}
+_GLOBS: dict[str, Any] = {"type": "array", "minItems": 1, "items": _STR}
 
 _AGENT: dict[str, Any] = {
     "type": "object",
@@ -233,6 +234,11 @@ SCHEMA: dict[str, Any] = {
                     "default": 1,
                     "description": "Checks replayed at the same time, each in its own tree and"
                     " run slot (ADR 0052); 1 replays them one by one.",
+                },
+                "check_all_paths": {
+                    **_GLOBS,
+                    "description": "Path globs, such as lock files and CI files, whose change"
+                    " selects every check (as a change to ariane.toml does).",
                 },
                 "cache": {
                     "type": "array",
@@ -395,6 +401,7 @@ SCHEMA: dict[str, Any] = {
                 "type": "object",
                 "additionalProperties": False,
                 "required": ["name", "command"],
+                "not": {"type": "object", "required": ["paths", "always"]},
                 "properties": {
                     "name": {**_STR, "description": "Unique name of the check."},
                     "command": {**_ARGV, "description": "Command to run (list of arguments)."},
@@ -405,13 +412,21 @@ SCHEMA: dict[str, Any] = {
                         "description": "Replaces project.setup in this check's replay tree.",
                     },
                     "not_run_locally": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": _STR,
+                        **_GLOBS,
                         "description": (
                             "Path globs of the files whose tests this check skips when Ariane"
                             " replays it (only CI runs them)."
                         ),
+                    },
+                    "paths": {
+                        **_GLOBS,
+                        "description": "Path globs of the files the check covers: Ariane skips"
+                        " it when no changed file of the ticket matches. Not with always.",
+                    },
+                    "always": {
+                        "const": True,
+                        "description": "The check runs whatever changed (the default without"
+                        " paths). Not with paths.",
                     },
                 },
             },

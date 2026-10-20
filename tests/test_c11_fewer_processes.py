@@ -37,11 +37,12 @@ BEFORE = {
     "restart": _phases(29, 7, 46, 5, 3, 6, 12, 3),
     "three checks": _phases(11, 7, 68, 7, 9, 6, 12, 3),
 }
+# The round's diff moved from the review to the replay, which selects the checks (ADR 0056).
 AFTER = {
-    "go": _phases(11, 6, 23, 5, 3, 4, 9, 3),
-    "three no-go": _phases(13, 26, 53, 11, 9, 12, 9, 3),
-    "restart": _phases(29, 6, 23, 5, 3, 4, 9, 3),
-    "three checks": _phases(11, 6, 33, 7, 9, 4, 9, 3),
+    "go": _phases(11, 6, 23, 5, 4, 3, 9, 3),
+    "three no-go": _phases(13, 26, 53, 11, 12, 9, 9, 3),
+    "restart": _phases(29, 6, 23, 5, 4, 3, 9, 3),
+    "three checks": _phases(11, 6, 33, 7, 10, 3, 9, 3),
 }
 
 

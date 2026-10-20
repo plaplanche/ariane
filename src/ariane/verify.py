@@ -290,7 +290,10 @@ class _Verification:
 
     def _replay_and_review(self, replay: Path, records: Path) -> Outcome:
         all_checks = (*self.config.checks, *self.config.documentation.checks())
-        wanted = min(self.config.parallel_checks, len(all_checks))
+        changes = git.changes(self.repo_root, self.base, self.head, ticket.WORK_DIR)
+        files = checks.changed_files(changes.name_status)
+        chosen = checks.selected(all_checks, files, self.config.check_all_paths)
+        wanted = max(1, min(self.config.parallel_checks, len(chosen)))
         with slots.several(wanted - 1) as more:  # each worker its own slot (ADR 0052)
             workers = [self.slot, *more]
             self.parallel = parallel_note(workers, wanted) if wanted > 1 else ""
@@ -299,16 +302,18 @@ class _Verification:
                 lambda k: self._tree_for(replay, k),
                 create=lambda tree: git.add_detached_worktree(self.repo_root, tree, self.head),
                 setup=self._setup,
-                verify=lambda tree: self._unchanged(tree, "the checks", ""),
+                verify=lambda tree: self._unchanged(tree, "the checks", "", listing=True),
                 remove=lambda tree: git.remove_worktree(self.repo_root, tree),
                 env=self.untrusted_env,
                 trees=self.trees,
                 slots=workers,
+                changed=files,
+                check_all_paths=self.config.check_all_paths,
+                records=ticket.relative_folder(self.issue.number),
             )
         changed = git.changed_between(self.repo_root, self.base, self.head)
         folder = ticket.TicketFolder(records, self.issue.number, secrets=self.secrets)
         folder.create(self.issue)
-        changes = git.changes(self.repo_root, self.base, self.head, ticket.WORK_DIR)
         record_truncation(folder, changes.diff)
         # The temporary journal is not committed: review.md carries the note (ADR 0031).
         self.truncation = truncation_note(changes.diff)
@@ -380,7 +385,9 @@ class _Verification:
         )
         return Outcome(EXIT_OK if green else EXIT_STOPPED, line)
 
-    def _unchanged(self, replay: Path, after: str, tree_before: str) -> None:
+    def _unchanged(
+        self, replay: Path, after: str, tree_before: str, *, listing: bool = False
+    ) -> None:
         """Untrusted code ran: nothing it started still runs, and git, the instruction files
         the reviewer can load, the branch and the replay tree are as they were."""
         self._survivors(after)
@@ -388,7 +395,10 @@ class _Verification:
         moved = git.out(["rev-parse", f"refs/heads/{self.branch}"], self.repo_root) != self.head
         if git.detached_head(replay) != self.head or moved:
             raise Refused(f"{after} moved a head", "inspect the branch and the replay tree")
-        if git.status(replay) != tree_before:
+        status = git.status(replay)
+        if listing:  # the changed files' listing, left in the tree removed after the check
+            status = checks.without_listing(status, ticket.relative_folder(self.issue.number))
+        if status != tree_before:
             raise Refused(f"{after} changed files in the replay tree", "inspect the session")
         if self.url:
             changed = git.remote_changes(

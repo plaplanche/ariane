@@ -17,7 +17,7 @@ The description of `ariane.toml` as a JSON Schema, and the runtimes each role ma
 | `agent_problem(role, runtime, model, tools, api_key_env, max_tokens)` | function | The first runtime rule an `[agents.<role>]` table breaks, as `(key, message)`, or None: `api_key_env` only with `codex` or `pi` and with `max_tokens`; opencode and pi tools from their own list, a valid `model` and `max_tokens` set; a Claude Code or Codex reviewer's tools within `REVIEWER_TOOLS`; no `Skill`. `config.parse` raises it. |
 | `model_problem(runtime, model, api_key_env)` | function | For opencode and pi, `<provider>/<model>`; for pi with `api_key_env`, a provider in `PI_PROVIDER_KEYS`; None when the model is fine. |
 | `REVIEWER_TOOLS` | constant | The tools a Claude Code reviewer may be given: `Read`, `Glob`, `Grep` (ADR 0031). |
-| `SCHEMA` | constant | The JSON Schema of the file, with `checks[].not_run_locally` (ADR 0042), written to `docs/reference/ariane.toml.schema.json` by `scripts/generate_docs.py`. |
+| `SCHEMA` | constant | The JSON Schema of the file, with `checks[].not_run_locally` (ADR 0042), `checks[].paths`, `checks[].always` and `project.check_all_paths` (ADR 0056), written to `docs/reference/ariane.toml.schema.json` by `scripts/generate_docs.py`. |
 
 ## Behaviour and errors
 
@@ -27,6 +27,7 @@ The description of `ariane.toml` as a JSON Schema, and the runtimes each role ma
 - The reviewer also carries an `if`/`then` limiting a Claude Code reviewer's `tools` to `REVIEWER_TOOLS` (ADR 0031), and one limiting a pi reviewer's `tools` to `PI_TOOLS` (ADR 0051).
 - `agents.<role>.idle_minutes` is an optional positive number (ADR 0045); that it is below `timeout_minutes` is checked by `config.parse` only.
 - `checks[].setup` is an optional argument list.
+- `checks[].paths` is an optional non-empty array of non-empty strings and `checks[].always` the constant `true`; a `not` clause refuses an item with both (ADR 0056). `project.check_all_paths` is an optional non-empty array of non-empty strings.
 - `project.env` is an optional list of non-empty strings, default `[]` (ADR 0024).
 - `project.parallel_checks` is an optional integer above 0, default 1 (ADR 0052).
 - `project.cache` is an optional array of objects (`[[project.cache]]`, ADR 0054): required `path`, `key` (an argument list of files) and `setup` (an argument list), optional `keep` (integer above 0, default 5), no other key; that paths stay inside the tree and do not overlap is checked by `config.parse` only.
@@ -75,4 +76,4 @@ flowchart LR
 
 ## Serves
 
-C22, C5; ADR 0003, ADR 0022, ADR 0029, ADR 0031, ADR 0054. See [the component view](../3-components.md).
+C22, C5; ADR 0003, ADR 0022, ADR 0029, ADR 0031, ADR 0054, ADR 0056. See [the component view](../3-components.md).

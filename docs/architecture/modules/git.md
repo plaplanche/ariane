@@ -45,7 +45,7 @@ The git operations Ariane performs itself: working trees, snapshots of the git c
 | `ignored(cwd)` | function | Ignored paths. |
 | `changed_paths(cwd, since)` | function | Paths changed since a revision. |
 | `Changes` | dataclass | `diff`, `name_status` and `changed_lines` of a range, as the reviewer is shown it. |
-| `changes(cwd, since, until, exclude)` | function | The `Changes` between two revisions, without the excluded pathspec and without external diff or textconv drivers, read by one git process (`git diff --raw --numstat -p`, ADR 0053): `name_status` is what `git diff --name-status` prints (the raw lines after their modes and objects), `changed_lines` the added plus deleted lines of `--numstat` (a binary file counts 0), `diff` the patch after them. The review and `ariane verify` use it; `changed_lines` sizes the review (ADR 0046). |
+| `changes(cwd, since, until, exclude)` | function | The `Changes` between two revisions, without the excluded pathspec and without external diff or textconv drivers, read by one git process (`git diff --raw --numstat -p`, ADR 0053): `name_status` is what `git diff --name-status` prints (the raw lines after their modes and objects; records split at line feeds only, never at U+2028), `changed_lines` the added plus deleted lines of `--numstat` (a binary file counts 0), `diff` the patch after them. The review and `ariane verify` use it; `changed_lines` sizes the review (ADR 0046). |
 | `changed_between(cwd, since, until)` | function | Paths that differ between two commits. |
 | `status(cwd)` | function | The short status of the tree. |
 | `committed_paths(cwd, since, pathspec)` | function | Paths committed since a revision under a pathspec. |

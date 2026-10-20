@@ -13,6 +13,9 @@ env = []
 # Checks replayed at the same time, each in its own clean tree and run slot (`ARIANE_SLOT`);
 # 1 (the default) replays them one by one. Only for checks that do not depend on each other.
 # parallel_checks = 3
+# Path globs whose change selects every check, whatever their `paths` (a change to ariane.toml
+# always does): lock files, CI files.
+# check_all_paths = ["uv.lock", ".github/**"]
 
 # Optional dependency caches (ADR 0054). Each replay tree is fresh; a declared folder is stored in
 # `<repo>.ariane/cache/<key>/` the first time its setup builds it, then copied into the next trees
@@ -107,6 +110,11 @@ command = ["uv", "run", "pytest", "-q"]
 # Optional: path globs of the files whose tests this check skips when Ariane replays it (only CI runs
 # them). Ariane records it, tells the implementer, and asks the reviewer to read those tests as untested.
 # not_run_locally = ["tests/e2e/**"]
+# Optional: path globs of the files this check covers. Ariane skips it (a `success` status saying
+# so) when no changed file of the ticket matches; without `paths` (or with `always = true`) it
+# always runs. Every check that runs gets ARIANE_CHANGED_FILES, the path of a file listing the
+# changed files, one per line, to run only the related tests if it wants.
+# paths = ["src/**", "tests/**", "pyproject.toml"]
 
 # Optional: what a change must satisfy to be done. Each item is a declared check ({ check = "name" })
 # or a sentence ({ text = "..." }). The implementer receives every item. Without this table,

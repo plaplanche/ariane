@@ -38,6 +38,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 <!-- generated: collaborations -->
 ```mermaid
 flowchart LR
+  checks --> stop
   flow --> stop
   replay --> stop
   restart --> stop

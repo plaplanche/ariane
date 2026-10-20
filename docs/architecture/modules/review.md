@@ -27,7 +27,7 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 ## Behaviour and errors
 
 - `SCHEMA`, `validate`, `parse`: the answer's description (also passed to the runtime as `--json-schema`; the Claude Code runtime drops its `$schema`), its validator and its typed form.
-- `prompt`: the review instructions, the issue, the diff and the base branch's `CLAUDE.md` under "Project instructions (from the base branch)" (all untrusted data), the checks' summary and the sentence items.
+- `prompt`: the review instructions, the issue, the diff and the base branch's `CLAUDE.md` under "Project instructions (from the base branch)" (all untrusted data), the checks' summary and the sentence items; when checks were skipped (no changed file matches their `paths`, ADR 0056), a line after the checks table names them as not run.
 - No silent truncation (ADR 0031): the prompt always holds `name_status`, the untruncated `git diff --name-status` of the whole range, in its own untrusted block (`kind="changed-files"`), before the diff. A diff over `MAX_DIFF_CHARS` is cut there and ends with "(diff truncated at 200,000 characters)"; the prompt then names the files whose hunks are missing or incomplete (`truncated_paths`, read from the `rename to`, `copy to`, `+++ b/` or `--- a/` line of each file's part, else from its `diff --git` header) in a `kind="paths"` block and tells the reviewer to read them in the tree.
 - `settle`: `go` with a blocking finding is `no-go`; a sentence item missing or `met: false` is a blocking finding; check items come from the replay's results.
 - `record`: the text of `work/<n>/review-<round>.md`. `fix_feedback`: the findings (and failed blocking checks) given to a fix session. `pull_request_section`: the verdict, the item results and the findings table (3,000 characters at most, else a summary and a link).
@@ -124,4 +124,4 @@ See the generated [JSON Schema of the answer](../../reference/review-answer.sche
 
 ## Serves
 
-C10, C26; ADR 0015, ADR 0016, ADR 0025, ADR 0027. See [the component view](../3-components.md).
+C10, C26; ADR 0015, ADR 0016, ADR 0025, ADR 0027, ADR 0056. See [the component view](../3-components.md).

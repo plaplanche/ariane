@@ -13,15 +13,15 @@ Loads and validates `ariane.toml` (C22). Every error names the faulty key.
 | `TrackerConfig` | dataclass | `[tracker]`: `kind`, `repository`, `token_env`, `api_url`, `ready_label` (default `ariane`, C21, ADR 0032). |
 | `AgentConfig` | dataclass | `[agents.<role>]`: `runtime`, `model`, `tools`, `max_budget_usd`, `timeout_minutes`, optional `max_tokens`, `idle_minutes` (resolved: the configured value, else 10, or `None` when `timeout_minutes` is 10 or less, ADR 0045), and for the reviewer `small`. |
 | `SmallReview` | dataclass | `[agents.reviewer.small]` (ADR 0046): `max_lines`, and optional `model`, `max_budget_usd`, `max_tokens`, `timeout_minutes` replacing the reviewer's for a small change (`None` keeps the reviewer's). |
-| `CheckConfig` | dataclass | One `[[checks]]` entry: `name`, `command`, `blocking`, `timeout_minutes`, optional `setup` (replaces `project.setup` in that check's replay tree, ADR 0041), optional `not_run_locally` (path globs of the files whose tests only CI runs, ADR 0042). |
+| `CheckConfig` | dataclass | One `[[checks]]` entry: `name`, `command`, `blocking`, `timeout_minutes`, optional `setup` (replaces `project.setup` in that check's replay tree, ADR 0041), optional `not_run_locally` (path globs of the files whose tests only CI runs, ADR 0042), `paths` (path globs of the files the check covers; empty: always selected, ADR 0056). |
 | `DoneItem` | dataclass | One item of the definition of done (C26): a declared check or a sentence; `label()` is its text. |
 | `DocMapEntry` | dataclass | Source files (a glob) and the documents that cover them; `documents_for(path)` expands them. |
 | `GeneratedDoc` | dataclass | A `[[documentation.generated]]` entry: `name` and the `check` command. |
-| `matching_paths(globs, paths)` | function | The paths matching at least one glob (same glob rules as `documentation.map`). |
+| `matching_paths(globs, paths)` | function | The paths matching at least one glob (same glob rules as `documentation.map`); a line break in a path is matched like any other character (ADR 0056). |
 | `Documentation` | dataclass | The optional `[documentation]` table (C25, ADR 0026): `paths`, `map`, `generated`; `documents_for(path)`, `not_updated(changed)`, `checks()`. |
 | `NO_DOCUMENTATION` | constant | The empty `Documentation`, used without the table. |
 | `DEFAULT_DEFINITION_OF_DONE` | constant | The definition of done when the table is absent (C26). |
-| `Config` | dataclass | The validated settings: base branch, setup, tracker, implementer, reviewer, checks, definition of done, documentation, `env` (the `[project] env` entries, default empty, ADR 0024) `parallel_checks` (default 1, ADR 0052) and `caches` (the `[[project.cache]]` tables as `cache.CacheConfig`, default none, ADR 0054). |
+| `Config` | dataclass | The validated settings: base branch, setup, tracker, implementer, reviewer, checks, definition of done, documentation, `env` (the `[project] env` entries, default empty, ADR 0024) `parallel_checks` (default 1, ADR 0052) `caches` (the `[[project.cache]]` tables as `cache.CacheConfig`, default none, ADR 0054) and `check_all_paths` (the `[project] check_all_paths` globs, default none, ADR 0056). |
 | `load(repo_root, environ=None)` | function | Read `ariane.toml`, or the file `ARIANE_CONFIG` names, and validate it (C22). |
 | `parse(data)` | function | Validate a parsed TOML mapping and return a `Config`. |
 
@@ -37,6 +37,7 @@ Loads and validates `ariane.toml` (C22). Every error names the faulty key.
 - Idle limit (C5, ADR 0045): `agents.<role>.idle_minutes` is optional, for both roles and every runtime; a value that is not a positive number, or is at or above `timeout_minutes`, is refused naming `agents.<role>.idle_minutes`. `DEFAULT_IDLE_MINUTES` (10) applies when it is absent and `timeout_minutes` is above 10.
 - `[project] env` is an optional list of variable names or prefixes ending in `_` (C21, ADR 0024): the variables agents, checks and setup commands receive beyond the base set. Anything but a list of non-empty strings is refused, naming `project.env`.
 - `[project] parallel_checks` is an optional positive integer, default 1 (C9, ADR 0052): the number of checks replayed at the same time. Anything else (0, a negative or fractional number, a boolean, a string) is refused, naming `project.parallel_checks`.
+- Selective checks (C9, ADR 0056): `checks[i].paths` is an optional non-empty list of non-empty path globs (the rules of `not_run_locally`); anything else is refused naming `checks[i].paths`. `checks[i].always` may only be `true` (the default without `paths`; `false` is refused naming `checks[i].always`), and setting both `paths` and `always` is refused naming `checks[i]`. `[project] check_all_paths` is an optional non-empty list of path globs, refused otherwise naming `project.check_all_paths`: a change to one of those files, or to `ariane.toml`, selects every check.
 - `[[project.cache]]` is an optional list of tables (C9, ADR 0054), parsed by `cache.parse`: `path` (a folder relative to the tree: not absolute, no `..`, not under `.git`, not overlapping another cache's path), `key` (a non-empty list of files relative to the tree), `setup` (an argument list) and `keep` (a positive integer, default 5); any other key, or a wrong value, is refused naming `project.cache[<index>].<key>`.
 - `SCHEMA` is re-exported from `config_schema`.
 
@@ -107,6 +108,7 @@ class CheckConfig {
   command tuple
   blocking bool
   timeout_minutes float
+  paths tuple
 }
 class DoneItem {
   <<dataclass>>
@@ -188,4 +190,4 @@ See the generated [JSON Schema of `ariane.toml`](../../reference/ariane.toml.sch
 
 ## Serves
 
-C10, C22, C25, C26; ADR 0003, ADR 0023, ADR 0016, ADR 0026, ADR 0054. See [the component view](../3-components.md).
+C9, C10, C22, C25, C26; ADR 0003, ADR 0023, ADR 0016, ADR 0026, ADR 0054, ADR 0056. See [the component view](../3-components.md).

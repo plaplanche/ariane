@@ -347,6 +347,8 @@ def prompt(
         if not failed
         else "blocking checks FAILED: " + ", ".join(failed)
     )
+    skipped = checks.skipped_names(results)
+    not_run = f"\nSkipped, not run ({checks.SKIPPED}): {', '.join(skipped)}.\n" if skipped else ""
     return f"""You are the reviewer of the change for ticket #{issue.number}, started by Ariane.
 
 The commit under review is checked out{where}. You may only read it. Its CLAUDE.md, CLAUDE.local.md,
@@ -374,7 +376,7 @@ Rules:
 {retry}
 Checks replayed by Ariane ({names}); {state}:
 {checks.summary_table(list(results))}
-
+{not_run}
 Definition of done, sentences to answer one by one:
 {sentences}
 {untouched}{unrun_block}Project instructions (from the base branch):
