@@ -11,7 +11,8 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 | `CHANGED_FILES` | constant | `changed-files.txt`: that list's file name, in the replay tree's ticket folder. |
 | `SKIPPED` | constant | The reason recorded for a check not selected: no changed file matches `paths`. |
 | `CheckResult` | dataclass | Outcome of one check: `name`, `command`, `blocking`, `passed`, `detail`, `output`, `duration_s`, `not_run_locally` (the globs the check declares, ADR 0042), `skipped` (not selected, so not run; `passed` is true, ADR 0056). |
-| `changed_files(name_status)` | function | The paths of a `git diff --name-status` listing, a rename or copy counted on both sides. |
+| `changed_files(name_status)` | function | The paths of a `git diff --name-status` listing, a rename or copy counted on both sides, each decoded by `git_path`. |
+| `git_path(name)` | function | The real path behind a path as git prints it: a quoted one (a double quote, a backslash or a control character in it, even with `core.quotepath=off`) is unquoted and its octal escapes decoded as UTF-8 bytes. |
 | `selected(all_checks, changed, check_all_paths)` | function | The checks a change selects (ADR 0056): every one when it touches `ariane.toml` or a `project.check_all_paths` file, else those without `paths` and those whose `paths` match a changed file. |
 | `skipped_result(check)` | function | The `CheckResult` of a check not selected. |
 | `skipped_names(results)` | function | The names of the skipped checks. |
@@ -70,6 +71,7 @@ class checks {
   run_checks(checks, cwd, env) list
   run_check(check, cwd, env) CheckResult
   changed_files(name_status) list
+  git_path(name) str
   selected(all_checks, changed, check_all_paths) list
   skipped_result(check) CheckResult
   blocking_failures(results) list

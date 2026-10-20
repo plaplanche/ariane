@@ -194,3 +194,69 @@ def test_c9_selective_checks_reviewer_prompt_and_summary_without_skips_are_uncha
     assert checks.parse_summary_table(checks.summary_table([skipped])) == [
         ("web", True, "skipped, 0.0 s")
     ]
+
+
+def test_c9_selective_checks_quoted_paths_are_decoded_also_a_rename_source(
+    project: Project,
+) -> None:
+    """Git quotes a path holding a double quote, a backslash or a control character, even with
+    core.quotepath=off: the selection and the listing use the real path."""
+    if sys.platform == "win32":
+        pytest.skip("a double quote is not allowed in a Windows file name")
+    (project.root / "src").mkdir()
+    (project.root / 'src/a"b.py').write_text("x\n", encoding="utf-8")
+    (project.root / "old\\été.txt").write_text("y\n", encoding="utf-8")
+    sh(["git", "add", "."], project.root)
+    sh(["git", "commit", "-q", "-m", "add"], project.root)
+    sh(["git", "mv", "old\\été.txt", "new.md"], project.root)
+    sh(["git", "commit", "-q", "-m", "rename"], project.root)
+    added = git.changes(project.root, "HEAD~2", "HEAD~1", "work").name_status
+    assert '"src/a\\"b.py"' in added  # git's own spelling is quoted
+    assert sorted(checks.changed_files(added)) == ["old\\été.txt", 'src/a"b.py']
+    renamed = checks.changed_files(git.changes(project.root, "HEAD~1", "HEAD", "work").name_status)
+    assert renamed == ["old\\été.txt", "new.md"]
+    assert names(checks.selected([check("old", ("old*.txt",))], renamed, ())) == ["old"]
+    assert names(checks.selected([check("web", ("src/**",))], ['src/a"b.py'], ())) == ["web"]
+    assert checks.git_path('"tab\\there\\303\\251"') == "tab\thereé"
+    assert checks.git_path("plain.txt") == "plain.txt"
+
+
+def test_c9_selective_checks_cleanup_spares_a_listing_outside_after_its_folder_moved(
+    tmp_path: Path,
+) -> None:
+    """A check moves `work/7` away and puts a link to an outside folder holding a file of the
+    listing's name in its place: the outside file survives the cleanup."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / checks.CHANGED_FILES).write_text("keep\n", encoding="utf-8")
+    swap = (
+        PY,
+        "-c",
+        "import os; os.rename('work/7', 'work/moved');"
+        f" os.symlink({str(outside)!r}, 'work/7', target_is_directory=True)",
+    )
+    seen: list[bool] = []
+
+    def verify(tree: Path) -> None:
+        seen.append((outside / checks.CHANGED_FILES).exists())
+
+    try:
+        results = replay.replay_each(
+            [check("swap", command=swap)],
+            lambda k: tmp_path / f"tree-{k}",
+            create=lambda tree: tree.mkdir(),
+            setup=lambda c, tree, env: "",
+            verify=verify,
+            remove=shutil.rmtree,
+            env=None,
+            trees=[],
+            changed=["a"],
+            records="work/7",
+        )
+    except OSError:  # no right to make a link (Windows without developer mode)
+        pytest.skip("links cannot be made here")
+    if not results[0].passed and "symlink" in results[0].output:
+        pytest.skip("links cannot be made here")
+    assert results[0].passed, results[0].output
+    assert seen == [True]
+    assert (outside / checks.CHANGED_FILES).read_text(encoding="utf-8") == "keep\n"

@@ -182,8 +182,10 @@ def _run_check(
             " outside the replay tree",
             "remove it from the branch, then retry",
         )
-    with listing.open("x", encoding="utf-8", newline="\n") as out:
+    folder = os.stat(listing.parent)
+    with listing.open("x", encoding="utf-8", errors="surrogateescape", newline="\n") as out:
         out.write("".join(f"{path}\n" for path in changed))
+    written = os.lstat(listing)
     variables = {
         **(os.environ if env is None else env),
         checks.CHANGED_FILES_VARIABLE: str(listing),
@@ -191,7 +193,19 @@ def _run_check(
     try:
         return checks.run_check(check, tree, variables)
     finally:
-        listing.unlink(missing_ok=True)
+        _remove_listing(listing, folder, written)
+
+
+def _remove_listing(listing: Path, folder: os.stat_result, written: os.stat_result) -> None:
+    """Remove the listing only if it is still the file written in the same folder: a check may
+    have moved the folder, or replaced it by a link leading outside the tree, meanwhile; what it
+    left is removed with the tree."""
+    try:
+        same = os.path.samestat(os.stat(listing.parent), folder)
+        if same and os.path.samestat(os.lstat(listing), written):
+            listing.unlink()
+    except (FileNotFoundError, NotADirectoryError):
+        pass
 
 
 def _with_slot(env: Mapping[str, str] | None, slot: int) -> dict[str, str]:

@@ -14,6 +14,9 @@ PASSING_OUTPUT_LINES = 20
 CHANGED_FILES_VARIABLE = "ARIANE_CHANGED_FILES"
 CHANGED_FILES = "changed-files.txt"  # in the replay tree's ticket folder, while a check runs
 SKIPPED = "no changed file matches `paths`"
+# The escapes of a path git quotes (a double quote, a backslash or a control character in it),
+# even with core.quotepath=off; any other byte is written as three octal digits.
+_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
 
 
 @dataclass(frozen=True)
@@ -33,8 +36,27 @@ def changed_files(name_status: str) -> list[str]:
     """The paths of a `git diff --name-status` listing; a rename or copy counts on both sides."""
     found: list[str] = []
     for line in name_status.splitlines():
-        found += [p for p in line.split("\t")[1:] if p and p not in found]
+        paths = [git_path(p) for p in line.split("\t")[1:] if p]
+        found += [p for p in paths if p not in found]
     return found
+
+
+def git_path(name: str) -> str:
+    """The real path behind a path as git prints it: a quoted one is decoded, byte by byte."""
+    if len(name) < 2 or not (name.startswith('"') and name.endswith('"')):
+        return name
+    body, decoded, i = name[1:-1], bytearray(), 0
+    while i < len(body):
+        if body[i] != "\\" or i + 1 == len(body):
+            decoded += body[i].encode("utf-8", "surrogateescape")
+            i += 1
+        elif body[i + 1] in _ESCAPES:
+            decoded.append(_ESCAPES[body[i + 1]])
+            i += 2
+        else:
+            decoded.append(int(body[i + 1 : i + 4], 8) & 0xFF)
+            i += 4
+    return decoded.decode("utf-8", "surrogateescape")
 
 
 def selected(
