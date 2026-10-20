@@ -54,7 +54,9 @@ until an implementer session takes them (#146).
   request updates by itself; none is opened. One commit status per check goes on the new head.
 - **Refusals**, each before any change, with one line and a next action: no pull request from
   `ariane/<n>`, or a merged or closed one; the ticket's working tree missing, dirty, or not on
-  `ariane/<n>`; the local branch neither the remote branch's head nor a descendant of it whose
+  `ariane/<n>`; a `work/<n>/` holding anything but plain files (a folder or a link, committed
+  or ignored: the update keeps only plain files as records and rewrites the folder from them, so
+  it would remove the rest); the local branch neither the remote branch's head nor a descendant of it whose
   extra commits each change only `work/<n>/` (the records committed after a push, ADR 0027;
   every extra commit's own paths are read, a merge's against each parent, so a change and its
   revert are refused although the two heads differ only there); the ticket

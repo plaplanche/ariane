@@ -150,6 +150,12 @@ def _refuse_or_read(
             f" not {branch}",
             f"check out {branch} there, then retry",
         )
+    if odd := _not_records(ticket.folder_path(worktree, number)):
+        raise Refused(
+            f"the ticket's folder {ticket.relative_folder(number)}/ holds {', '.join(odd)},"
+            " which are not plain record files (the update would remove them)",
+            "move them out of the folder, commit, then retry",
+        )
     url = git.push_url(repo_root, REMOTE)
     refs = git.remote_refs(repo_root, url)
     remote = refs.get(f"refs/heads/{branch}", "")
@@ -169,6 +175,15 @@ def _refuse_or_read(
     git.fetch(repo_root, REMOTE, base_branch)
     base = git.out(["rev-parse", f"refs/remotes/{REMOTE}/{base_branch}"], repo_root)
     return Heads(url, refs, local, remote, base)
+
+
+def _not_records(folder: Path) -> list[str]:
+    """The entries of the ticket's folder that are not plain files: the update keeps only plain
+    files as records and rewrites the folder from them, so anything else, tracked or ignored,
+    would be removed (ADR 0033)."""
+    if not folder.is_dir() or folder.is_symlink():
+        return []
+    return sorted(e.name for e in folder.iterdir() if e.is_symlink() or not e.is_file())
 
 
 def _only_records_beyond(worktree: Path, remote: str, local: str, number: int) -> bool:
