@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -147,3 +148,16 @@ def test_c9_project_template_copy_starts_no_process(
     monkeypatch.undo()
     assert copied.root.parent != project_template
     assert sh(["git", "remote", "get-url", "origin"], copied.root) == str(copied.remote)
+
+
+def test_c9_project_template_git_runs_no_automatic_maintenance(project_template: Path) -> None:
+    # A background `gc --auto` or `maintenance run --auto` could change it during a copy.
+    env = {
+        **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+        "GIT_CONFIG_GLOBAL": str(project_template / "gitconfig"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+    for repo in (project_template / "proj", project_template / "origin.git"):
+        assert sh(["git", "config", "--get", "gc.auto"], repo, env) == "0"
+        assert sh(["git", "config", "--get", "maintenance.auto"], repo, env) == "false"
+        assert sh(["git", "config", "--get", "gc.autoDetach"], repo, env) == "false"
