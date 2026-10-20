@@ -40,3 +40,28 @@ The owner still decides on every stop. Ordering is enforced by refusal, not by a
   checked it out.
 - Clean merges only, conflicts to the human: leaves the most frequent case manual.
 - A queue command running tickets in order: already a form of C12, which is frozen.
+
+## Amendment (2026-10-20): `ariane update <n>`, first ticket (#145)
+The clean-merge path is built; a conflict or a red check after the merge stops as "needs a human"
+until an implementer session takes them (#146).
+- **Second push.** The update's push is the documented second push of a ticket (C11): the head is
+  pushed to `ariane/<n>` as a fast-forward with `git.push`, only on `go` with green blocking checks,
+  and only if `ariane/<n>` on the remote is still where it was when the update began. The pull
+  request updates by itself; none is opened. One commit status per check goes on the new head.
+- **Refusals**, each before any change, with one line and a next action: no pull request from
+  `ariane/<n>`, or a merged or closed one; the ticket's working tree missing, dirty, or not on
+  `ariane/<n>`; the local branch neither the remote branch's head nor a descendant of it whose
+  extra commits change only `work/<n>/` (the records committed after a push, ADR 0027); the ticket
+  lock held. The issue is read through the issue gate (ADR 0032), as for `ariane start`.
+- **Up to date.** When the remote base branch is an ancestor of the head, the command says so and
+  exits 0. Nothing is written in the repository, so `ticket.update.up_to_date` is a technical
+  record (the log file `update-<n>.log`) rather than a journal entry; `ticket.update.started`,
+  `ticket.update.merged` and `ticket.update.pushed` are journal entries.
+- **Review numbering.** The update's review continues the ticket's numbering: `review-<k>.md`, `k`
+  one more than the highest present in `work/<n>/` (the ticket's records are read back from its
+  clean working tree). Its diff is the merge commit's from the fetched base, without `work/`.
+- **Metrics.** `metrics.json` is read back and extended (steps, sessions), with a count `updates`,
+  written for every ticket (0 when never updated); its outcome becomes the update's.
+- **Stops.** A stop after the merge keeps the merge commit on the local branch, records the stop
+  in `work/<n>/` and pushes nothing; a later `ariane update` then refuses the diverged branch until
+  it is pushed by hand after `ariane verify` (or #146 takes it).

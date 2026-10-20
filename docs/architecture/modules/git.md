@@ -176,6 +176,7 @@ flowchart LR
   review_session --> git
   runs --> git
   shadow --> git
+  update --> git
   verify --> git
 ```
 <!-- end generated -->

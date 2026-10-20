@@ -39,6 +39,35 @@ class Metrics:
         self.first_pass_verdict = NOT_REVIEWED
         self.outcome = "running"
         self.restarted_from: dict[str, str | float] | None = None  # the run this one started over
+        self.updates = 0  # the `ariane update` runs that merged the base branch (ADR 0033)
+
+    def resume(self, text: str) -> None:
+        """Continue the measurements of the ticket's earlier runs from their `metrics.json`
+        (`ariane update`, ADR 0033): its steps and sessions are extended, its counts added to;
+        an unreadable file is left out and the measurements start empty."""
+        try:
+            data = json.loads(text)
+            attempts = data.get("attempts", {})
+            found = {
+                "started": str(data["started"]),
+                "steps": list(data.get("steps", [])),
+                "sessions": list(data.get("sessions", [])),
+                "rounds": int(data.get("rounds", 0)),
+                "unchanged_fix_rounds": int(data.get("unchanged_fix_rounds", 0)),
+                "attempts": Attempts(
+                    int(attempts.get("push", 0)), int(attempts.get("pull_request", 0))
+                ),
+                "guard_violations": int(attempts.get("guard_violations", 0)),
+                "surviving": int(data.get("surviving_processes", 0)),
+                "blocking_red": int(data.get("blocking_red_at_delivery", 0)),
+                "first_pass_verdict": str(data.get("first_pass_verdict", NOT_REVIEWED)),
+                "restarted_from": data.get("restarted_from"),
+                "updates": int(data.get("updates", 0)),
+            }
+        except (ValueError, KeyError, TypeError, AttributeError):
+            return
+        for name, value in found.items():
+            setattr(self, name, value)
 
     def step(self, name: str) -> None:
         self.steps.append({"name": name, "at": ticket.now().replace(" ", "T")})
@@ -131,6 +160,7 @@ class Metrics:
             "unchanged_fix_rounds": self.unchanged_fix_rounds,
             "first_pass_verdict": self.first_pass_verdict,
             "outcome": self.outcome,
+            "updates": self.updates,
         }
         if self.restarted_from is not None:
             data["restarted_from"] = self.restarted_from

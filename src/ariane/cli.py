@@ -10,7 +10,19 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ariane import __version__, config, flow, git, logs, process, report, shadow, ticket, verify
+from ariane import (
+    __version__,
+    config,
+    flow,
+    git,
+    logs,
+    process,
+    report,
+    shadow,
+    ticket,
+    update,
+    verify,
+)
 from ariane.claude_code import ClaudeCodeRuntime
 from ariane.codex import CodexRuntime
 from ariane.github import GitHubTracker
@@ -50,7 +62,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "judge":
         logs.configure(level, logs.log_path(root, f"judge-{args.issue}"))
         return _say_outcome(shadow.judge(root, args.issue, args.verdict, args.minutes, args.note))
-    if reaping is not None and args.command in ("start", "verify"):
+    if reaping is not None and args.command in ("start", "update", "verify"):
         return _say(
             EXIT_USAGE,
             f"Did nothing: Ariane could not become the subreaper ({reaping}), so it could not"
@@ -60,6 +72,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "verify":
         logs.configure(level, logs.log_path(root, "verify-" + args.branch.replace("/", "-")))
         return _verify(root, args.branch, args.issue)
+    if args.command == "update":
+        logs.configure(level, logs.log_path(root, f"update-{args.issue}"))
+        return _start(root, args.issue, updating=True)
     logs.configure(level, logs.log_path(root, args.issue))
     if args.command == "status":
         return _status(root, args.issue)
@@ -101,6 +116,12 @@ def _parser() -> argparse.ArgumentParser:
         help="start a stopped or interrupted ticket over: remove its working trees and keep its"
         " branch as ariane-restarted/<issue>-<time>",
     )
+    upd = sub.add_parser(
+        "update",
+        parents=[common],
+        help="merge the base branch into a delivered ticket's branch, replay, review, push on go",
+    )
+    upd.add_argument("issue", type=_issue_number, help="issue number")
     status = sub.add_parser(
         "status", parents=[common], help="show a ticket's state, read from its folder"
     )
@@ -235,7 +256,14 @@ def _report_tracker(root: Path) -> GitHubTracker | None:
     )
 
 
-def _start(root: Path, number: int, shadowed: bool = False, restarting: bool = False) -> int:
+def _start(
+    root: Path,
+    number: int,
+    shadowed: bool = False,
+    restarting: bool = False,
+    updating: bool = False,
+) -> int:
+    """`ariane start`, or `ariane update` when `updating`: both read the issue through the gate."""
     try:
         cfg = config.load(root)
     except config.ConfigError as exc:
@@ -244,7 +272,8 @@ def _start(root: Path, number: int, shadowed: bool = False, restarting: bool = F
     if not token:
         return _say(
             EXIT_USAGE,
-            f"Did not start #{number}: environment variable {cfg.tracker.token_env} is empty."
+            f"Did not {'update' if updating else 'start'} #{number}: environment variable"
+            f" {cfg.tracker.token_env} is empty."
             f" Next: set it to a token with access to {cfg.tracker.repository}.",
         )
     logs.add_secrets([token])
@@ -255,6 +284,8 @@ def _start(root: Path, number: int, shadowed: bool = False, restarting: bool = F
         ready_label=cfg.tracker.ready_label,
     )
     run = shadow.start if shadowed else functools.partial(flow.start, restarting=restarting)
+    if updating:
+        run = update.update
     outcome = run(
         number,
         repo_root=root,

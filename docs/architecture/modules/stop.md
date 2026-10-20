@@ -45,6 +45,7 @@ flowchart LR
   runs --> stop
   shadow --> stop
   slots --> stop
+  update --> stop
   verify --> stop
 ```
 <!-- end generated -->

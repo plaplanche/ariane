@@ -249,6 +249,37 @@ read and write"), on top of reading issues and writing pull requests.
   `ARIANE_LOG_LEVEL` (default warning).
 - [`docs/adr/`](docs/adr/): architecture decision records, written as the implementation goes.
 
+## Update a delivered ticket
+
+When the base branch has moved after a pull request was opened, `ariane update <n>` merges it into
+`ariane/<n>` (a merge commit, never a rebase or a force-push), in the ticket's working tree, replays
+the checks on the merge commit, runs one review, and on `go` with green blocking checks pushes the
+branch again: the pull request updates by itself, with one status per check on the new head
+([ADR 0033](docs/adr/0033-branch-update-and-ticket-dependencies.md)). It reads the issue through
+the issue gate, so add the label `ariane` again first (the pull request referenced the issue).
+It refuses, before changing anything, a ticket whose pull request is merged, closed or missing,
+whose working tree is missing, dirty or on another branch, or whose local branch has commits the
+remote branch lacks beyond Ariane's own records in `work/<n>/`. When the base branch is merged
+already it says so and writes nothing. A conflict (the merge is aborted, the paths named), a red
+blocking check or a `no-go` stops with status `needs a human` and pushes nothing; the review's record
+continues the ticket's numbering (`review-<k>.md`) and `metrics.json` counts the `updates`.
+
+PowerShell:
+
+```powershell
+$env:GH_TOKEN = "<a token with access to the repository>"
+ariane update 12
+ariane status 12
+```
+
+bash:
+
+```bash
+export GH_TOKEN="<a token with access to the repository>"
+ariane update 12
+ariane status 12
+```
+
 ## Measure Ariane on your project (shadow mode)
 
 This is the path for a second user on macOS (it works the same on Linux and Windows) who wants to

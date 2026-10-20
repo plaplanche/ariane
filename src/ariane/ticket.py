@@ -90,6 +90,21 @@ class TicketFolder:
     def exists(self) -> bool:
         return JOURNAL in self._records
 
+    def load(self) -> None:
+        """Take the files already in the folder as Ariane's records: a delivered ticket's,
+        read from its clean working tree at a commit Ariane made (`ariane update`, ADR 0033)."""
+        with self._lock:
+            for entry in sorted(self.path.iterdir()):
+                if entry.is_file() and not entry.is_symlink():
+                    self._records[entry.name] = entry.read_text(encoding="utf-8")
+
+    def read(self, name: str) -> str:
+        """The record `name` as Ariane holds it, "" when there is none."""
+        return self._records.get(name, "")
+
+    def names(self) -> list[str]:
+        return sorted(self._records)
+
     def log(self, kind: str, step: str, detail: str = "") -> None:
         """Journal an entry of the declared functional type `kind`; `step` is its title."""
         declared = logs.functional(kind)

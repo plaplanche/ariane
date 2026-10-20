@@ -100,6 +100,7 @@ flowchart LR
   replay --> slots
   replay --> stop
   replay --> ticket
+  update --> replay
   verify --> replay
 ```
 <!-- end generated -->

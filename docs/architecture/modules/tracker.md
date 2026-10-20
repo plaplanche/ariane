@@ -108,6 +108,7 @@ flowchart LR
   review_session --> tracker
   shadow --> tracker
   ticket --> tracker
+  update --> tracker
   verify --> tracker
 ```
 <!-- end generated -->

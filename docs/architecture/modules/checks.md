@@ -107,6 +107,7 @@ flowchart LR
   review --> checks
   review_session --> checks
   shadow --> checks
+  update --> checks
   verify --> checks
 ```
 <!-- end generated -->

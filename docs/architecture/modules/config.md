@@ -180,6 +180,7 @@ flowchart LR
   review_session --> config
   runtime --> config
   shadow --> config
+  update --> config
   verify --> config
 ```
 <!-- end generated -->

@@ -31,6 +31,7 @@ flowchart TD
   cli --> runtime
   cli --> shadow
   cli --> ticket
+  cli --> update
   cli --> verify
   codex --> process
   codex --> runtime
@@ -141,6 +142,23 @@ flowchart TD
   ticket --> logs
   ticket --> redact
   ticket --> tracker
+  update --> checks
+  update --> config
+  update --> context
+  update --> delivery
+  update --> flow
+  update --> git
+  update --> logs
+  update --> metrics
+  update --> process
+  update --> replay
+  update --> restart
+  update --> runs
+  update --> runtime
+  update --> slots
+  update --> stop
+  update --> ticket
+  update --> tracker
   verify --> cache
   verify --> checks
   verify --> config
@@ -272,6 +290,42 @@ sequenceDiagram
   end
   Note over F,H: delivery is replaced by the local record (ShadowRun overrides it)
   H-->>CLI: Outcome (stop before push, pull request and statuses)
+  CLI-->>U: one line
+```
+
+## `ariane update <n>`
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant CLI as cli
+  participant D as update
+  participant T as tracker (github)
+  participant G as git
+  participant P as replay
+  participant L as delivery
+  participant K as ticket
+  participant M as metrics
+  U->>CLI: ariane update n
+  CLI->>D: update
+  D->>T: read the issue (issue gate), the pull request's state
+  D->>G: refuse a missing, dirty or switched tree, a diverged branch; fetch the base
+  alt the remote base is an ancestor of the head
+    D-->>CLI: Outcome: up to date, nothing written
+  else
+    D->>K: read the ticket folder back
+    D->>M: read metrics.json back
+    D->>G: git merge --no-ff --no-edit origin/base (untrusted environment)
+    alt conflict
+      D->>G: git merge --abort
+      D-->>CLI: Outcome: needs a human, the conflicting paths
+    else merged
+      D->>P: replay the checks at the merge commit
+      D->>P: review round k (review-k.md, k one more than the highest)
+      D->>L: push_update: records committed, remote branch unmoved, fast-forward push, statuses
+      D-->>CLI: Outcome
+    end
+  end
   CLI-->>U: one line
 ```
 

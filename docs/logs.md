@@ -34,6 +34,9 @@ Entries of a ticket's journal.
 | `ticket.shadow.done` | info | A shadow ticket ended: nothing pushed, no pull request. |
 | `ticket.pushed` | info | The ticket branch was pushed. |
 | `ticket.delivered` | info | The pull request was opened. |
+| `ticket.update.started` | info | `ariane update` merged, or tried to merge, the base branch into the ticket branch. |
+| `ticket.update.merged` | info | The base branch was merged: the merge commit. |
+| `ticket.update.pushed` | info | The updated ticket branch was pushed, a fast-forward. |
 | `ticket.warning.ignored_files` | warning | The agent created files that git ignores. |
 | `ticket.warning.replay_not_removed` | warning | The replay working tree stayed. |
 | `ticket.warning.statuses_refused` | warning | The tracker refused commit statuses. |
@@ -55,5 +58,6 @@ Records of the `ariane` logger.
 | `github.request` | info | A GitHub API call and its status. |
 | `github.label_event_retry` | info | The issue's label events are read again: not listed yet. |
 | `guard.verified` | info | A guard verification passed. |
+| `ticket.update.up_to_date` | info | `ariane update` found the base branch merged already: nothing written. |
 | `journal.warning` | warning | A warning was written to the ticket journal. |
 | `run.stopped` | error | A ticket run stopped. |

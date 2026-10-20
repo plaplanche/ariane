@@ -5,13 +5,15 @@
 ## `ariane`
 
 ```text
-usage: ariane [-h] [--version] {start,status,report,verify,judge} ...
+usage: ariane [-h] [--version] {start,update,status,report,verify,judge} ...
 
 Turn tickets into reviewed pull requests.
 
 positional arguments:
-  {start,status,report,verify,judge}
+  {start,update,status,report,verify,judge}
     start               run the ticket of an issue up to its pull request
+    update              merge the base branch into a delivered ticket's
+                        branch, replay, review, push on go
     status              show a ticket's state, read from its folder
     report              show cost, agent time, human time, gates bypassed,
                         shadow results
@@ -41,6 +43,20 @@ options:
   --restart          start a stopped or interrupted ticket over: remove its
                      working trees and keep its branch as ariane-
                      restarted/<issue>-<time>
+```
+
+## `ariane update`
+
+```text
+usage: ariane update [-h] [--log-level LEVEL] issue
+
+positional arguments:
+  issue              issue number
+
+options:
+  -h, --help         show this help message and exit
+  --log-level LEVEL  technical log level: debug, info, warning or error
+                     (default: ARIANE_LOG_LEVEL, else warning)
 ```
 
 ## `ariane status`
