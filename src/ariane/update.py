@@ -159,6 +159,11 @@ def _refuse_or_read(
             f"the local branch {branch} diverged from {REMOTE}/{branch}",
             f"make {branch} match {REMOTE}/{branch} (the update pushes a fast-forward), then retry",
         )
+    # Up to date: decided from the remote's base read above, before any fetch writes to git.
+    listed = refs.get(f"refs/heads/{base_branch}", "")
+    known = git.git(["cat-file", "-e", f"{listed}^{{commit}}"], worktree, check=False).ok
+    if listed and known and git.is_ancestor(worktree, listed, local):
+        return Heads(url, refs, local, remote, listed)
     git.fetch(repo_root, REMOTE, base_branch)
     base = git.out(["rev-parse", f"refs/remotes/{REMOTE}/{base_branch}"], repo_root)
     return Heads(url, refs, local, remote, base)
@@ -207,7 +212,32 @@ class _UpdateRun(_TicketRun):
         except Unresolved as exc:
             return self._left_unresolved(exc)
         except (Stop, KeyboardInterrupt, *FAILURES) as exc:
+            if self.merge_began and self._merge_pending():  # Ctrl-C or an error mid-merge
+                base = f"{REMOTE}/{self.config.base_branch}"
+                return self._left_unresolved(
+                    Unresolved(
+                        f"merging {base} was interrupted and is neither finished nor undone",
+                        f"finish or undo the merge by hand in {self.worktree} (`git status`);"
+                        " Ariane wrote and pushed nothing",
+                        str(exc),
+                    )
+                )
             return self._stopped(exc)
+
+    def _merge_pending(self) -> bool:
+        """Whether a merge is left half done in the ticket's tree (its `MERGE_HEAD`, or paths
+        not merged, or git cannot tell): then no record is written, since a record commit's
+        `git reset` would drop the merge state needed to finish or abort it."""
+        try:
+            pending = git.git(
+                ["rev-parse", "-q", "--verify", "MERGE_HEAD"], self.worktree, check=False
+            )
+            unmerged = git.git(
+                ["diff", "--name-only", "--diff-filter=U"], self.worktree, check=False
+            )
+        except (KeyboardInterrupt, *FAILURES):
+            return True
+        return pending.ok or not unmerged.ok or bool(unmerged.output.strip())
 
     def _stopped(self, exc: BaseException) -> Outcome:
         """The stop of `flow`; once the merge began, a stop or an error needs a human (the

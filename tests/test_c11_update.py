@@ -436,3 +436,66 @@ def test_c11_update_command_line(
     assert cli.main(["update", "#7"]) == 0
     assert called == {"number": 7}
     assert "up to date" in capsys.readouterr().out
+
+
+def test_c11_update_up_to_date_is_decided_before_any_fetch(
+    project: Project, tracker: InMemoryTracker, pushes: list[str]
+) -> None:
+    """An up-to-date branch is answered from the remote's base listed by `ls-remote`: no fetch
+    runs, so `FETCH_HEAD`, the base's tracking ref and its reflog are as they were."""
+    runtime = delivered(project, tracker, pushes)
+    common = Path(
+        git.out(["rev-parse", "--path-format=absolute", "--git-common-dir"], project.root)
+    )
+
+    def metadata() -> tuple[str, str, str]:
+        fetched = common / "FETCH_HEAD"
+        log = common / "logs/refs/remotes/origin/main"
+        return (
+            fetched.read_text(encoding="utf-8") if fetched.exists() else "",
+            git.out(["rev-parse", "refs/remotes/origin/main"], project.root),
+            log.read_text(encoding="utf-8") if log.exists() else "",
+        )
+
+    before = metadata()
+    (common / "FETCH_HEAD").unlink(missing_ok=True)
+    outcome = run_update(project, tracker, runtime)
+    assert outcome.line == "Ticket #7 is up to date with main. Next: nothing."
+    assert not (common / "FETCH_HEAD").exists()
+    assert metadata()[1:] == before[1:]
+
+
+@pytest.mark.parametrize("how", ["ctrl-c after a conflicting merge", "the abort raises"])
+def test_c11_update_a_merge_left_half_done_writes_no_record(
+    project: Project,
+    tracker: InMemoryTracker,
+    pushes: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    how: str,
+) -> None:
+    """Ctrl-C or an error once git wrote the merge state: nothing is written or committed (a
+    record commit's reset would drop the unresolved merge), the merge state is kept."""
+    runtime = delivered(project, tracker, pushes)
+    move_base(project, {"app.txt": "version 3\n"})
+    tree = worktree(project)
+    local = head(project)
+    records = {n: (tree / "work/7" / n).read_text("utf-8") for n in ("journal.md", "status.md")}
+    real = git.git
+
+    def interrupting(args: list[str], cwd: Path, **kwargs: Any) -> process.Completed:
+        if how == "the abort raises" and args == ["merge", "--abort"]:
+            raise OSError("the abort could not start")
+        done = real(args, cwd, **kwargs)
+        if how.startswith("ctrl-c") and args[:2] == ["merge", "--no-ff"]:
+            raise KeyboardInterrupt
+        return done
+
+    monkeypatch.setattr(git, "git", interrupting)
+    outcome = run_update(project, tracker, runtime)
+    assert outcome.exit_code == 1, outcome.line
+    assert "needs a human" in outcome.line and "neither finished nor undone" in outcome.line
+    assert head(project) == local and pushes == [] and runtime.sessions == []
+    assert {n: (tree / "work/7" / n).read_text("utf-8") for n in records} == records
+    monkeypatch.setattr(git, "git", real)
+    assert git.git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], tree, check=False).ok
+    assert "app.txt" in git.out(["diff", "--name-only", "--diff-filter=U"], tree)

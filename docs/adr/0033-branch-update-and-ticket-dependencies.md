@@ -60,7 +60,8 @@ until an implementer session takes them (#146).
   revert are refused although the two heads differ only there); the ticket
   lock held. The issue is read through the issue gate (ADR 0032), as for `ariane start`.
 - **Up to date.** When the remote base branch is an ancestor of the head, the command says so and
-  exits 0. Nothing is written in the repository, so `ticket.update.up_to_date` is a technical
+  exits 0. It decides this from the base `ls-remote` lists, when the repository has that commit,
+  before any fetch: nothing is written in the repository (no `FETCH_HEAD`, tracking ref or reflog), so `ticket.update.up_to_date` is a technical
   record (the log file `update-<n>.log`) rather than a journal entry; `ticket.update.started`,
   `ticket.update.merged` and `ticket.update.pushed` are journal entries.
 - **Review numbering.** The update's review continues the ticket's numbering: `review-<k>.md`, `k`
@@ -68,6 +69,10 @@ until an implementer session takes them (#146).
   clean working tree). Its diff is the merge commit's from the fetched base, without `work/`.
 - **Metrics.** `metrics.json` is read back and extended (steps, sessions), with a count `updates`,
   written for every ticket (0 when never updated); its outcome becomes the update's.
+- **A merge left half done.** Ctrl-C or an error once the merge began, while the tree holds a
+  `MERGE_HEAD` or unmerged paths (or git cannot tell), writes and commits nothing, as an abort that
+  did not restore the tree: a record commit's `git reset` would drop the merge state a human needs
+  to finish or abort it.
 - **Stops.** A stop after the merge keeps the merge commit on the local branch, records the stop
   in `work/<n>/` and pushes nothing; a later `ariane update` then refuses the diverged branch until
   it is pushed by hand after `ariane verify` (or #146 takes it).
