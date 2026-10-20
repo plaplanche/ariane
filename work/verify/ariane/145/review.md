@@ -1,18 +1,22 @@
 # Review 0
 
-- Reviewed commit: `22273bb12679db5dd15bcb7ed59ea7315b656413`
+- Reviewed commit: `9547f51cf2814123a0dc58d3e98c8396b8ba7fda`
 - Reviewer model: gpt-6-astra
 - Verdict: **no-go** (the reviewer answered no-go)
 
 ## Findings
 
-- **blocking** (`src/ariane/update.py:354`) Replay selection excludes changes imported from the base
+- **blocking** (`src/ariane/update.py:96`) The update trusts accepted residuals from the unmerged ticket
 
-  Passing the fetched base as start_commit makes replay.replay select checks from base..merged. Files imported unchanged from that base disappear from this diff. For example, a documentation-only ticket updated with a base change to src/app.py skips a blocking check scoped to src/**, even if that check now fails. Imported lock-file changes likewise cannot trigger check_all_paths. The sequence is merge written → affected check skipped and treated as passing → review → records committed → leased push → success status published for the skipped check. Thus the push can happen without the blocking validation required for the update. Select checks using changes that include the incoming base changes, or run every check for updates; keep the requested review diff separate. Add a regression with a scoped blocking check broken by an incoming base change. The current red-check test uses an always-selected check.
+  _UpdateRun inherits _TicketRun.__init__, which reads residuals_in(worktree). For update, that tree contains the delivered ticket, not the base commit. An ADR marker added by the ticket therefore becomes an owner-accepted residual in the next review, even though the owner has never merged it. The sequence is: read ticket-authored residuals, merge, replay, instruct the reviewer to downgrade matching findings, then push on go. This breaks ADR 0057's security boundary: a change can grant itself a review exemption. Read accepted_residuals from the pinned base commit and add a regression test showing that ticket-only markers never enter the accepted-residuals prompt.
 
-- **minor** (`src/ariane/update.py:277`) Merge-hook documentation disagrees with the actual invocation
+- **blocking** (`src/ariane/replay.py:255`) Incoming renames can skip a blocking check and publish success
 
-  The docstring and module documentation say commit hooks may run, but the merge calls git.git, which always supplies core.hooksPath=os.devnull. The untrusted environment does not override that command-line setting. Clarify the intended hook policy and make the implementation, ADR and documentation agree; add coverage if hooks are intended to execute.
+  git.changed_between uses diff --name-only, which reports only the destination of a detected rename. If the base moves src/a.py to lib/a.py while the ticket changes an unrelated file, the base-to-merge diff contains neither side of that rename and the incoming listing adds only lib/a.py. A blocking check scoped to src/** is consequently skipped. The sequence is: lose the source path, select checks, create a passing skipped result, commit that report, push, and publish a success status without running the check. This makes a check pass wrongly and violates ADR 0056's explicit requirement to include both sides of renames. Use git.changes plus checks.changed_files for incoming changes and test a rename out of a blocking check's scope.
+
+- **minor** (`src/ariane/update.py:93`) Concurrent update processes are not recognized by the Linux run guard
+
+  The update registers itself, but runs._started_as recognizes only command lines containing start <number>. A concurrent start or update therefore never considers an update process genuine on Linux. When that update writes its merge or records commit, the other run sees an unauthorized branch change and stops. Extend recognition to update and test overlapping runs. This is an availability defect; it fails closed rather than permitting an unsafe push.
 
 ## Definition of done
 
@@ -38,21 +42,21 @@
 
 - met: The change is covered by tests that fail without it.
 
-  The new test module contains 18 test functions, with additional parametrized cases, covering delivery, refusals, conflicts, interruption, remote races, metrics and CLI wiring. These depend on the new update implementation. The supplied replay reports passing checks; I did not execute tests because they create files. Coverage misses scoped checks affected by incoming base changes. Side-effect audit: CLI logging and lock/slot files precede refusals; up-to-date returns before fetch or ticket-record writes. Otherwise fetch writes git metadata, registration writes run metadata, merge writes the index/tree/commit, journal and metrics are written, replay creates/setup/checks/removes clean trees and may populate caches, review creates/removes its tree and writes its records, delivery commits records, checks the remote, performs the leased push, journals it, publishes statuses, then commits local delivery records. Conflict handling aborts before recording; failed abort or unresolved interruption avoids record commits. Red/no-go paths commit stop records without pushing. Registry cleanup records completion. Git commands and journal warnings also emit technical logs. The explicit push lease closes the last-read/push race.
+  tests/test_c11_update.py adds integration coverage for successful merging, replay, review, statuses, refusals, conflicts, red checks, no-go, remote movement including lease races, interrupted merges, metrics and CLI dispatch. These exercise the new command and cannot pass without it. The owner reports green checks; I did not rerun write-producing tests in this read-only checkout. The findings identify missing regression cases. Side-effect audit: CLI logging and lock/slot bookkeeping precede refusals; the up-to-date path emits a technical log without fetching. An active update fetches objects/tracking metadata, registers the run, then writes merge objects/index/tree/ref state. A conflict invokes abort before journal or record writes; an unresolved merge leaves records untouched. A completed merge writes journal/metrics/status, creates replay trees and any setup/cache artifacts, writes changed-file listings, runs checks, removes replay trees, writes reports, creates the reviewer tree and session records, removes that tree, and writes the review. Red/no-go paths write and commit stop records without pushing. Success writes metrics/status, restores and commits records, verifies replay equivalence and guards, pushes with an atomic expected-head lease, writes the push journal, publishes statuses, and commits final records locally. Registry teardown appends history and removes the live entry. Git commands and failures also produce technical logs.
 
 - met: The documentation the change affects is updated (C25).
 
-  README includes PowerShell and bash usage; the CLI reference, log catalogue, context/container/component views, new update module page and affected module pages were updated. The supplied documentation-reference check passed. The hook-policy discrepancy is noted as a minor finding.
+  README includes PowerShell and bash usage; ADR 0033 is amended; the CLI reference and log catalogue include update; context, container and component diagrams are updated; update has a module document and affected module documentation is updated. The reported generated-reference check passed.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0033's amendment records the second push and atomic lease, per-commit divergence checks, no-fetch up-to-date handling, review numbering, resumed metrics, unresolved-merge preservation and recovery after a stopped update. The replay-selection finding concerns correctness of the required validation.
+  ADR 0033's amendment records the push lease, refusal semantics, no-write up-to-date behavior, review numbering, incoming-change selection, metrics continuation and handling of unresolved merges and stops. The blocking findings are implementation violations of existing decisions, not missing design decisions.
 
 ## Proposed learnings (not decided)
 
-- Proposed: distinguish the diff used to review a ticket from the changes used to select validation after integrating another branch.
-- Proposed: test update replay with path-scoped checks and incoming lock-file changes, not only always-run checks.
-- Proposed: verify wrapper-added git options when documenting whether hooks execute.
+- When reusing a run class, revalidate constructor assumptions about whether its working tree contains trusted base code or an unmerged change.
+- Use the same rename-aware change representation for every input to check selection; test moves out of a check's scope.
+- Adding a registered command also requires updating process-authentication rules and concurrent-run tests.
 
 ## Run
 
