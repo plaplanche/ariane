@@ -166,6 +166,17 @@ def test_c9_sets_a_commit_status_with_the_documented_request(stub: tuple[Stub, s
     assert request["headers"]["Authorization"] == f"Bearer {TOKEN}"
 
 
+def test_c19_full_replay_comment_posts_on_the_pull_requests_conversation(
+    stub: tuple[Stub, str],
+) -> None:
+    state, url = stub
+    state.responses[("POST", "/repos/owner/name/issues/12/comments")] = (201, {"id": 1})
+    tracker(url).comment(12, "Full replay: escape in tests.")
+    request = state.requests[0]
+    assert (request["method"], request["path"]) == ("POST", "/repos/owner/name/issues/12/comments")
+    assert request["body"] == {"body": "Full replay: escape in tests."}
+
+
 def test_c9_a_refused_commit_status_is_a_tracker_error_without_the_token(
     stub: tuple[Stub, str],
 ) -> None:

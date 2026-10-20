@@ -195,6 +195,10 @@ class GitHubTracker:
             "POST", f"/repos/{self._repository}/issues/{number}/labels", {"labels": labels}
         )
 
+    def comment(self, number: int, body: str) -> None:
+        # A pull request's conversation comments are its issue's.
+        self._request("POST", f"/repos/{self._repository}/issues/{number}/comments", {"body": body})
+
     def file_url(self, branch: str, path: str) -> str:
         return f"{self._web_url}/{self._repository}/blob/{branch}/{path}"
 

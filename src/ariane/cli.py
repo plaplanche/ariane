@@ -10,7 +10,19 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ariane import __version__, config, flow, git, logs, process, report, shadow, ticket, verify
+from ariane import (
+    __version__,
+    config,
+    flow,
+    git,
+    logs,
+    process,
+    report,
+    risk,
+    shadow,
+    ticket,
+    verify,
+)
 from ariane.claude_code import ClaudeCodeRuntime
 from ariane.codex import CodexRuntime
 from ariane.github import GitHubTracker
@@ -187,7 +199,7 @@ def _date(text: str) -> str:
 
 
 def _report(root: Path, since: str | None) -> int:
-    result = report.build(root, since, _report_tracker(root))
+    result = report.build(root, since, _report_tracker(root), _max_escape_rate(root))
     for line in result.lines:
         print(line)
     return result.exit_code
@@ -215,6 +227,15 @@ def _environment_with(token_env: str, token: str) -> dict[str, str]:
     if token:
         env[token_env] = token
     return env
+
+
+def _max_escape_rate(root: Path) -> float:
+    """`[checks_policy] max_escape_rate`, its default without the table or the configuration."""
+    try:
+        policy = config.load(root).checks_policy
+    except config.ConfigError:
+        policy = None
+    return risk.DEFAULT_MAX_ESCAPE_RATE if policy is None else policy.max_escape_rate
 
 
 def _report_tracker(root: Path) -> GitHubTracker | None:

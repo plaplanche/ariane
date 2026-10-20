@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 
 from ariane import process
 from ariane.config import CONFIG_FILE, CheckConfig, matching_paths
-from ariane.risk import HIGH, LOW, UNMEASURED, ChecksPolicy, Tier
+from ariane.risk import FULL_SUITE_VARIABLE, HIGH, LOW, UNMEASURED, ChecksPolicy, Tier
 from ariane.stop import Stop
 from ariane.ticket import fenced
 
@@ -243,6 +243,11 @@ def skipped_result(check: CheckConfig) -> CheckResult:
 
 def skipped_names(results: Sequence[CheckResult]) -> list[str]:
     return [r.name for r in results if r.skipped]
+
+
+def partial_names(chosen: Sequence[CheckConfig], tier: Tier) -> list[str]:
+    """The selected checks the round's `tier` runs with `ARIANE_FULL_SUITE=0` (ADR 0056)."""
+    return [c.name for c in chosen if tier.variables(c.full_when)[FULL_SUITE_VARIABLE] == "0"]
 
 
 def run_checks(

@@ -167,6 +167,7 @@ flowchart LR
   context --> git
   delivery --> git
   flow --> git
+  full_replay --> git
   git --> logs
   git --> pi
   git --> process

@@ -89,6 +89,8 @@ if os.environ.get("ARIANE_FULL_SUITE", "1") == "0":
 sys.exit(subprocess.call(args))
 ```
 
+What selection misses is measured (ADR 0056): when the last round of a ticket skipped a check or ran one with `ARIANE_FULL_SUITE=0`, a sample of the tickets (`[checks_policy] full_replay_sample`, default 0.2, drawn from the ticket number and the commit so a rerun gives the same choice; 0 disables it) get a full replay after the delivery: every check, `ARIANE_FULL_SUITE=1`, in fresh replay trees of the same commit. It never delays or changes the push, the pull request or the review. A check that fails only there is an escape: `work/<n>/full-replay.md` records it with its output, the journal logs `ticket.checks.escape`, a comment on the pull request names the check, and the `ariane/full-replay` status fails; a passing full replay posts a success. A check that fails before a later one stops the full replay is still an escape. `full-replay` is reserved: no check may take that name. The defaults apply without the table too.
+
 The reviewer is given the ticket's Out of scope section, and a finding about out-of-scope work is never blocking.
 The reviewer also checks the order of side effects: a write before the check that should guard it, or a retry that can write twice, is a blocking finding.
 The review is in proportion (ADR 0057): a case that neither the ticket nor the specification asks for, and that no acceptance criterion covers, is minor unless it loses data, breaks a security property or makes a check pass wrongly. The residuals the owner accepted in an ADR (an item starting with `- **Accepted residual.**` in `docs/adr/`, read at the base commit) are given to the reviewer, and a finding that is one of them is minor, titled "accepted residual (ADR NNNN)".
@@ -254,13 +256,19 @@ replay of the checks (each in its own tree), one review, then `work/verify/<bran
 on the branch (never pushed). It exits 0 only on a `go` with green blocking checks; the issue's
 text goes to the reviewer with `--issue`, else the branch's commit messages.
 `ariane report [--since YYYY-MM-DD]` summarises cost, agent time, rounds and first-pass verdicts per
-ticket from the `metrics.json` files in the checkout. It also gives the two numbers of the success
+ticket from the `metrics.json` files in the checkout and in the ticket worktrees (which hold the
+full replay after delivery). It also gives the two numbers of the success
 measure: human time (a delivered ticket's waiting time from its pull request's opening to its merge
 or close, read from the tracker with the token, "not available" without it, plus each stop to the
 next `ariane verify`; a shadow ticket's minutes from `ariane judge`) and gates bypassed (hand
 takeovers, blocking checks red at delivery, a pull request merged while its last review is no-go).
 Shadow tickets show their judgement, the accept rate, the agents' push and pull-request attempts, and
 `shadow pass: yes|no` over the last 10 (no attempt, no violation, at least 8 accepted).
+A "Selective checks" line gives the tickets with selection and their replay time, the selective
+rounds' time against the full replays' time on the sampled tickets (the time saved), the full
+replays run, the escapes and the escape rate (escapes / full replays), with a warning when the rate
+is above `[checks_policy] max_escape_rate` (default 0.02); turning selection off stays the owner's
+call.
 The token needs permission to write commit statuses (for a fine-grained token, "Commit statuses:
 read and write"), on top of reading issues and writing pull requests.
 

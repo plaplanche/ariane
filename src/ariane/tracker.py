@@ -58,6 +58,10 @@ class Tracker(Protocol):
         """Add `labels` to pull request `number`, creating any the repository lacks."""
         ...
 
+    def comment(self, number: int, body: str) -> None:
+        """Post comment `body` on pull request `number`."""
+        ...
+
     def file_url(self, branch: str, path: str) -> str:
         """Where a human with access to the repository reads `path` on `branch`."""
         ...
@@ -86,6 +90,8 @@ class InMemoryTracker:
     unreachable: bool = False
     labels: dict[int, list[str]] = field(default_factory=dict)
     refuse_labels: bool = False
+    comments: dict[int, list[str]] = field(default_factory=dict)
+    refuse_comments: bool = False
 
     def add_issue(self, number: int, title: str, body: str) -> Issue:
         issue = Issue(number, title, body, f"memory://issues/{number}")
@@ -113,6 +119,11 @@ class InMemoryTracker:
         if self.refuse_labels:
             raise TrackerError("labels are refused")
         self.labels.setdefault(number, []).extend(labels)
+
+    def comment(self, number: int, body: str) -> None:
+        if self.refuse_comments:
+            raise TrackerError("comments are refused")
+        self.comments.setdefault(number, []).append(body)
 
     def file_url(self, branch: str, path: str) -> str:
         return f"memory://blob/{branch}/{path}"

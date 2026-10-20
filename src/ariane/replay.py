@@ -16,7 +16,7 @@ from ariane.config import CheckConfig, matching_paths
 from ariane.delivery import FAILURES
 from ariane.restart import command
 from ariane.review_session import ReviewFailed, ReviewSession
-from ariane.risk import Tier
+from ariane.risk import FULL_REPLAY, Tier
 from ariane.stop import Stop
 
 if TYPE_CHECKING:
@@ -50,6 +50,8 @@ def replay_each(
     check_all_paths: Sequence[str] = (),
     records: str = "",
     tier: Tier | None = None,
+    every: bool = False,
+    ran: list[checks.CheckResult] | None = None,
 ) -> list[checks.CheckResult]:
     """C9: each check in its own fresh tree: create, set up, run that check only, verify, then
     remove the tree, also on a stop or Ctrl-C. `trees` fills as the trees are made; `setup`
@@ -63,7 +65,10 @@ def replay_each(
     With the `changed` files of the ticket, only the checks they select run (`checks.selected`);
     the others are recorded as skipped. Each check that runs gets `ARIANE_CHANGED_FILES`, a file
     in its tree's ticket folder `records` listing them, and with the round's `tier`
-    `ARIANE_RISK_TIER` and `ARIANE_FULL_SUITE` (ADR 0056)."""
+    `ARIANE_RISK_TIER` and `ARIANE_FULL_SUITE` (ADR 0056). With `every`, the full replay after
+    delivery, every check runs and still gets the list (#186). Each check that ran and was
+    verified is appended to `ran` as it finishes, so a caller keeps them when a later one stops
+    the replay."""
     if changed is not None and (broken := checks.unlistable(changed)):
         raise Stop(
             f"a changed file's name holds a line break: {checks.CHANGED_FILES} cannot list it",
@@ -71,7 +76,9 @@ def replay_each(
             "\n".join(f"- {path!r}" for path in broken),
         )
     chosen = (
-        all_checks if changed is None else checks.selected(all_checks, changed, check_all_paths)
+        all_checks
+        if changed is None or every
+        else checks.selected(all_checks, changed, check_all_paths)
     )
     pending = [(k, c) for k, c in enumerate(all_checks, 1) if c in chosen]
     results = {k: checks.skipped_result(c) for k, c in enumerate(all_checks, 1) if c not in chosen}
@@ -98,6 +105,8 @@ def replay_each(
             trees.append(ReplayTree(check.name, tree, time.monotonic() - started, slot, used))
             results[k] = _run_check(check, tree, env_k, changed, records, tier)
             verify(tree)
+            if ran is not None:
+                ran.append(results[k])
         except BaseException as exc:
             stop_all(exc)  # before this tree is removed: the others stop at once
             raise
@@ -217,11 +226,20 @@ def replay(
     start_commit: str,
     guard: dict[str, str],
     refs_before: dict[str, str],
+    *,
+    full: bool = False,
+    ran: list[checks.CheckResult] | None = None,
 ) -> list[checks.CheckResult]:
     """C9: run each check this round's change selects (the diff from `start_commit`, without
     `work/`) in its own clean working tree at the delivered commit; the others are skipped.
     The round's risk tier (`run.tier`) is computed first, from the same diff and whether an
-    earlier round failed a check, and given to every check (ADR 0056)."""
+    earlier round failed a check, and given to every check (ADR 0056); the round's selection
+    and replay time go to `metrics.json`.
+
+    `full` is the full replay after delivery (#186): every check, with `risk.FULL_REPLAY`
+    (`ARIANE_FULL_SUITE=1`), the ticket tree's head expected where the delivery left it; it
+    changes neither the round's tier nor its measures. `ran` gets each check as it finishes
+    (`replay_each`)."""
     trees: list[ReplayTree] = []
 
     def tree_for(k: int) -> Path:
@@ -246,21 +264,29 @@ def replay(
         if git.detached_head(tree) != checked:
             raise Stop("the checks moved the replay working tree's head", "inspect it")
         # The remote is listed after each check: a later check could undo what one pushed.
-        run.verify("the checks", start_commit, guard, refs_before, expected_head=checked)
+        run.verify(after, start_commit, guard, refs_before, expected_head=head)
 
     all_checks = run.all_checks()
     changes = round_changes(run, start_commit, checked)
     changed = checks.changed_files(changes.name_status)
-    chosen = checks.selected(all_checks, changed, run.config.check_all_paths)
-    run.tier = checks.risk_tier(
-        run.config.checks_policy,
-        changed,
-        changes.changed_lines,
-        run.config.check_all_paths,
-        run.check_failed,
+    after, head = ("the full replay", git.head(run.worktree)) if full else ("the checks", checked)
+    chosen = (
+        list(all_checks)
+        if full
+        else checks.selected(all_checks, changed, run.config.check_all_paths)
     )
-    run.folder.log("ticket.checks.risk_tier", "Risk tier", run.tier.text())
-    if skipped := [c.name for c in all_checks if c not in chosen]:
+    if full:
+        tier = FULL_REPLAY
+    else:
+        tier = run.tier = checks.risk_tier(
+            run.config.checks_policy,
+            changed,
+            changes.changed_lines,
+            run.config.check_all_paths,
+            run.check_failed,
+        )
+        run.folder.log("ticket.checks.risk_tier", "Risk tier", tier.text())
+    if not full and (skipped := [c.name for c in all_checks if c not in chosen]):
         run.folder.log(
             "ticket.checks.skipped",
             "Checks skipped",
@@ -273,6 +299,7 @@ def replay(
             if wanted > 1:
                 note = parallel_note(workers, wanted)
                 run.folder.log("ticket.checks.parallel", "Checks in parallel", note)
+            began = time.monotonic()
             results = replay_each(
                 all_checks,
                 tree_for,
@@ -286,9 +313,17 @@ def replay(
                 changed=changed,
                 check_all_paths=run.config.check_all_paths,
                 records=ticket.relative_folder(run.number),
-                tier=run.tier,
+                tier=tier,
+                every=full,
+                ran=ran,
             )
-            run.check_failed |= any(not r.passed for r in results)
+            if not full:
+                run.check_failed |= any(not r.passed for r in results)
+                names = [c.name for c in chosen]
+                skipped = checks.skipped_names(results)
+                partial = checks.partial_names(chosen, tier)
+                elapsed = time.monotonic() - began
+                run.metrics.replayed(run.metrics.rounds, names, skipped, partial, elapsed)
             return results
     finally:
         if trees:

@@ -96,7 +96,8 @@ timeout_minutes = 20
 
 # Each [[checks]] entry is a check Ariane replays on the result before opening the pull request.
 [[checks]]
-# Name of the check, shown in the pull request statuses.
+# Name of the check, shown in the pull request statuses as ariane/<name>. "full-replay" and names
+# starting with "docs: " are reserved.
 name = "lint"
 # Command to run (list of arguments, run from the repository root).
 command = ["uv", "run", "ruff", "check", "."]
@@ -126,11 +127,19 @@ command = ["uv", "run", "pytest", "-q"]
 # segment under each module_roots folder; by default the repository root), touches a
 # critical_paths file, ariane.toml or a check_all_paths file, or when an earlier round of the
 # ticket failed a check; it is low otherwise. A high round keeps the full review.
+# When the last round skipped a check or ran one with ARIANE_FULL_SUITE=0, a full_replay_sample
+# fraction of the tickets (drawn from the ticket number and the commit; 0 disables it) get a full
+# replay after delivery: every check, ARIANE_FULL_SUITE=1. A check failing only there is an
+# escape: a failing ariane/full-replay status and a comment on the pull request. `ariane report`
+# warns when the escapes per full replay are above max_escape_rate. These defaults apply without
+# the table too.
 # [checks_policy]
 # max_changed_lines = 300
 # max_modules = 3
 # module_roots = ["src/*/"]
 # critical_paths = ["src/auth/**"]
+# full_replay_sample = 0.2
+# max_escape_rate = 0.02
 
 # Optional: the paths the owner reviews too (ADR 0057). A change touching one is pointed out to
 # the reviewer, and its pull request gets the label `owner-review` and a line, above the review,

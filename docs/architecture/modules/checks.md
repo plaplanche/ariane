@@ -21,6 +21,7 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 | `modules(changed, roots=())` | function | The modules the changed paths touch, in order: for each path, the deepest folder matching a `roots` glob (a trailing `/` ignored) and the path's first segment below it; a path under no root counts none; without `roots`, the path's first segment. |
 | `skipped_result(check)` | function | The `CheckResult` of a check not selected. |
 | `skipped_names(results)` | function | The names of the skipped checks. |
+| `partial_names(chosen, tier)` | function | The selected checks the round's tier runs with `ARIANE_FULL_SUITE=0` (ADR 0056). |
 | `run_checks(checks, cwd, env)` | function | Runs the declared checks in a working tree, in order. |
 | `run_check(check, cwd, env)` | function | Runs one check and returns its `CheckResult`. |
 | `blocking_failures(results)` | function | The blocking checks that did not pass. |
@@ -109,6 +110,7 @@ flowchart LR
   checks --> ticket
   delivery --> checks
   flow --> checks
+  full_replay --> checks
   replay --> checks
   review --> checks
   review_session --> checks
