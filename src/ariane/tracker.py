@@ -54,6 +54,10 @@ class Tracker(Protocol):
         """Open a pull request from branch `head` into `base`; a `draft` is not ready to merge."""
         ...
 
+    def add_labels(self, number: int, labels: list[str]) -> None:
+        """Add `labels` to pull request `number`, creating any the repository lacks."""
+        ...
+
     def file_url(self, branch: str, path: str) -> str:
         """Where a human with access to the repository reads `path` on `branch`."""
         ...
@@ -80,6 +84,8 @@ class InMemoryTracker:
     refuse_statuses: bool = False
     pull_states: dict[str, PullRequestState] = field(default_factory=dict)
     unreachable: bool = False
+    labels: dict[int, list[str]] = field(default_factory=dict)
+    refuse_labels: bool = False
 
     def add_issue(self, number: int, title: str, body: str) -> Issue:
         issue = Issue(number, title, body, f"memory://issues/{number}")
@@ -102,6 +108,11 @@ class InMemoryTracker:
         )
         number = 1000 + len(self.opened)
         return PullRequest(number, f"memory://pulls/{number}")
+
+    def add_labels(self, number: int, labels: list[str]) -> None:
+        if self.refuse_labels:
+            raise TrackerError("labels are refused")
+        self.labels.setdefault(number, []).extend(labels)
 
     def file_url(self, branch: str, path: str) -> str:
         return f"memory://blob/{branch}/{path}"

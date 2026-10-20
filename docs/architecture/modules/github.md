@@ -7,12 +7,12 @@ The GitHub tracker over the REST API, with the standard library only (C1, C10, C
 | Name | Kind | What it does |
 | --- | --- | --- |
 | `web_url(api_url)` | function | The web address matching an API address (GitHub or GitHub Enterprise Server). |
-| `GitHubTracker(*, repository, token, api_url, ready_label, sleep=time.sleep)` | class | Implements `Tracker`: `read_issue`, `open_pull_request`, `file_url`, `set_commit_status`, `pull_request_state`. |
+| `GitHubTracker(*, repository, token, api_url, ready_label, sleep=time.sleep)` | class | Implements `Tracker`: `read_issue`, `open_pull_request`, `add_labels`, `file_url`, `set_commit_status`, `pull_request_state`. |
 
 ## Behaviour and errors
 
 - `read_issue` returns an issue only if it carries the ready label put by a user with write permission (the owner of a user-owned repository needs no permission call) and has not changed since, through REST only (ADR 0032 and its amendment); otherwise it raises `IssueRefused`, naming the reason and how to fix it. When the events show no `labeled` event for the label, or an issue changed after the last one listed, they are read again up to 4 more times after 1, 2, 4 and 8 s (`sleep` is injectable; log `github.label_event_retry`), and the last read decides; the issue is not read again.
-- `open_pull_request` opens a draft when asked and returns the `PullRequest`; `set_commit_status` publishes a status.
+- `open_pull_request` opens a draft when asked and returns the `PullRequest`; `add_labels` posts the labels to the pull request's issue (`POST /repos/<repository>/issues/<n>/labels`, GitHub creates a label it does not have, ADR 0057); `set_commit_status` publishes a status.
 - `pull_request_state(branch)`: `GET /pulls?state=all&head=<owner>:<branch>`, newest first; the end is `merged_at`, else `closed_at`; none when the branch has no pull request.
 - `read_issue` also raises `TrackerError` for a pull request number.
 - Any refused or failed request, or an unreachable server, raises `TrackerError`. The token is sent only in the request header and never logged.
@@ -50,6 +50,7 @@ class GitHubTracker {
   __init__(repository, token, api_url, ready_label, sleep) None
   read_issue(number) Issue
   open_pull_request(head, base, title, body, draft) PullRequest
+  add_labels(number, labels) None
   file_url(branch, path) str
   set_commit_status(sha, context, state, description, target_url) None
   pull_request_state(branch) PullRequestState

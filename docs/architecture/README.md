@@ -74,6 +74,7 @@ flowchart LR
 - [`restart`](modules/restart.md)
 - [`review`](modules/review.md)
 - [`review_session`](modules/review_session.md)
+- [`risk`](modules/risk.md)
 - [`runs`](modules/runs.md)
 - [`runtime`](modules/runtime.md)
 - [`shadow`](modules/shadow.md)

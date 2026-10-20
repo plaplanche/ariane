@@ -21,6 +21,7 @@ Entries of a ticket's journal.
 | `ticket.checks.parallel` | info | How many checks were replayed at the same time, and in which run slots. |
 | `ticket.checks.cache` | info | Per check, which dependency caches were copied from the store and which were built. |
 | `ticket.checks.skipped` | info | The checks not run because no changed file matches their paths. |
+| `ticket.checks.risk_tier` | info | The round's risk tier (low or high) and its reasons, given to every check. |
 | `ticket.checks.replayed` | info | The checks were replayed by Ariane, with the result. |
 | `ticket.review.started` | info | A reviewer session started, with its model and limits. |
 | `ticket.review.stopped` | info | A reviewer session stopped, with its cost and tokens. |
@@ -40,6 +41,7 @@ Entries of a ticket's journal.
 | `ticket.warning.ignored_files` | warning | The agent created files that git ignores. |
 | `ticket.warning.replay_not_removed` | warning | The replay working tree stayed. |
 | `ticket.warning.statuses_refused` | warning | The tracker refused commit statuses. |
+| `ticket.warning.label_refused` | warning | The tracker refused the owner-review label. |
 | `ticket.stopped` | error | The ticket stopped; the reason and the next action follow. |
 
 ## Technical logs

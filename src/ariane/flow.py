@@ -15,6 +15,7 @@ from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
 from ariane.restart import Restarted, kept_name, lock_path, locked, prepare, with_restart
+from ariane.risk import Tier
 from ariane.runtime import AgentRuntime, SessionResult, StopReason, for_role, session_for
 from ariane.slots import held as held_slot
 from ariane.stop import Stop, describe
@@ -129,12 +130,15 @@ class _TicketRun:
         self.url = url
         self.number = issue.number
         self.base_instructions = ""
+        self.residuals = review.residuals_in(worktree)  # the tree is the base commit (ADR 0057)
         self.restarted: Restarted | None = None
         self.pushed = False  # the branch is on the remote: it is never restarted (ADR 0047)
         self.not_updated: list[str] = []
         self.changed: list[str] = []
         self.truncated: list[str] = []  # the files whose hunks the last reviewed diff lacked
         self.changes: dict[str, git.Changes] = {}  # per replayed commit, from the start commit
+        self.tier: Tier | None = None  # the last replayed round's risk tier (ADR 0056)
+        self.check_failed = False  # a replayed round failed a check: later rounds are high
         self.processes_before: set[int] = set()
         self.registry = worktree.parent.parent / runs.FOLDER  # `runs.folder` of the repository
         self.witnessed: dict[int, runs.Run] = {}  # the other runs this run has seen live
@@ -197,9 +201,8 @@ class _TicketRun:
             return self._stopped(exc)
 
     def state(self) -> git.GitState:
-        """The guard's view of git (configuration, hooks, refs, and the base's tracking ref) and
-        of the instruction files the reviewer can load from outside its tree (ADR 0031), with
-        the ticket tree's branch and head."""
+        """The guard's view of git (configuration, hooks, refs, the base's tracking ref), of the
+        instruction files the reviewer can load outside its tree (ADR 0031), branch and head."""
         reviewer_tree = self.worktree.with_name(f"{self.number}-review")
         read = git.state(
             self.worktree,
@@ -273,13 +276,8 @@ class _TicketRun:
         )
         name = f"Fix session {fix_round}" if fix_round else "Implementer session"
         tokens_cap = "none" if agent.max_tokens is None else f"{agent.max_tokens} tokens"
-        session = session_for(
-            agent,
-            "implementer",
-            cwd=self.worktree,
-            prompt=prompt,
-            env=self.agent_envs["implementer"],
-        )
+        env = self.agent_envs["implementer"]
+        session = session_for(agent, "implementer", cwd=self.worktree, prompt=prompt, env=env)
         self.folder.log(
             "ticket.session.started",
             f"{name} started",
@@ -393,9 +391,8 @@ class _TicketRun:
         refs_before: dict[str, str],
         findings: str,
     ) -> bool:
-        """C10: a fresh implementer session fixes the findings in the ticket's working tree.
-
-        Returns False when the round left the head where it was: nothing to replay or review."""
+        """C10: a fresh implementer session fixes the findings in the ticket's working tree;
+        False when the round left the head where it was: nothing to replay or review."""
         self.metrics.fix_round(round_)
         self.folder.set_status("implementing", f"fix round {round_} running", "wait")
         self.folder.log(
@@ -485,7 +482,8 @@ class _TicketRun:
                 break
             checked = git.head(self.worktree)
             results = replay.replay(self, checked, start_commit, guard, refs_before)
-            self.folder.write(ticket.CHECKS, checks.report(results, checked, self.changed))
+            report = checks.report(results, checked, self.changed, self.tier)
+            self.folder.write(ticket.CHECKS, report)
             self.folder.log(
                 "ticket.checks.replayed",
                 "Checks replayed by Ariane",
@@ -543,6 +541,8 @@ class _TicketRun:
             last_guard,
             self.truncated,
             lambda: setattr(self, "pushed", True),
+            self.tier,
+            replay.sensitive(self, checked),
         )
         self.metrics.delivered_red(len(checks.blocking_failures(results)))
         self.metrics.finish("needs a human" if delivery.draft else "delivered")

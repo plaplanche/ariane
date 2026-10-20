@@ -12,10 +12,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ariane import cache, checks, context, git, process, review, slots, ticket
-from ariane.config import CheckConfig
+from ariane.config import CheckConfig, matching_paths
 from ariane.delivery import FAILURES
 from ariane.restart import command
 from ariane.review_session import ReviewFailed, ReviewSession
+from ariane.risk import Tier
 from ariane.stop import Stop
 
 if TYPE_CHECKING:
@@ -48,6 +49,7 @@ def replay_each(
     changed: Sequence[str] | None = None,
     check_all_paths: Sequence[str] = (),
     records: str = "",
+    tier: Tier | None = None,
 ) -> list[checks.CheckResult]:
     """C9: each check in its own fresh tree: create, set up, run that check only, verify, then
     remove the tree, also on a stop or Ctrl-C. `trees` fills as the trees are made; `setup`
@@ -60,7 +62,8 @@ def replay_each(
 
     With the `changed` files of the ticket, only the checks they select run (`checks.selected`);
     the others are recorded as skipped. Each check that runs gets `ARIANE_CHANGED_FILES`, a file
-    in its tree's ticket folder `records` listing them (ADR 0056)."""
+    in its tree's ticket folder `records` listing them, and with the round's `tier`
+    `ARIANE_RISK_TIER` and `ARIANE_FULL_SUITE` (ADR 0056)."""
     if changed is not None and (broken := checks.unlistable(changed)):
         raise Stop(
             f"a changed file's name holds a line break: {checks.CHANGED_FILES} cannot list it",
@@ -93,7 +96,7 @@ def replay_each(
             started = time.monotonic()
             used = setup(check, tree, env_k)
             trees.append(ReplayTree(check.name, tree, time.monotonic() - started, slot, used))
-            results[k] = _run_check(check, tree, env_k, changed, records)
+            results[k] = _run_check(check, tree, env_k, changed, records, tier)
             verify(tree)
         except BaseException as exc:
             stop_all(exc)  # before this tree is removed: the others stop at once
@@ -173,9 +176,13 @@ def _run_check(
     env: Mapping[str, str] | None,
     changed: Sequence[str] | None,
     records: str,
+    tier: Tier | None = None,
 ) -> checks.CheckResult:
     """Run `check`; with the `changed` files, give it their list as `ARIANE_CHANGED_FILES`,
-    written in the tree's ticket folder for this check only and left for the tree's removal."""
+    written in the tree's ticket folder for this check only and left for the tree's removal;
+    with the round's `tier`, `ARIANE_RISK_TIER` and `ARIANE_FULL_SUITE` (its `full_when`)."""
+    if tier is not None:
+        env = {**(os.environ if env is None else env), **tier.variables(check.full_when)}
     if changed is None:
         return checks.run_check(check, tree, env)
     with checks.changed_files_listing(tree, records, changed) as listing:
@@ -212,7 +219,9 @@ def replay(
     refs_before: dict[str, str],
 ) -> list[checks.CheckResult]:
     """C9: run each check this round's change selects (the diff from `start_commit`, without
-    `work/`) in its own clean working tree at the delivered commit; the others are skipped."""
+    `work/`) in its own clean working tree at the delivered commit; the others are skipped.
+    The round's risk tier (`run.tier`) is computed first, from the same diff and whether an
+    earlier round failed a check, and given to every check (ADR 0056)."""
     trees: list[ReplayTree] = []
 
     def tree_for(k: int) -> Path:
@@ -240,13 +249,22 @@ def replay(
         run.verify("the checks", start_commit, guard, refs_before, expected_head=checked)
 
     all_checks = run.all_checks()
-    changed = checks.changed_files(round_changes(run, start_commit, checked).name_status)
+    changes = round_changes(run, start_commit, checked)
+    changed = checks.changed_files(changes.name_status)
     if incoming := getattr(run, "incoming_from", ""):  # an update: what the base brought too
         brought = git.changed_between(run.worktree, incoming, checked)
         own = ticket.WORK_DIR + "/"
         changed += [p for p in map(checks.git_path, brought) if p and p not in changed]
         changed = [p for p in changed if not p.startswith(own)]
     chosen = checks.selected(all_checks, changed, run.config.check_all_paths)
+    run.tier = checks.risk_tier(
+        run.config.checks_policy,
+        changed,
+        changes.changed_lines,
+        run.config.check_all_paths,
+        run.check_failed,
+    )
+    run.folder.log("ticket.checks.risk_tier", "Risk tier", run.tier.text())
     if skipped := [c.name for c in all_checks if c not in chosen]:
         run.folder.log(
             "ticket.checks.skipped",
@@ -260,7 +278,7 @@ def replay(
             if wanted > 1:
                 note = parallel_note(workers, wanted)
                 run.folder.log("ticket.checks.parallel", "Checks in parallel", note)
-            return replay_each(
+            results = replay_each(
                 all_checks,
                 tree_for,
                 create=lambda tree: git.add_detached_worktree(run.worktree, tree, checked),
@@ -273,7 +291,10 @@ def replay(
                 changed=changed,
                 check_all_paths=run.config.check_all_paths,
                 records=ticket.relative_folder(run.number),
+                tier=run.tier,
             )
+            run.check_failed |= any(not r.passed for r in results)
+            return results
     finally:
         if trees:
             lines = "\n".join(
@@ -369,6 +390,13 @@ def round_changes(run: _TicketRun, start_commit: str, checked: str) -> git.Chang
     return run.changes[checked]
 
 
+def sensitive(run: _TicketRun, checked: str) -> list[str]:
+    """The paths of replayed commit `checked` matching `[review] sensitive_paths`, for its review
+    and its delivery alike: decoded, and a rename or copy on both sides (ADR 0057)."""
+    paths = checks.changed_files(run.changes[checked].name_status)
+    return matching_paths(run.config.sensitive_paths, paths)
+
+
 def review_round(
     run: _TicketRun,
     checked: str,
@@ -406,6 +434,9 @@ def review_round(
             round=round_,
             small_env=run.agent_envs["reviewer.small"],
             changed_lines=changes.changed_lines,
+            tier=run.tier,
+            residuals=run.residuals,
+            sensitive=sensitive(run, checked),
         )
         try:
             answer = sessions.run(

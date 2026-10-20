@@ -32,7 +32,8 @@ Declares every log type once (functional journal entries and technical records) 
 - Update (C11, ADR 0033): `ariane update <n>` journals `ticket.update.started` and `ticket.update.merged` (the merge commit) and, on go, `ticket.update.pushed`; an up-to-date branch writes nothing in the repository, so `ticket.update.up_to_date` is a technical record, in the log file `update-<n>.log`.
 - Restart (C23, ADR 0047): `ticket.restarted` is the first journal entry of a run started with `ariane start <n> --restart` that cleared something: the trees removed, the kept branch `ariane-restarted/<n>-...` and its head commit, and the previous run's last action read from that branch's `work/<n>/status.md`. A restart with nothing to clear is a plain start and writes none.
 - Parallel replay (C9, ADR 0052): `ticket.checks.parallel` is the journal entry of a replay with `project.parallel_checks` above 1: how many checks ran at the same time (fewer than asked when fewer run slots were free) and the run slot each worker held.
-- Selective checks (C9, ADR 0056): `ticket.checks.skipped` names the checks a round did not run because no changed file matches their `paths`.
+- `ticket.warning.label_refused`: the tracker refused the `owner-review` label of a change to a sensitive path (ADR 0057).
+- Selective checks (C9, ADR 0056): `ticket.checks.skipped` names the checks a round did not run because no changed file matches their `paths`; `ticket.checks.risk_tier` gives the round's risk tier and its reasons.
 - Dependency caches (C9, ADR 0054): `ticket.checks.cache` lists, per check, each `[[project.cache]]` folder copied from the store (hit) or built (stored, or why not); the ticket's own tree's caches and the store entries pruned at the start are in `ticket.setup`.
 - Environment (C21): `ticket.env.declared_secret` warns, names only, when variables named like secrets pass to agents and checks because `[project] env` declares them.
 

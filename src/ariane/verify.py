@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from ariane import cache, checks, context, git, process, review, slots, ticket
-from ariane.config import CheckConfig, Config
+from ariane.config import CheckConfig, Config, matching_paths
 from ariane.flow import (
     EXIT_INTERRUPTED,
     EXIT_OK,
@@ -30,6 +30,7 @@ from ariane.replay import (
     truncation_note,
 )
 from ariane.review_session import ReviewFailed, ReviewSession, agent_logins, instruction_dirs
+from ariane.risk import Tier
 from ariane.runtime import AgentRuntime
 from ariane.stop import Stop
 from ariane.tracker import Issue, Tracker, TrackerError
@@ -168,6 +169,7 @@ class _Verification:
         self.processes_before = set(process.descendants(exited=True))
         self.truncation = ""  # where the reviewer's diff was cut, if it was
         self.parallel = ""  # how many checks ran at once, when more than one could (ADR 0052)
+        self.tier: Tier | None = None  # the risk tier of the replay (ADR 0056)
         self.trees: list[ReplayTree] = []  # with what each tree's caches did (ADR 0054)
         self.guard = self._snapshot()
         self.metrics = Metrics(issue.number if issue else 0, "verify", lambda text: None)
@@ -293,6 +295,8 @@ class _Verification:
         changes = git.changes(self.repo_root, self.base, self.head, ticket.WORK_DIR)
         files = checks.changed_files(changes.name_status)
         chosen = checks.selected(all_checks, files, self.config.check_all_paths)
+        policy, lines = self.config.checks_policy, changes.changed_lines
+        self.tier = checks.risk_tier(policy, files, lines, self.config.check_all_paths)
         wanted = max(1, min(self.config.parallel_checks, len(chosen)))
         with slots.several(wanted - 1) as more:  # each worker its own slot (ADR 0052)
             workers = [self.slot, *more]
@@ -310,6 +314,7 @@ class _Verification:
                 changed=files,
                 check_all_paths=self.config.check_all_paths,
                 records=ticket.relative_folder(self.issue.number),
+                tier=self.tier,
             )
         changed = git.changed_between(self.repo_root, self.base, self.head)
         folder = ticket.TicketFolder(records, self.issue.number, secrets=self.secrets)
@@ -322,7 +327,9 @@ class _Verification:
             raise Refused(f"the reviewer working tree already exists at {tree}", "remove it")
         git.add_reviewer_worktree(self.repo_root, tree, self.head)
         try:
-            return self._review_in(tree, records, folder, all_checks, results, changed, changes)
+            return self._review_in(
+                tree, records, folder, all_checks, results, changed, changes, files
+            )
         finally:
             git.remove_worktree(self.repo_root, tree)
 
@@ -335,6 +342,7 @@ class _Verification:
         results: list[checks.CheckResult],
         changed: list[str],
         changes: git.Changes,
+        files: Sequence[str],
     ) -> Outcome:
         tree_before = git.status(tree)
         sessions = ReviewSession(
@@ -349,6 +357,9 @@ class _Verification:
             metrics=self.metrics,
             small_env=self.small_reviewer_env,
             changed_lines=changes.changed_lines,
+            tier=self.tier,
+            residuals=review.accepted_residuals(self.repo_root, self.base),
+            sensitive=matching_paths(self.config.sensitive_paths, files),  # both sides of a rename
         )
         try:
             answer = sessions.run(
@@ -371,7 +382,7 @@ class _Verification:
             + _truncation_section(self.truncation)
             + _slot_section(self.slot, self.parallel)
             + _cache_section(self.trees if self.config.caches else []),
-            ticket.CHECKS: checks.report(results, self.head, changed),
+            ticket.CHECKS: checks.report(results, self.head, changed, self.tier),
         }
         green = settled.go and not checks.blocking_failures(results)
         self.metrics.finish("delivered" if green else "stopped")

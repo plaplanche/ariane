@@ -65,8 +65,34 @@ A check can declare `not_run_locally`, path globs of tests that only CI runs: `c
 
 A check can also declare `paths`, path globs of the files it covers: when a ticket changes none of them, Ariane skips it, records it as `skipped` in `checks.md`, the pull request body and the reviewer's prompt, and posts a `success` status saying "skipped by Ariane: no changed file matches `paths`". A check without `paths` (or with `always = true`) and the documentation checks always run, and a change to `ariane.toml` or to a file of `project.check_all_paths` (lock files, CI files) runs every check. Every check that runs gets `ARIANE_CHANGED_FILES`, the path of a file listing the changed files one per line, to choose its own tests (ADR 0056).
 
+Each round also has a risk tier, `low` or `high`, computed from its diff and the optional `[checks_policy]` table: `high` when the diff has more than `max_changed_lines` added and removed lines (default 300), touches more than `max_modules` modules (default 3; a module is the first path segment under each `module_roots` folder, by default the repository root), touches a `critical_paths` file, `ariane.toml` or a `check_all_paths` file, or when an earlier round of the ticket failed a check; `low` otherwise. Without the table every round is `high`. Every check gets `ARIANE_RISK_TIER` and `ARIANE_FULL_SUITE`: `1` on a `high` round, or always for a check declaring `full_when = "always"`, else `0`. `checks.md`, the journal, the pull request body and the reviewer's prompt state the tier and its reasons, and a `high` round keeps the full review even when the diff is small enough for `[agents.reviewer.small]`. Ariane never picks tests itself: the check's command decides what a related-tests run is, for example (ADR 0056):
+
+```toml
+[checks_policy]
+max_changed_lines = 300
+module_roots = ["src/*/"]
+critical_paths = ["src/auth/**"]
+
+[[checks]]
+name = "tests"
+command = ["uv", "run", "python", "scripts/tests.py"]
+```
+
+```python
+# scripts/tests.py: the full suite on a high round, else the tests of the changed files
+import os, pathlib, subprocess, sys
+
+args = ["pytest", "-q"]
+if os.environ.get("ARIANE_FULL_SUITE", "1") == "0":
+    changed = pathlib.Path(os.environ["ARIANE_CHANGED_FILES"]).read_text().splitlines()
+    args += [p for p in changed if p.startswith("tests/") and p.endswith(".py")] or ["tests"]
+sys.exit(subprocess.call(args))
+```
+
 The reviewer is given the ticket's Out of scope section, and a finding about out-of-scope work is never blocking.
 The reviewer also checks the order of side effects: a write before the check that should guard it, or a retry that can write twice, is a blocking finding.
+The review is in proportion (ADR 0057): a case that neither the ticket nor the specification asks for, and that no acceptance criterion covers, is minor unless it loses data, breaks a security property or makes a check pass wrongly. The residuals the owner accepted in an ADR (an item starting with `- **Accepted residual.**` in `docs/adr/`, read at the base commit) are given to the reviewer, and a finding that is one of them is minor, titled "accepted residual (ADR NNNN)".
+With `[review] sensitive_paths` (path globs), a change touching one of those files is pointed out to the reviewer, and its pull request gets the label `owner-review` and a line, above the review, naming the sensitive paths changed; nothing is merged or approved automatically.
 
 The reviewer loads nothing from the tree under review (no hooks, settings or instruction files; ADR 0031): a Claude Code reviewer's `tools` are a subset of `Read`, `Glob`, `Grep`, and it gets the base branch's `CLAUDE.md` in its prompt as data.
 The instruction files it could load from outside that tree (`CLAUDE.md` and `CLAUDE.local.md` in the ancestors of its folders, the user-level `CLAUDE.md`, opencode's, Codex's or pi's global instructions and configuration) are guarded from before the first setup command and compared right after every setup (before its check runs), agent session and check: one written by any of them stops the ticket before the review.

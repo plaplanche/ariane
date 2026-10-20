@@ -8,9 +8,11 @@ from pathlib import Path
 
 from ariane import checks, git, process, review, ticket
 from ariane.redact import redact
+from ariane.risk import Tier
 from ariane.tracker import Issue, Tracker, TrackerError
 
 _STATUS_DESCRIPTION_MAX = 140
+OWNER_REVIEW_LABEL = "owner-review"  # a change touching `[review] sensitive_paths` (ADR 0057)
 # Failures that stop a ticket cleanly, with a journaled reason, instead of a traceback.
 FAILURES = (git.GitError, TrackerError, OSError, process.CommandNotFoundError)
 
@@ -51,6 +53,8 @@ class Delivery:
     guard: Callable[[], None] = lambda: None
     truncated: Sequence[str] = ()  # the files whose hunks the reviewed diff lacked
     on_pushed: Callable[[], None] = lambda: None  # once the branch is on the remote
+    tier: Tier | None = None  # the last round's risk tier, stated in the body (ADR 0056)
+    sensitive: Sequence[str] = ()  # the changed paths matching `[review] sensitive_paths`
 
     def deliver(self, results: list[checks.CheckResult]) -> Delivered:
         number = self.issue.number
@@ -97,6 +101,7 @@ class Delivery:
                 " and start again",
             ) from None
         self.folder.log("ticket.delivered", "Delivered", f"Pull request #{pull.number}: {pull.url}")
+        self._label(pull.number)
         self._publish_statuses(results, pushed)
         self._record_pull_request(pull.number, pull.url)
         return Delivered(pull.url, self.draft)
@@ -136,6 +141,20 @@ class Delivery:
         )
         self.commit_record(f"#{number}: record the update's push")
         return pushed
+
+    def _label(self, pull_number: int) -> None:
+        """A change touching a sensitive path gets `owner-review`; a refusal is a journaled
+        warning, as the body already names the paths (ADR 0057)."""
+        if not self.sensitive:
+            return
+        try:
+            self.tracker.add_labels(pull_number, [OWNER_REVIEW_LABEL])
+        except TrackerError as exc:
+            self.folder.log(
+                "ticket.warning.label_refused",
+                f"Warning: label {OWNER_REVIEW_LABEL} refused",
+                str(exc),
+            )
 
     def _record_pull_request(self, pull_number: int, pull_url: str) -> None:
         """C1, C23: the record ends with the pull request, in one commit on the local branch
@@ -239,16 +258,24 @@ class Delivery:
             )
         return section + "\n"
 
+    def _sensitive_line(self) -> str:
+        if not self.sensitive:
+            return ""
+        paths = ", ".join(f"`{p}`" for p in self.sensitive)
+        return f"**Owner review** (`{OWNER_REVIEW_LABEL}`): sensitive paths changed: {paths}.\n\n"
+
     def _pull_request_body(self, results: list[checks.CheckResult]) -> str:
         number = self.issue.number
         report = f"{ticket.relative_folder(number)}/{ticket.CHECKS}"
         skipped = ", ".join(checks.skipped_names(results))
         not_run = f"Skipped, {checks.SKIPPED}: {skipped}.\n\n" if skipped else ""
+        tier = f"Risk tier: {self.tier.text()}.\n\n" if self.tier is not None else ""
         return (
             f"Closes #{number}\n\n"
             f"Implemented by an Ariane implementer session; checks replayed by Ariane.\n\n"
+            f"{tier}"
             f"{checks.summary_table(results)}\n\n{checks.summary_line(results)}\n\n{not_run}"
-            f"{self._review_section()}"
+            f"{self._sensitive_line()}{self._review_section()}"
             f"Full report: [{report}]({self.tracker.file_url(self.branch, report)}). "
             f"Journal: `{ticket.relative_folder(number)}/{ticket.JOURNAL}`.\n"
         )
