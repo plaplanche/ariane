@@ -46,11 +46,12 @@ per ticket. Choosing a reviewer model or a risk tier without those numbers is gu
   (`infra` by default), so each raiser names its own; `ReviewFailed` and `verify.Refused` carry one
   too. `ariane report` counts the tickets per category, then per implementer model; a record from
   before categories is `not recorded`. A start that ends before its run exists (the issue gate,
-  the lock, a slot, the registry, the preparation) has no ticket folder, and another run of the
+  Ctrl-C during the issue's read, the lock, a slot, the registry, the preparation) has no ticket folder, and another run of the
   ticket may hold one: it records its category in a new folder per attempt,
   `<repo>.ariane/stopped/<n>/refused/<time>-<random>/metrics.json`, which overwrites nothing.
   The report reads those, the first-setup stops (`<repo>.ariane/stopped/<n>/metrics.json`, ADR
-  0031) and the verifications that ended without committing (`<repo>.ariane/verify/<slug>/`).
+  0031) and the verifications that ended without committing (`<repo>.ariane/verify/<slug>/`),
+  each as its own attempt: never merged with a run of the same ticket and start second.
 - **Order and identity.** Only what follows the `go` makes it an escape: the reviewer session
   that answered records `at`, its time, and a "changes requested" review or a close without merge
   counts when it is at that time or later (a record from before `at` uses its `started`). The

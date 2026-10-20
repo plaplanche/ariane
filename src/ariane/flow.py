@@ -65,7 +65,8 @@ def start(
     except TrackerError as exc:
         keep_refused(worktree_path(repo_root, number), number, exc)  # the gate's refusal: `spec`
         return Outcome(exc.exit_code, f"Did not start #{number}: {exc}. Next: {exc.next_action}.")
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
+        keep_refused(worktree_path(repo_root, number), number, exc)  # an interrupt: `infra`
         return _interrupted_before_start(number)
     branch = branch_name(number)
     worktree = worktree_path(repo_root, number)

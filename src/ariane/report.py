@@ -13,6 +13,7 @@ from ariane.tracker import Tracker
 
 PARTLY = "partly not reported"
 COVERED = "covered by plan"
+OUTSIDE = "kept outside"  # a row's key: a stop kept outside the repository, its own record
 WORKTREES = "worktrees"  # `<repo>.ariane/worktrees/<n>`, as `flow.worktree_path`
 
 
@@ -36,12 +37,13 @@ def build(
     shadows = shadow.clone_path(root, 0).parent
     worktrees = shadows.parent / WORKTREES
     kept_verify = shadows.parent / "verify"  # a verification that ended without committing
+    stopped = shadows.parent / "stopped"
     paths = (
         sorted(work.glob(f"*/{metrics.METRICS}"))
         + sorted(work.glob(f"verify/**/{metrics.METRICS}"))
         + sorted(_own_paths(worktrees))
         + sorted(_own_paths(shadows))
-        + sorted((shadows.parent / "stopped").glob(f"**/{metrics.METRICS}"))  # ADR 0031, 0058
+        + sorted(stopped.glob(f"**/{metrics.METRICS}"))  # ADR 0031, ADR 0058
         + sorted(kept_verify.glob(f"*/{metrics.METRICS}"))
     )
     if not paths:
@@ -64,6 +66,8 @@ def build(
             data["branch"] = path.parent.relative_to(verify_dir).as_posix()
         elif path.is_relative_to(kept_verify):
             data["branch"] = path.parent.name  # the branch's slug, `ariane-7`
+        if path.is_relative_to(stopped) or path.is_relative_to(kept_verify):
+            data[OUTSIDE] = True  # its own attempt: never merged with a run of the same start
         if path.is_relative_to(shadows) and data["mode"] != "shadow":
             continue
         if path.is_relative_to(worktrees):
@@ -126,9 +130,14 @@ def _with_local(
 ) -> list[dict[str, Any]]:
     """A ticket worktree holds the latest record of its run (the full replay after delivery is
     only committed there, ADR 0056): it replaces the merged record of the same run, and a run
-    not merged yet is added."""
-    merged = {(d["ticket"], d["started"]) for d in rows if "branch" not in d}
-    kept = [local.get((d["ticket"], d["started"]), d) if "branch" not in d else d for d in rows]
+    not merged yet is added. A takeover's record and a stop kept outside the repository are
+    their own attempts, never replaced: a refused start can share a run's `started` second."""
+
+    def merged_run(d: dict[str, Any]) -> bool:  # not a takeover, nor a stop kept outside
+        return "branch" not in d and OUTSIDE not in d
+
+    merged = {(d["ticket"], d["started"]) for d in rows if merged_run(d)}
+    kept = [local.get((d["ticket"], d["started"]), d) if merged_run(d) else d for d in rows]
     return kept + [
         d
         for key, d in local.items()

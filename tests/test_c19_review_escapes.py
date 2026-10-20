@@ -186,6 +186,18 @@ def test_c19_review_escapes_report_reads_the_stops_kept_outside_the_repository(
     assert "Stopped by category: spec 1, checks 1, infra 1 over 3 tickets." in out
 
 
+def test_c19_review_escapes_a_refusal_in_a_runs_second_is_its_own_record(root: Path) -> None:
+    """A start refused on the lock while another run of the ticket starts, in the same second:
+    the same `started`, yet neither record replaces the other."""
+    kept = root.parent / f"{root.name}.ariane"
+    put(root, 7)  # the run, merged
+    put(kept, 7, path="worktrees/7/work/7")  # the same run, in its worktree
+    put(kept, 7, path="stopped/7/refused/2026-10-01T090007Z-a", outcome="stopped", category="infra")
+    out = lines(root, None)
+    assert "Stopped by category: infra 1 over 1 tickets." in out
+    assert "Reported 2 tickets. Next: nothing." in out
+
+
 def refused(project: Project) -> list[dict[str, Any]]:
     kept = project.root.parent / f"{project.root.name}.ariane" / "stopped/7/refused"
     found = [json.loads(p.read_text(encoding="utf-8")) for p in kept.glob("*/metrics.json")]
@@ -202,6 +214,12 @@ def test_c19_review_escapes_a_start_refused_before_its_run_records_its_category(
 
     monkeypatch.setattr(tracker, "read_issue", gated)
     assert start(project, tracker, FakeRuntime()).exit_code == 2
+
+    def interrupted(number: int) -> Any:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(tracker, "read_issue", interrupted)
+    assert start(project, tracker, FakeRuntime()).exit_code == 130
     monkeypatch.setattr(tracker, "read_issue", real)
 
     def held(*args: Any) -> Any:
@@ -211,8 +229,9 @@ def test_c19_review_escapes_a_start_refused_before_its_run_records_its_category(
     assert start(project, tracker, FakeRuntime()).exit_code == 1
     found = refused(project)
     assert sorted((d["outcome"], d["category"]) for d in found) == [
-        ("stopped", "infra"),
-        ("stopped", "spec"),
+        ("stopped", "infra"),  # Ctrl-C during the issue's read
+        ("stopped", "infra"),  # the lock
+        ("stopped", "spec"),  # the issue gate
     ]
     assert not (worktree(project) / "work/7/metrics.json").exists()  # no run's file touched
 
