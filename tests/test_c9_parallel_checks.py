@@ -123,8 +123,10 @@ def test_c9_parallel_checks_each_recording_check_writes_its_own_file(tmp_path: P
     out = tmp_path / "out"
     running = [subprocess.Popen(list(c.command)) for c in recording(out, 0.5, 0.5, 0.5)]
     assert [p.wait(timeout=30) for p in running] == [0, 0, 0]
+    # Three files, one per process (`<out>.<pid>`; on Windows a venv's python.exe starts the
+    # interpreter as a child, so the pid in the name is not `Popen.pid`).
     files = sorted(p.name for p in tmp_path.iterdir())
-    assert files == sorted(f"out.{p.pid}" for p in running)
+    assert len(files) == 3 and all(f.startswith("out.") and f[4:].isdigit() for f in files)
     assert not out.exists()
     assert len(records(out)) == 3
 
