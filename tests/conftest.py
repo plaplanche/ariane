@@ -97,6 +97,9 @@ class Project:
         return sh(["git", "--git-dir", str(self.remote), "show", f"{ref}:{path}"], self.root)
 
 
+TEMPLATE_GIT_CONFIG = "[gc]\n\tauto = 0\n\tautoDetach = false\n[maintenance]\n\tauto = false\n"
+
+
 @pytest.fixture(scope="session")
 def project_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """The bare remote and its clone, built once per xdist worker (ADR 0049).
@@ -111,6 +114,8 @@ def project_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
         "GIT_CONFIG_GLOBAL": str(base / "gitconfig"),
         "GIT_CONFIG_NOSYSTEM": "1",
     }
+    # No automatic background maintenance: nothing changes the template while it is copied.
+    (base / "gitconfig").write_text(TEMPLATE_GIT_CONFIG, encoding="utf-8")
     remote = base / "origin.git"
     sh(["git", "init", "--quiet", "--bare", "--initial-branch=main", str(remote)], base, env)
     root = base / "proj"
