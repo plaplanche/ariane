@@ -302,29 +302,53 @@ def test_c9_selective_checks_listing_never_lands_outside_when_a_folder_swaps_whi
 
 
 @by_handle
-def test_c9_selective_checks_cleanup_never_removes_outside_when_a_folder_swaps_at_removal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A parallel check swaps `work/7` for a link to an outside folder holding a file of the
-    listing's name after Ariane checked the listing and before it removes it: Ariane removes
-    its own listing in the moved folder, and the outside file survives."""
+def test_c9_selective_checks_nothing_is_removed_by_name_after_the_check(tmp_path: Path) -> None:
+    """A parallel check swaps the listing itself for another file, or its folder for a link to
+    an outside folder: Ariane removes nothing by name after the check, so neither the swapped-in
+    file nor the outside one is touched; the replay tree's removal takes what is left."""
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / checks.CHANGED_FILES).write_text("keep\n", encoding="utf-8")
     tree = tmp_path / "tree"
     tree.mkdir()
-    real_unlink = os.unlink
-
-    def unlink(path: Any, *args: Any, **kwargs: Any) -> None:
-        if Path(path).name == checks.CHANGED_FILES and not (tree / "work/7").is_symlink():
-            _swap_to_link(tree / "work/7", outside)
-        real_unlink(path, *args, **kwargs)
-
-    monkeypatch.setattr(os, "unlink", unlink)
     with checks.changed_files_listing(tree, "work/7", ["a"]) as listing:
         assert listing.read_text(encoding="utf-8") == "a\n"
+        os.replace(listing, tree / "moved.txt")
+        listing.write_text("swapped in\n", encoding="utf-8")
+    assert listing.read_text(encoding="utf-8") == "swapped in\n"
+    with checks.changed_files_listing(tree, "work/8", ["a"]):
+        if hasattr(os, "symlink") and os.name != "nt":
+            _swap_to_link(tree / "work/8", outside)
     assert (outside / checks.CHANGED_FILES).read_text(encoding="utf-8") == "keep\n"
-    assert list((tree / "work/7-moved").iterdir()) == []
+
+
+def test_c9_selective_checks_the_verification_leaves_only_the_listing_out() -> None:
+    status = "\n".join(
+        [
+            "?? work/7/changed-files.txt",
+            "?? work/7/changed-files.txt/inside",
+            "?? work/7/changed-files.txt.bak",
+            " M app.txt",
+        ]
+    )
+    assert checks.without_listing(status, "work/7") == "?? work/7/changed-files.txt.bak\n M app.txt"
+    assert checks.without_listing("", "work/7") == ""
+
+
+def test_c9_selective_checks_a_unicode_line_separator_keeps_the_name_whole(
+    project: Project,
+) -> None:
+    """Git ends a record at a line feed only: a name holding U+2028 stays one path, from the
+    raw diff to the listing, and `unlistable` refuses it rather than skip its check."""
+    name = "src/name\u2028tail.py"
+    (project.root / "src").mkdir()
+    (project.root / name).write_text("x\n", encoding="utf-8")
+    sh(["git", "-c", "core.quotepath=off", "add", "--", name], project.root)
+    sh(["git", "commit", "-q", "-m", "separator"], project.root)
+    changes = git.changes(project.root, "HEAD~1", "HEAD", "work")
+    changed = checks.changed_files(changes.name_status)
+    assert changed == [name]
+    assert checks.unlistable(checks.changed_files("M\t" + name)) == [name]
 
 
 @by_handle
@@ -343,14 +367,14 @@ def test_c9_selective_checks_listing_refuses_a_linked_folder_of_the_commit(
     assert list(outside.iterdir()) == []
 
 
-def test_c9_selective_checks_listing_by_path_writes_and_removes_it(
+def test_c9_selective_checks_listing_by_path_writes_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Windows goes by path: the same listing, removed after the check."""
+    """Windows goes by path: the same listing, left for the replay tree's removal."""
     monkeypatch.setattr(checks, "_BY_HANDLE", False)
     with checks.changed_files_listing(tmp_path, "work/7", ["a", "b c"]) as listing:
         assert listing.read_bytes() == b"a\nb c\n"
-    assert not listing.exists()
+    assert listing.exists()
     (tmp_path / "work/7" / checks.CHANGED_FILES).write_text("forged\n", encoding="utf-8")
     with (
         pytest.raises(Stop, match="holds work/7/changed-files"),

@@ -17,11 +17,10 @@ PASSING_OUTPUT_LINES = 20
 CHANGED_FILES_VARIABLE = "ARIANE_CHANGED_FILES"
 CHANGED_FILES = "changed-files.txt"  # in the replay tree's ticket folder, while a check runs
 SKIPPED = "no changed file matches `paths`"
-# Folders opened by handle, the listing made and removed relative to them (POSIX); Windows has
-# no such call in Python's standard library and goes by path (ADR 0056).
-_BY_HANDLE = {os.open, os.mkdir, os.stat, os.unlink} <= os.supports_dir_fd and hasattr(
-    os, "O_NOFOLLOW"
-)
+# Folders opened by handle, the listing made relative to the last one (POSIX); Windows has no
+# such call in Python's standard library and goes by path (ADR 0056).
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_BY_HANDLE = {os.open, os.mkdir} <= os.supports_dir_fd and _NOFOLLOW != 0
 _FOLDER = getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | os.O_RDONLY
 # The escapes of a path git quotes (a double quote, a backslash or a control character in it),
 # even with core.quotepath=off; any other byte is written as three octal digits.
@@ -42,9 +41,11 @@ class CheckResult:
 
 
 def changed_files(name_status: str) -> list[str]:
-    """The paths of a `git diff --name-status` listing; a rename or copy counts on both sides."""
+    """The paths of a `git diff --name-status` listing; a rename or copy counts on both sides.
+    Records end at a line feed only, as git writes them: a name holding another line separator
+    (U+2028, a form feed) stays whole, for `unlistable` to refuse."""
     found: list[str] = []
-    for line in name_status.splitlines():
+    for line in filter(None, name_status.split("\n")):
         paths = [git_path(p) for p in line.split("\t")[1:] if p]
         found += [p for p in paths if p not in found]
     return found
@@ -76,11 +77,13 @@ def unlistable(changed: Sequence[str]) -> list[str]:
 @contextlib.contextmanager
 def changed_files_listing(tree: Path, records: str, changed: Sequence[str]) -> Iterator[Path]:
     """`records/changed-files.txt` in `tree`, listing the `changed` paths one per line, for the
-    block: made new (never over a file of the commit) and removed after it.
+    block: made new, never over a file of the commit. Ariane never removes it by name: what is
+    there after the check may not be the file it wrote, and the whole replay tree is removed after
+    each check; the replay's verification leaves that one path out (`without_listing`).
 
     On POSIX each folder is opened by handle without following a link and the listing is made
-    and removed relative to the last one, so another check moving or replacing a folder on the
-    way meanwhile never makes Ariane write or remove a file outside the tree."""
+    relative to the last one, so another check moving or replacing a folder on the way meanwhile
+    never makes Ariane write a file outside the tree."""
     if unlistable(changed):  # `replay_each` refuses them first; never an ambiguous list
         raise ValueError("a changed path holds a line break")
     text = "".join(f"{path}\n" for path in changed).encode("utf-8", "surrogateescape")
@@ -93,7 +96,7 @@ def changed_files_listing(tree: Path, records: str, changed: Sequence[str]) -> I
         try:
             fd = os.open(
                 CHANGED_FILES,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW,
                 0o644,
                 dir_fd=folder,
             )
@@ -101,16 +104,9 @@ def changed_files_listing(tree: Path, records: str, changed: Sequence[str]) -> I
             raise _refused(records) from exc
         with os.fdopen(fd, "wb") as out:
             out.write(text)
-            written = os.fstat(out.fileno())
-        try:
-            yield tree / records / CHANGED_FILES
-        finally:
-            with contextlib.suppress(FileNotFoundError, NotADirectoryError):
-                left = os.stat(CHANGED_FILES, dir_fd=folder, follow_symlinks=False)
-                if os.path.samestat(left, written):
-                    os.unlink(CHANGED_FILES, dir_fd=folder)
     finally:
         os.close(folder)
+    yield tree / records / CHANGED_FILES
 
 
 def _open_records(tree: Path, records: str) -> int:
@@ -135,25 +131,28 @@ def _open_records(tree: Path, records: str) -> int:
 
 @contextlib.contextmanager
 def _listing_by_path(tree: Path, records: str, text: bytes) -> Iterator[Path]:
-    """Windows: the same listing by path, its folder checked inside the tree before it is made
-    and removed only if it is still the file written in the same folder."""
+    """Windows: the same listing by path, its folder checked inside the tree before it is made."""
     listing = tree / records / CHANGED_FILES
     inside = listing.parent.resolve().is_relative_to(tree.resolve())  # before any folder is made
     if inside:
         listing.parent.mkdir(parents=True, exist_ok=True)
     if not inside or os.path.lexists(listing):
         raise _refused(records)
-    folder = os.stat(listing.parent)
     with listing.open("xb") as out:
         out.write(text)
-    written = os.lstat(listing)
-    try:
-        yield listing
-    finally:
-        with contextlib.suppress(FileNotFoundError, NotADirectoryError):
-            same = os.path.samestat(os.stat(listing.parent), folder)
-            if same and os.path.samestat(os.lstat(listing), written):
-                listing.unlink()
+    yield listing
+
+
+def without_listing(status: str, records: str) -> str:
+    """`git status --porcelain` of a replay tree without the listing Ariane wrote there, nor
+    whatever a check left in its place: the tree is removed after the check, the listing with it."""
+    listing = f"{records}/{CHANGED_FILES}"
+    kept = [
+        line
+        for line in status.split("\n")
+        if line[3:] != listing and not line[3:].startswith(f"{listing}/")
+    ]
+    return "\n".join(kept)
 
 
 def _refused(records: str) -> Stop:

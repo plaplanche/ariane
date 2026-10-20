@@ -11,10 +11,11 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 | `CHANGED_FILES` | constant | `changed-files.txt`: that list's file name, in the replay tree's ticket folder. |
 | `SKIPPED` | constant | The reason recorded for a check not selected: no changed file matches `paths`. |
 | `CheckResult` | dataclass | Outcome of one check: `name`, `command`, `blocking`, `passed`, `detail`, `output`, `duration_s`, `not_run_locally` (the globs the check declares, ADR 0042), `skipped` (not selected, so not run; `passed` is true, ADR 0056). |
-| `changed_files(name_status)` | function | The paths of a `git diff --name-status` listing, a rename or copy counted on both sides, each decoded by `git_path`. |
+| `changed_files(name_status)` | function | The paths of a `git diff --name-status` listing, split at line feeds only (a name holding U+2028 stays whole), a rename or copy counted on both sides, each decoded by `git_path`. |
 | `git_path(name)` | function | The real path behind a path as git prints it: a quoted one (a double quote, a backslash or a control character in it, even with `core.quotepath=off`) is unquoted and its octal escapes decoded as UTF-8 bytes. |
 | `unlistable(changed)` | function | The changed paths whose name holds a line break: the line-delimited listing cannot hold them, so the replay stops on them (ADR 0056). |
-| `changed_files_listing(tree, records, changed)` | context manager | `<records>/changed-files.txt` in `tree`, listing `changed` one per line, made new for the block and removed after it; on POSIX each folder is opened by handle without following a link and the file made and removed relative to the last one, on Windows by path (ADR 0056). |
+| `changed_files_listing(tree, records, changed)` | context manager | `<records>/changed-files.txt` in `tree`, listing `changed` one per line, made new for the block and never removed by name (the replay tree's removal takes it); on POSIX each folder is opened by handle without following a link and the file made relative to the last one, on Windows by path (ADR 0056). |
+| `without_listing(status, records)` | function | A replay tree's `git status --porcelain` without the listing's path (and anything under it, if a check put a folder there): what the post-check verification compares (ADR 0056). |
 | `selected(all_checks, changed, check_all_paths)` | function | The checks a change selects (ADR 0056): every one when it touches `ariane.toml` or a `project.check_all_paths` file, else those without `paths` and those whose `paths` match a changed file. |
 | `skipped_result(check)` | function | The `CheckResult` of a check not selected. |
 | `skipped_names(results)` | function | The names of the skipped checks. |
@@ -33,7 +34,7 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 - `run_checks`, `run_check`: run the declared commands in a working tree; `run_check` is called from the replay's worker threads when `project.parallel_checks` is above 1 (ADR 0052), each with its tree and its slot's environment; the flow also passes the generated-documentation commands as checks named `docs: <name>` (C25), so they appear in the report and the statuses like any check.
 - A check runs after its tree's dependency caches were copied from the store or built (`[[project.cache]]`, ADR 0054) and after its setup; neither is part of its duration, and its report is the same with or without caches.
 - `selected`, `skipped_result`: the replay runs only the selected checks and records the others as skipped (ADR 0056); a skipped check never fails, so it never blocks. `changed_files` turns the round's `--name-status` listing into the changed files the selection and `ARIANE_CHANGED_FILES` use.
-- `changed_files_listing`: the listing a check gets. On POSIX (`os.supports_dir_fd`), the tree is opened, then each folder of `records` is made if missing and opened with `O_DIRECTORY | O_NOFOLLOW` relative to the previous one; the file is created with `O_EXCL | O_NOFOLLOW` in the last folder's handle, and at the end removed through that handle only if it is still the file written. Another check that moves or replaces a folder on the way at any moment (parallel checks, ADR 0052) therefore never makes Ariane create or remove a file outside the tree: a link met on the way, or a file the commit holds, stops with "the replayed commit holds work/<n>/changed-files.txt, or its folder leads outside the replay tree". Windows has no such call in Python's standard library: there the folder is checked inside the tree before it is made and the file removed only while its folder and itself are unchanged (`os.path.samestat`), a narrower guarantee.
+- `changed_files_listing`: the listing a check gets. On POSIX (`os.supports_dir_fd`), the tree is opened, then each folder of `records` is made if missing and opened with `O_DIRECTORY | O_NOFOLLOW` relative to the previous one; the file is created with `O_EXCL | O_NOFOLLOW` in the last folder's handle. Ariane never removes it by name: a check could have swapped it, and the replay tree is removed after each check anyway. Another check that moves or replaces a folder on the way at any moment (parallel checks, ADR 0052) therefore never makes Ariane create a file outside the tree: a link met on the way, or a file the commit holds, stops with "the replayed commit holds work/<n>/changed-files.txt, or its folder leads outside the replay tree". Windows has no such call in Python's standard library: there the folder is checked inside the tree before it is made, a narrower guarantee.
 - `blocking_failures`, `summary_line`, `summary_table`, `report`: read and render results.
 - `parse_summary_table`: read a committed report back.
 
@@ -76,6 +77,7 @@ class checks {
   changed_files(name_status) list
   git_path(name) str
   unlistable(changed) list
+  without_listing(status, records) str
   changed_files_listing(tree, records, changed) Iterator
   selected(all_checks, changed, check_all_paths) list
   skipped_result(check) CheckResult

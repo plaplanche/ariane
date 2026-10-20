@@ -435,11 +435,11 @@ def changes(cwd: Path, since: str, until: str, exclude: str) -> Changes:
     pathspec = ["--", ".", f":(exclude){exclude}"]
     listing = out([*_PLAIN_DIFF, "--raw", "--numstat", "-p", since, until, *pathspec], cwd)
     head, _, patch = listing.partition("\n\n")
-    raw = [line for line in head.splitlines() if line.startswith(":")]
+    raw = [line for line in head.split("\n") if line.startswith(":")]  # line feeds only, not U+2028
     # A raw line is ":<mode> <mode> <object> <object> <status>\t<paths>"; --name-status prints
     # what follows the fourth space.
     name_status = "\n".join(line.split(" ", 4)[4] for line in raw)
-    counts = (line.split("\t", 2)[:2] for line in head.splitlines() if not line.startswith(":"))
+    counts = (line.split("\t", 2)[:2] for line in head.split("\n") if line[:1] not in ":")
     lines = sum(int(n) for pair in counts for n in pair if n.isdigit())
     return Changes(patch, name_status, lines)
 

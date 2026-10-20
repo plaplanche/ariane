@@ -302,7 +302,7 @@ class _Verification:
                 lambda k: self._tree_for(replay, k),
                 create=lambda tree: git.add_detached_worktree(self.repo_root, tree, self.head),
                 setup=self._setup,
-                verify=lambda tree: self._unchanged(tree, "the checks", ""),
+                verify=lambda tree: self._unchanged(tree, "the checks", "", listing=True),
                 remove=lambda tree: git.remove_worktree(self.repo_root, tree),
                 env=self.untrusted_env,
                 trees=self.trees,
@@ -385,7 +385,9 @@ class _Verification:
         )
         return Outcome(EXIT_OK if green else EXIT_STOPPED, line)
 
-    def _unchanged(self, replay: Path, after: str, tree_before: str) -> None:
+    def _unchanged(
+        self, replay: Path, after: str, tree_before: str, *, listing: bool = False
+    ) -> None:
         """Untrusted code ran: nothing it started still runs, and git, the instruction files
         the reviewer can load, the branch and the replay tree are as they were."""
         self._survivors(after)
@@ -393,7 +395,10 @@ class _Verification:
         moved = git.out(["rev-parse", f"refs/heads/{self.branch}"], self.repo_root) != self.head
         if git.detached_head(replay) != self.head or moved:
             raise Refused(f"{after} moved a head", "inspect the branch and the replay tree")
-        if git.status(replay) != tree_before:
+        status = git.status(replay)
+        if listing:  # the changed files' listing, left in the tree removed after the check
+            status = checks.without_listing(status, ticket.relative_folder(self.issue.number))
+        if status != tree_before:
             raise Refused(f"{after} changed files in the replay tree", "inspect the session")
         if self.url:
             changed = git.remote_changes(
