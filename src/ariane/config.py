@@ -32,6 +32,7 @@ __all__ = ["CODEX", "OPENCODE", "PI", "SCHEMA", "CacheConfig", "ChecksPolicy"]
 CONFIG_FILE = "ariane.toml"
 CONFIG_ENV = "ARIANE_CONFIG"
 DEFAULT_IDLE_MINUTES = 10.0
+FULL_REPLAY_CHECK = "full-replay"  # checks publish `ariane/<name>`: the full replay's (ADR 0056)
 
 
 class ConfigError(Exception):
@@ -447,10 +448,10 @@ def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:
         name = _str(item, "name", where + ".")
         if name in names:
             raise ConfigError(f"{CONFIG_FILE}: {where}.name: duplicate check name {name!r}")
-        if name.startswith("docs: "):
-            raise ConfigError(
-                f"{CONFIG_FILE}: {where}.name: {name!r} is reserved (generated checks)"
-            )
+        folded = name.casefold()  # status contexts ignore case: `ariane/Full-Replay` is the same
+        if folded.startswith("docs: ") or folded == FULL_REPLAY_CHECK:
+            what = "generated checks" if folded != FULL_REPLAY_CHECK else "the full replay's status"
+            raise ConfigError(f"{CONFIG_FILE}: {where}.name: {name!r} is reserved ({what})")
         names.add(name)
         blocking = item.get("blocking", True)
         if not isinstance(blocking, bool):

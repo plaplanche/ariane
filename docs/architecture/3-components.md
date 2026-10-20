@@ -29,6 +29,7 @@ flowchart TD
   cli --> pi
   cli --> process
   cli --> report
+  cli --> risk
   cli --> runtime
   cli --> shadow
   cli --> ticket
@@ -54,6 +55,7 @@ flowchart TD
   flow --> config
   flow --> context
   flow --> delivery
+  flow --> full_replay
   flow --> git
   flow --> logs
   flow --> metrics
@@ -70,6 +72,17 @@ flowchart TD
   flow --> stop
   flow --> ticket
   flow --> tracker
+  full_replay --> checks
+  full_replay --> config
+  full_replay --> delivery
+  full_replay -.-> flow
+  full_replay --> git
+  full_replay --> redact
+  full_replay --> replay
+  full_replay --> risk
+  full_replay --> stop
+  full_replay --> ticket
+  full_replay --> tracker
   git --> logs
   git --> pi
   git --> process
@@ -105,6 +118,7 @@ flowchart TD
   replay --> ticket
   report --> measures
   report --> metrics
+  report --> risk
   report --> shadow
   report --> ticket
   report --> tracker
@@ -206,6 +220,7 @@ sequenceDiagram
   participant S as review_session
   participant M as metrics
   participant D as delivery
+  participant X as full_replay
   U->>CLI: ariane start n [--restart]
   CLI->>F: start
   F->>T: read the issue
@@ -256,6 +271,14 @@ sequenceDiagram
   D->>T: open the pull request (a draft, needs a human, if still no-go)
   D->>T: publish statuses
   D->>G: commit the record of the pull request (local branch only, not pushed)
+  opt the last round skipped a check or ran one with ARIANE_FULL_SUITE=0, blocking checks green
+    F->>X: after the delivery: draw full_replay_sample from the ticket number and the commit
+    opt sampled
+      X->>P: full replay: every check, ARIANE_FULL_SUITE=1, fresh trees of the replayed commit
+      X->>T: status ariane/full-replay (failure on an escape) and, on an escape, a comment
+    end
+    X->>G: commit full-replay.md and metrics.json (local branch only, not pushed)
+  end
   F->>N: append the run to ended.jsonl, then remove its entry (however the run ends)
   F-->>CLI: Outcome
   CLI-->>U: one line
@@ -386,6 +409,7 @@ sequenceDiagram
   CLI->>P: report
   P->>M: take the metrics.json name (report reads and validates work/*/metrics.json and work/verify/**/metrics.json itself)
   P->>H: take the shadow clone paths (report reads their metrics.json itself)
+  P->>P: read the ticket worktrees' own metrics.json (the full replay after delivery), in place of the merged record of the same run
   P->>E: lines and totals
   E->>T: read pull request states (human time)
   E-->>P: measures

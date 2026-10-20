@@ -60,6 +60,7 @@ flowchart LR
 - [`context`](modules/context.md)
 - [`delivery`](modules/delivery.md)
 - [`flow`](modules/flow.md)
+- [`full_replay`](modules/full_replay.md)
 - [`git`](modules/git.md)
 - [`github`](modules/github.md)
 - [`logs`](modules/logs.md)

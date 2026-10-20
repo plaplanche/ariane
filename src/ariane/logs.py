@@ -129,10 +129,25 @@ FUNCTIONAL_TYPES = _declare(
         ),
         ("ticket.update.merged", "info", "The base branch was merged: the merge commit."),
         ("ticket.update.pushed", "info", "The updated ticket branch was pushed, a fast-forward."),
+        (
+            "ticket.checks.full_replay",
+            "info",
+            "The full replay after delivery: not sampled, started, passed or stopped.",
+        ),
+        (
+            "ticket.checks.escape",
+            "warning",
+            "A check failed only in the full replay: it passed, skipped or partial, in the round.",
+        ),
         ("ticket.warning.ignored_files", "warning", "The agent created files that git ignores."),
         ("ticket.warning.replay_not_removed", "warning", "The replay working tree stayed."),
         ("ticket.warning.statuses_refused", "warning", "The tracker refused commit statuses."),
         ("ticket.warning.label_refused", "warning", "The tracker refused the owner-review label."),
+        (
+            "ticket.warning.comment_refused",
+            "warning",
+            "The tracker refused a pull request comment.",
+        ),
         ("ticket.stopped", "error", "The ticket stopped; the reason and the next action follow."),
     ],
 )

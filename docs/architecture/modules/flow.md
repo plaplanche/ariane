@@ -49,6 +49,7 @@
 - Round's diff (C9, ADR 0053, ADR 0056): `run.changes` keeps, per replayed commit, the diff from the start commit (`replay.round_changes`), read once and used both to select the round's checks and for its review.
 - Risk tier (C9, ADR 0056): `run.tier` holds the last replayed round's tier and `run.check_failed` whether a replayed round failed a check (`replay.replay` sets both); `checks.md` starts with the tier and `Delivery` states it in the pull request body. When the run is made, before any setup or agent session, it reads the accepted residuals of the ADRs in the fresh working tree, which is the base commit (`review.residuals_in`, no git process, ADR 0057), as `run.residuals`. `Delivery` also gets the ticket's changed files matching `[review] sensitive_paths`, for the `owner-review` label and line (ADR 0057).
 - Sensitive paths (C10, ADR 0057): `_deliver` gives `Delivery`, as `sensitive`, `replay.sensitive` of the delivered commit: the same match the review was given (decoded, both sides of a rename, without `work/`).
+- Full replay (C9, C19, ADR 0056): once `Delivery.deliver` returns, `_deliver` calls `full_replay.after_delivery` with the replayed commit, the last round's results and the `Delivered` result; it changes neither the outcome nor its line. `execute` keeps the start commit in `run.start_commit` for it.
 - Truncated diff (C10, ADR 0031): `run.truncated` keeps the files whose hunks the last reviewed diff lacked; the delivery says so in the pull request body.
 
 ## Workflow
@@ -125,6 +126,7 @@ flowchart LR
   flow --> config
   flow --> context
   flow --> delivery
+  flow --> full_replay
   flow --> git
   flow --> logs
   flow --> metrics
@@ -141,6 +143,7 @@ flowchart LR
   flow --> stop
   flow --> ticket
   flow --> tracker
+  full_replay -.-> flow
   replay -.-> flow
   shadow --> flow
   update --> flow

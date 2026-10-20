@@ -103,6 +103,64 @@ cannot affect; the risk tier sizes how much of each selected check runs.
   reaches. Both are the project's to tune.
 - **Choosing the implementer's model from the tier** is not done: it needs measurements on the
   benchmark first.
+**Amendment: the sampled full replay and the escape rate (#186).** Selection by `paths` and a
+`low` tier save replay time by running fewer tests; that is only safe if what they miss is caught
+and measured.
+- **When.** When the last round of a ticket passed its blocking checks with at least one check
+  skipped or run with `ARIANE_FULL_SUITE=0` (`checks.partial_names`), Ariane decides from
+  `[checks_policy] full_replay_sample` (a number from 0 to 1, default 0.2; 0 disables it) whether
+  to run a full replay (`full_replay.after_delivery`): every check, the documentation checks too,
+  with `ARIANE_RISK_TIER=high`, `ARIANE_FULL_SUITE=1` and `ARIANE_CHANGED_FILES`, each in a fresh
+  replay tree of the replayed commit, verified by the guard as a round is (git and the remote as
+  the delivery left them are the baseline). The defaults also apply without the table: a project
+  with `paths` but no `[checks_policy]` is sampled at 0.2; one with neither skips nothing and runs
+  nothing partly, so nothing changes for it.
+- **The draw.** The first 8 bytes of SHA-256 of "ariane full replay <n> <commit>", read as an
+  integer, below `full_replay_sample` × 2⁶⁴: deterministic for a ticket and its replayed commit, so
+  a rerun gives the same choice, and spread evenly over the tickets.
+- **Escapes.** A check that fails in the full replay although it passed, or was skipped, in the
+  last round is an escape; one that failed there already is not. Each is written to
+  `work/<n>/full-replay.md` (every check's selective and full result, the escapes' outputs, redacted
+  by the ticket folder), journaled `ticket.checks.escape`, commented on the pull request naming the
+  checks (redacted), and published as a failing `ariane/full-replay` status on the pushed commit;
+  a full replay publishes a success only when every check of it passed: a check failing in the
+  full replay that also failed in the selective round (an advisory one) is no escape, but the
+  status is a failure ("full replay failed: <checks>") and the journal says so. A check that failed before a later one
+  stopped the full replay is still an escape, recorded and published (the stop is recorded after
+  it); a stop before any escape publishes no status. A check may not be named `full-replay`, in any case (status contexts ignore it): a
+  check is published as `ariane/<name>`, and the full replay's success would replace that check's
+  failure on the same commit. A refused status or comment is a journaled
+  warning. The records go in one local commit, "record the full replay", which, like the record of
+  the pull request, is not pushed.
+- **Measures.** `metrics.json` (the ticket's measures file, ADR 0034) gains `replays`, per round
+  the checks selected, skipped and partial and the replay's duration, and `full_replay`, whether it
+  ran, its duration and its escapes (`stopped` with the reason when it stopped).
+- **Report.** `ariane report` adds a "Selective checks" line: the tickets with selection and their
+  replay time, the last round's replay time against the full replay's on the sampled tickets (the
+  time saved), the full replays, the escapes and the escape rate, escapes (failing checks, summed)
+  / full replays, then a warning when the rate is above `[checks_policy] max_escape_rate` (default
+  0.02). A stopped full replay counts as a full replay with the escapes it saw before its stop,
+  and the line says how many were interrupted; only its duration is left out of the time
+  comparison, which uses the completed full replays.
+- **Why after delivery.** The full replay is a measure, not a gate: the project's CI still runs
+  everything on the pull request and stays the safety net. Run before the push, it would cost the
+  full replay's time on every sampled ticket, the time selection is meant to save, and a sampled
+  ticket would be delivered differently from the others. After the delivery it never delays or
+  changes the push, the pull request, its body or the review, and the run's outcome and line stay
+  those of the delivery; a stop or Ctrl-C during it, or an error while recording, publishing or
+  committing its records, is journaled when it can be and ends only the full replay. Those
+  records are committed only in the ticket worktree, after the push, so `ariane report` reads the
+  ticket worktrees too: a worktree's record replaces the merged record of the same run.
+- **Why sampling, not every ticket.** A full replay on every ticket would double the replay time
+  of each selective ticket and remove the saving; a fifth of them is enough to estimate a rate
+  over a few dozen tickets, and the project tunes the fraction (1 during a trial, lower once the
+  rate is known).
+- **How the rate decides.** The owner keeps selection on while the escape rate stays at or below
+  `max_escape_rate`; above it the report warns, and the owner widens `paths`, raises the
+  `full_when` of a check, tightens `[checks_policy]` or removes selection. Ariane never turns it
+  off by itself, and does not read the project's CI results to count escapes (a later CI feedback
+  loop).
+
 A project that declares `paths` waits only for the checks a ticket can affect. A wrong `paths`
 lets a change through untested by that check; the project's own CI still runs everything on the
 pull request. Existing configurations, without `paths`, keep running every check. Ariane's own

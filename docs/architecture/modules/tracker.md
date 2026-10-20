@@ -11,14 +11,14 @@ The tracker interface (C1, C10): the only way Ariane talks to GitHub, another fo
 | `Issue` | dataclass | An issue: `number`, `title`, `body`, `url`. |
 | `PullRequest` | dataclass | A pull request: `number`, `url`. |
 | `PullRequestState` | dataclass | When a pull request opened and ended (merged or closed): `opened`, `ended` (empty while open), `merged`. |
-| `Tracker` | protocol | `read_issue`, `open_pull_request`, `add_labels`, `file_url`, `pull_request_state`, `set_commit_status`. |
+| `Tracker` | protocol | `read_issue`, `open_pull_request`, `add_labels`, `comment`, `file_url`, `pull_request_state`, `set_commit_status`. |
 | `InMemoryTracker` | dataclass | The tracker double used by tests; it records pull requests (with their draft flag) and statuses. |
 
 ## Behaviour and errors
 
 - `open_pull_request(..., draft=False)`: a draft pull request is not ready to merge (C10).
 - `pull_request_state(branch)`: when the latest pull request from a branch opened and ended, for the report (C19, ADR 0038), or None.
-- `InMemoryTracker` takes `issues`, `pull_states`, `refuse_statuses`, `refuse_labels` and `unreachable`; `add_labels` records the labels per pull request in `labels`, or raises `TrackerError` when `refuse_labels`; `read_issue` raises `TrackerError` for an unknown issue, for a pull request number, or when `unreachable`; `set_commit_status` raises it when `refuse_statuses`, and `pull_request_state` when `unreachable`. It reads and writes no file.
+- `InMemoryTracker` takes `issues`, `pull_states`, `refuse_statuses`, `refuse_labels`, `refuse_comments` and `unreachable`; `comment` records the comments per pull request in `comments`, or raises `TrackerError` when `refuse_comments`; `add_labels` records the labels per pull request in `labels`, or raises `TrackerError` when `refuse_labels`; `read_issue` raises `TrackerError` for an unknown issue, for a pull request number, or when `unreachable`; `set_commit_status` raises it when `refuse_statuses`, and `pull_request_state` when `unreachable`. It reads and writes no file.
 - `IssueRefused` is a `TrackerError`, so a caller that handles tracker failures also handles a refused issue.
 
 ## Workflow
@@ -47,6 +47,7 @@ class Tracker {
   read_issue(number) Issue
   open_pull_request(head, base, title, body, draft) PullRequest
   add_labels(number, labels) None
+  comment(number, body) None
   file_url(branch, path) str
   pull_request_state(branch) PullRequestState
   set_commit_status(sha, context, state, description, target_url) None
@@ -104,6 +105,7 @@ flowchart LR
   context --> tracker
   delivery --> tracker
   flow --> tracker
+  full_replay --> tracker
   github --> tracker
   measures --> tracker
   report --> tracker

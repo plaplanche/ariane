@@ -136,3 +136,71 @@ def shadow_lines(shadows: list[dict[str, Any]], recent: list[dict[str, Any]]) ->
     )
     lines.append(f"shadow pass: {'yes' if ok else 'no'}")
     return lines
+
+
+def _rounds(data: dict[str, Any]) -> list[dict[str, Any]]:
+    found = data.get("replays")
+    return [r for r in found if isinstance(r, dict)] if isinstance(found, list) else []
+
+
+def _seconds(value: Any) -> float:
+    ok = isinstance(value, int | float) and not isinstance(value, bool)
+    return float(value) if ok else 0.0
+
+
+def full_replay(data: dict[str, Any]) -> dict[str, Any] | None:
+    """The `full_replay` object of a ticket's metrics when it ran, stopped or not, or None: a
+    stopped one keeps the escapes it saw before its stop."""
+    found = data.get("full_replay")
+    if not isinstance(found, dict) or found.get("ran") is not True:
+        return None
+    return found
+
+
+def check_full_replay(found: Any) -> None:
+    """A `full_replay` object's types (`report` names and skips a file that fails this): `ran`
+    a boolean, `escapes` a list of check names, `duration_s` a number."""
+    if found is None:
+        return
+    if not isinstance(found, dict) or not isinstance(found.get("ran"), bool):
+        raise TypeError("full_replay is not an object with a boolean ran")
+    escapes = found.get("escapes", [])
+    if not isinstance(escapes, list) or not all(isinstance(e, str) for e in escapes):
+        raise TypeError("full_replay.escapes is not a list of check names")
+    duration = found.get("duration_s", 0)
+    if isinstance(duration, bool) or not isinstance(duration, int | float):
+        raise TypeError("full_replay.duration_s is not a number")
+
+
+def selective_lines(rows: list[dict[str, Any]], max_escape_rate: float) -> list[str]:
+    """The "Selective checks" lines (#186): the tickets with a round that skipped a check or ran
+    one partly, their replay time, the full replays' time against the selective rounds they
+    replayed, the escapes and their rate per full replay, and a warning above
+    `max_escape_rate`. No such ticket gives no line."""
+    chosen = [d for d in rows if any(r.get("skipped") or r.get("partial") for r in _rounds(d))]
+    if not chosen:
+        return []
+    with_selection = sum(_seconds(r.get("duration_s")) for d in chosen for r in _rounds(d))
+    sampled = [(d, f) for d in chosen if (f := full_replay(d)) is not None]
+    complete = [(d, f) for d, f in sampled if not f.get("stopped")]  # a full duration only
+    selective = sum(_seconds(_rounds(d)[-1].get("duration_s")) for d, _ in complete)
+    full = sum(_seconds(f.get("duration_s")) for _, f in complete)
+    escapes = sum(len(f.get("escapes", [])) for _, f in sampled)
+    rate = escapes / len(sampled) if sampled else 0.0
+    shown = f"{escapes}/{len(sampled)} ({100 * rate:.1f}%)" if sampled else "not measured"
+    stopped = len(sampled) - len(complete)
+    interrupted = f" ({stopped} interrupted, their escapes counted)" if stopped else ""
+    lines = [
+        f"Selective checks: {len(chosen)} tickets with selection, replay time"
+        f" {with_selection:.1f} s; on the {len(complete)} completed full replays"
+        f" {selective:.1f} s selective versus {full:.1f} s full ({full - selective:.1f} s"
+        f" saved); {len(sampled)} full replays{interrupted}, {escapes} escapes, escape rate"
+        f" {shown}."
+    ]
+    if sampled and rate > max_escape_rate:
+        lines.append(
+            f"Warning: the escape rate {100 * rate:.1f}% is above max_escape_rate"
+            f" {100 * max_escape_rate:g}%: skipped or partial checks let failures through;"
+            " consider turning selection off (`paths`, `[checks_policy]`)."
+        )
+    return lines

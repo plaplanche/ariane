@@ -40,6 +40,8 @@ class Metrics:
         self.outcome = "running"
         self.restarted_from: dict[str, str | float] | None = None  # the run this one started over
         self.updates = 0  # the `ariane update` runs that merged the base branch (ADR 0033)
+        self.replays: list[dict[str, Any]] = []  # per replayed round: its selection, its time
+        self.full_replay: dict[str, Any] | None = None  # None: no full replay was considered
 
     def resume(self, text: str) -> None:
         """Continue the measurements of the ticket's earlier runs from their `metrics.json`
@@ -63,6 +65,8 @@ class Metrics:
                 "first_pass_verdict": str(data.get("first_pass_verdict", NOT_REVIEWED)),
                 "restarted_from": data.get("restarted_from"),
                 "updates": int(data.get("updates", 0)),
+                "replays": list(data.get("replays", [])),
+                "full_replay": data.get("full_replay"),
             }
         except (ValueError, KeyError, TypeError, AttributeError):
             return
@@ -130,6 +134,40 @@ class Metrics:
         """The number of blocking checks that were red when the ticket was delivered (C19)."""
         self.blocking_red = count
 
+    def replayed(
+        self,
+        round_: int,
+        selected: list[str],
+        skipped: list[str],
+        partial: list[str],
+        duration_s: float,
+    ) -> None:
+        """A round's replay: the checks it ran, skipped, and ran with `ARIANE_FULL_SUITE=0`."""
+        self.replays.append(
+            {
+                "round": round_,
+                "selected": selected,
+                "skipped": skipped,
+                "partial": partial,
+                "duration_s": round(duration_s, 3),
+            }
+        )
+
+    def full_replayed(
+        self,
+        ran: bool,
+        duration_s: float = 0.0,
+        escapes: list[str] | None = None,
+        stopped: str = "",
+    ) -> None:
+        """The full replay after delivery (#186): whether it ran, its time, its escapes."""
+        self.full_replay = {
+            "ran": ran,
+            "duration_s": round(duration_s, 3),
+            "escapes": escapes or [],
+        } | ({"stopped": stopped} if stopped else {})
+        self.step("full replay " + ("ran" if ran else "not sampled"))
+
     def keep_stopped(self, path: Path) -> None:
         """Write the metrics, outcome `stopped`, to `path` outside the repository, without the
         usual writer (best effort: a failure to record must not hide the stop; ADR 0031)."""
@@ -161,7 +199,10 @@ class Metrics:
             "first_pass_verdict": self.first_pass_verdict,
             "outcome": self.outcome,
             "updates": self.updates,
+            "replays": self.replays,
         }
+        if self.full_replay is not None:
+            data["full_replay"] = self.full_replay
         if self.restarted_from is not None:
             data["restarted_from"] = self.restarted_from
         return json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n"

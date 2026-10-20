@@ -30,6 +30,8 @@ class PullRequestRefused(Exception):
 class Delivered:
     pull_url: str
     draft: bool = False
+    pushed: str = ""  # the commit pushed, which the pull request's statuses are on
+    pull_number: int = 0
 
 
 @dataclass(frozen=True)
@@ -104,7 +106,7 @@ class Delivery:
         self._label(pull.number)
         self._publish_statuses(results, pushed)
         self._record_pull_request(pull.number, pull.url)
-        return Delivered(pull.url, self.draft)
+        return Delivered(pull.url, self.draft, pushed, pull.number)
 
     def push_update(self, results: list[checks.CheckResult], expected: str) -> str:
         """C11, ADR 0033: the second push of a delivered ticket, after `ariane update` merged

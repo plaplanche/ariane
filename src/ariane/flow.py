@@ -12,6 +12,7 @@ from pathlib import Path
 from ariane import checks, context, git, logs, process, replay, review, review_session, runs, ticket
 from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
+from ariane.full_replay import after_delivery
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
 from ariane.restart import Restarted, kept_name, lock_path, locked, prepare, with_restart
@@ -190,7 +191,7 @@ class _TicketRun:
             self.folder.log("ticket.setup", "Setup", text + cached)
             self.folder.set_status("implementing", "implementer session running", "wait")
             self._commit_record(f"#{self.number}: open the ticket folder")
-            start_commit = git.head(self.worktree)
+            start_commit = self.start_commit = git.head(self.worktree)
             ignored_before = git.ignored(self.worktree)
             result = self._implement()
             self.verify("the agent session", start_commit, guard, refs_before)
@@ -374,8 +375,7 @@ class _TicketRun:
 
     def _warn_ignored(self, before: set[str]) -> None:
         """Ignored files the agent created can make checks pass without being delivered."""
-        new = sorted(git.ignored(self.worktree) - before)
-        if new:
+        if new := sorted(git.ignored(self.worktree) - before):
             self.folder.log(
                 "ticket.warning.ignored_files",
                 "Warning: new files ignored by git",
@@ -471,9 +471,8 @@ class _TicketRun:
         """C10: replay the checks and review; after a `no-go` (or blocking checks failing after
         a fix round) up to two fix rounds, then deliver, as a draft if still `no-go`."""
         settled: review.Settled | None = None
-        reviewed = 0
+        reviewed = unchanged = 0
         failed: list[checks.CheckResult] = []
-        unchanged = 0
         for round_ in range(MAX_FIX_ROUNDS + 1):
             if round_ and not self._fix(
                 round_, start_commit, guard, refs_before, review.fix_feedback(settled, failed)
@@ -550,6 +549,7 @@ class _TicketRun:
             done = delivery.deliver(results)
         except PullRequestRefused as exc:
             raise Stop(exc.reason, exc.next_action) from None
+        after_delivery(self, checked, results, done)  # never changes what was delivered (#186)
         if done.draft:
             why = (
                 f"fix round {unchanged} changed nothing"
