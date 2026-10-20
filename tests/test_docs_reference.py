@@ -37,6 +37,8 @@ def errors(value: Any, schema: dict[str, Any], where: str = "") -> list[str]:
         found.append(f"{here}: not {schema['const']!r}")
     if "if" in schema and not errors(value, schema["if"], where) and "then" in schema:
         found += errors(value, schema["then"], where)
+    if "not" in schema and not errors(value, schema["not"], where):
+        found.append(f"{here}: matches a form the schema forbids")
     for part in schema.get("allOf", []):
         found += errors(value, part, where)
     kind = schema.get("type")

@@ -20,6 +20,7 @@ Entries of a ticket's journal.
 | `ticket.checks.worktree` | info | The clean working trees used to replay the checks, one per check. |
 | `ticket.checks.parallel` | info | How many checks were replayed at the same time, and in which run slots. |
 | `ticket.checks.cache` | info | Per check, which dependency caches were copied from the store and which were built. |
+| `ticket.checks.skipped` | info | The checks not run because no changed file matches their paths. |
 | `ticket.checks.replayed` | info | The checks were replayed by Ariane, with the result. |
 | `ticket.review.started` | info | A reviewer session started, with its model and limits. |
 | `ticket.review.stopped` | info | A reviewer session stopped, with its cost and tokens. |

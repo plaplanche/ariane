@@ -149,14 +149,21 @@ class Delivery:
             )
 
     def _publish_statuses(self, results: list[checks.CheckResult], sha: str) -> None:
-        """C9: one commit status per check on the pull request's head commit. A refusal is a
-        journaled warning, committed with the pull request's record, after the push."""
+        """C9: one commit status per check on the pull request's head commit; a skipped check's
+        is a success saying so, so that a required status does not block the pull request. A
+        refusal is a journaled warning, committed with the pull request's record, after the
+        push."""
         report = self.tracker.file_url(
             self.branch, f"{ticket.relative_folder(self.issue.number)}/{ticket.CHECKS}"
         )
         warnings = []
         for r in results:
-            description = redact(f"{r.detail}, {r.duration_s:.1f} s", self.secrets)
+            shown = (
+                f"skipped by Ariane: {r.detail}"
+                if r.skipped
+                else f"{r.detail}, {r.duration_s:.1f} s"
+            )
+            description = redact(shown, self.secrets)
             description = description[:_STATUS_DESCRIPTION_MAX]
             try:
                 self.tracker.set_commit_status(
@@ -199,10 +206,12 @@ class Delivery:
     def _pull_request_body(self, results: list[checks.CheckResult]) -> str:
         number = self.issue.number
         report = f"{ticket.relative_folder(number)}/{ticket.CHECKS}"
+        skipped = ", ".join(checks.skipped_names(results))
+        not_run = f"Skipped, {checks.SKIPPED}: {skipped}.\n\n" if skipped else ""
         return (
             f"Closes #{number}\n\n"
             f"Implemented by an Ariane implementer session; checks replayed by Ariane.\n\n"
-            f"{checks.summary_table(results)}\n\n{checks.summary_line(results)}\n\n"
+            f"{checks.summary_table(results)}\n\n{checks.summary_line(results)}\n\n{not_run}"
             f"{self._review_section()}"
             f"Full report: [{report}]({self.tracker.file_url(self.branch, report)}). "
             f"Journal: `{ticket.relative_folder(number)}/{ticket.JOURNAL}`.\n"

@@ -63,6 +63,8 @@ Use a fine-grained token limited to the one repository: contents, pull requests 
 
 A check can declare `not_run_locally`, path globs of tests that only CI runs: `checks.md` lists them with the changed files they cover, the implementer is told to write them with extra care, and the reviewer reads those files as untested code (ADR 0042).
 
+A check can also declare `paths`, path globs of the files it covers: when a ticket changes none of them, Ariane skips it, records it as `skipped` in `checks.md`, the pull request body and the reviewer's prompt, and posts a `success` status saying "skipped by Ariane: no changed file matches `paths`". A check without `paths` (or with `always = true`) and the documentation checks always run, and a change to `ariane.toml` or to a file of `project.check_all_paths` (lock files, CI files) runs every check. Every check that runs gets `ARIANE_CHANGED_FILES`, the path of a file listing the changed files one per line, to choose its own tests (ADR 0056).
+
 The reviewer is given the ticket's Out of scope section, and a finding about out-of-scope work is never blocking.
 The reviewer also checks the order of side effects: a write before the check that should guard it, or a retry that can write twice, is a blocking finding.
 

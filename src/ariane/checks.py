@@ -7,10 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ariane import process
-from ariane.config import CheckConfig, matching_paths
+from ariane.config import CONFIG_FILE, CheckConfig, matching_paths
 from ariane.ticket import fenced
 
 PASSING_OUTPUT_LINES = 20
+CHANGED_FILES_VARIABLE = "ARIANE_CHANGED_FILES"
+CHANGED_FILES = "changed-files.txt"  # in the replay tree's ticket folder, while a check runs
+SKIPPED = "no changed file matches `paths`"
 
 
 @dataclass(frozen=True)
@@ -23,6 +26,45 @@ class CheckResult:
     output: str
     duration_s: float
     not_run_locally: tuple[str, ...] = ()  # globs of the tests this replay did not run
+    skipped: bool = False  # not selected: no changed file matches its `paths` (passed is True)
+
+
+def changed_files(name_status: str) -> list[str]:
+    """The paths of a `git diff --name-status` listing; a rename or copy counts on both sides."""
+    found: list[str] = []
+    for line in name_status.splitlines():
+        found += [p for p in line.split("\t")[1:] if p and p not in found]
+    return found
+
+
+def selected(
+    all_checks: Sequence[CheckConfig], changed: Sequence[str], check_all_paths: Sequence[str]
+) -> list[CheckConfig]:
+    """The checks a change selects: all of them when it touches `ariane.toml` or a
+    `check_all_paths` file; else each check without `paths` (`always`, the documentation
+    checks) and each with a changed file matching its `paths`."""
+    if CONFIG_FILE in changed or matching_paths(check_all_paths, changed):
+        return list(all_checks)
+    return [c for c in all_checks if not c.paths or matching_paths(c.paths, changed)]
+
+
+def skipped_result(check: CheckConfig) -> CheckResult:
+    """The result of a check the change did not select: not run, so it blocks nothing."""
+    return CheckResult(
+        check.name,
+        check.command,
+        check.blocking,
+        True,
+        SKIPPED,
+        "",
+        0.0,
+        check.not_run_locally,
+        True,
+    )
+
+
+def skipped_names(results: Sequence[CheckResult]) -> list[str]:
+    return [r.name for r in results if r.skipped]
 
 
 def run_checks(
@@ -67,16 +109,18 @@ def blocking_failures(results: Sequence[CheckResult]) -> list[CheckResult]:
 def summary_line(results: Sequence[CheckResult]) -> str:
     failed = [r for r in results if not r.passed]
     blocking = blocking_failures(results)
+    skipped = len(skipped_names(results))
+    shown = f", {skipped} skipped ({SKIPPED})" if skipped else ""
     return (
-        f"Summary: {len(results) - len(failed)} passed, {len(failed)} failed"
-        f" ({len(blocking)} blocking)."
+        f"Summary: {len(results) - len(failed) - skipped} passed, {len(failed)} failed"
+        f" ({len(blocking)} blocking){shown}."
     )
 
 
 def summary_table(results: Sequence[CheckResult]) -> str:
     lines = ["| Check | Blocking | Result | Duration |", "| --- | --- | --- | --- |"]
     for r in results:
-        verdict = "pass" if r.passed else f"**fail** ({r.detail})"
+        verdict = "skipped" if r.skipped else "pass" if r.passed else f"**fail** ({r.detail})"
         blocking = "yes" if r.blocking else "no"
         lines.append(f"| {r.name} | {blocking} | {verdict} | {r.duration_s:.1f} s |")
     return "\n".join(lines)
@@ -118,6 +162,14 @@ def report(results: Sequence[CheckResult], commit: str, changed: Sequence[str] =
         "",
     ]
     for r in results:
+        if r.skipped:
+            parts += [
+                f"## {r.name}\n",
+                f"- Command: `{' '.join(r.command)}`",
+                f"- Skipped: {SKIPPED}",
+                "",
+            ]
+            continue
         verdict = "passed" if r.passed else "failed"
         parts += [
             f"## {r.name}\n",
@@ -152,5 +204,5 @@ def parse_summary_table(text: str) -> list[tuple[str, bool, str]]:
         plain = result.replace("**", "")
         if plain.startswith("fail (") and plain.endswith(")"):
             plain = plain[len("fail (") : -1]
-        parsed.append((name, result == "pass", f"{plain}, {duration}"))
+        parsed.append((name, result in ("pass", "skipped"), f"{plain}, {duration}"))
     return parsed

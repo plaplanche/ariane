@@ -78,6 +78,7 @@ class CheckConfig:
     timeout_minutes: float
     setup: tuple[str, ...] | None = None  # replaces project.setup in this check's replay tree
     not_run_locally: tuple[str, ...] = ()  # globs of the files whose tests only CI runs
+    paths: tuple[str, ...] = ()  # globs of the files it covers; () selects it always
 
 
 @dataclass(frozen=True)
@@ -191,6 +192,7 @@ class Config:
     env: tuple[str, ...] = ()  # variables the project's checks need (ADR 0024)
     parallel_checks: int = 1  # checks replayed at the same time (ADR 0052)
     caches: tuple[CacheConfig, ...] = ()  # `[[project.cache]]`: dependency folders (ADR 0054)
+    check_all_paths: tuple[str, ...] = ()  # globs whose change selects every check
 
 
 def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:
@@ -221,7 +223,11 @@ def parse(data: dict[str, Any]) -> Config:
         data, "", {"project", "tracker", "agents", "checks", "definition_of_done", "documentation"}
     )
     project = _table(data, "project")
-    _only(project, "project", {"base_branch", "setup", "env", "parallel_checks", "cache"})
+    _only(
+        project,
+        "project",
+        {"base_branch", "setup", "env", "parallel_checks", "cache", "check_all_paths"},
+    )
     tracker = _table(data, "tracker")
     _only(tracker, "tracker", {"kind", "repository", "token_env", "api_url", "ready_label"})
     agents = _table(data, "agents")
@@ -286,6 +292,7 @@ def parse(data: dict[str, Any]) -> Config:
         env=_env(project),
         parallel_checks=_parallel_checks(project),
         caches=_caches(project),
+        check_all_paths=_globs(project, "project", "check_all_paths"),
     )
 
 
@@ -424,11 +431,14 @@ def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:
         where = f"checks[{index}]"
         if not isinstance(item, dict):
             raise ConfigError(f"{CONFIG_FILE}: {where}: expected a table")
-        _only(
-            item,
-            where,
-            {"name", "command", "blocking", "timeout_minutes", "setup", "not_run_locally"},
-        )
+        keys = {"name", "command", "blocking", "timeout_minutes", "setup", "not_run_locally"}
+        _only(item, where, {*keys, "paths", "always"})
+        if "paths" in item and "always" in item:
+            raise ConfigError(f"{CONFIG_FILE}: {where}: give either paths or always, not both")
+        if item.get("always", True) is not True:
+            raise ConfigError(
+                f"{CONFIG_FILE}: {where}.always: expected true (without paths, a check always runs)"
+            )
         name = _str(item, "name", where + ".")
         if name in names:
             raise ConfigError(f"{CONFIG_FILE}: {where}.name: duplicate check name {name!r}")
@@ -447,20 +457,19 @@ def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:
                 blocking=blocking,
                 timeout_minutes=_positive(item, "timeout_minutes", where + ".", 15),
                 setup=_str_list(item, "setup", where + ".") if "setup" in item else None,
-                not_run_locally=_globs(item, where),
+                not_run_locally=_globs(item, where, "not_run_locally"),
+                paths=_globs(item, where, "paths"),
             )
         )
     return tuple(checks)
 
 
-def _globs(item: dict[str, Any], where: str) -> tuple[str, ...]:
-    if "not_run_locally" not in item:
+def _globs(item: dict[str, Any], where: str, key: str) -> tuple[str, ...]:
+    if key not in item:
         return ()
-    value = item["not_run_locally"]
+    value = item[key]
     if not isinstance(value, list) or not value or not all(isinstance(v, str) and v for v in value):
-        raise ConfigError(
-            f"{CONFIG_FILE}: {where}.not_run_locally: expected a non-empty list of path globs"
-        )
+        raise ConfigError(f"{CONFIG_FILE}: {where}.{key}: expected a non-empty list of path globs")
     return tuple(value)
 
 

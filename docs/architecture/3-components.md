@@ -198,10 +198,12 @@ sequenceDiagram
   F->>N: snapshot git first, then drop the changes that are another registered run's own branch and keys
   F->>G: commit
   F->>P: replay and review
+  P->>G: the round's diff from the start commit (one read, for the selection and the review)
+  Note over P: only the checks the changed files select run; the others are skipped (ADR 0056)
   Note over P: parallel_checks above 1: up to that many workers, each with its own slot (ADR 0052)
-  loop for each check, in declared order, up to parallel_checks at the same time
+  loop for each selected check, in declared order, up to parallel_checks at the same time
     P->>G: add a clean replay tree (setup runs there, with the worker's ARIANE_SLOT)
-    P->>C: run that check
+    P->>C: run that check, with ARIANE_CHANGED_FILES
     P->>G: verify git, the trees and the remote, remove the tree
   end
   Note over P: a stop in one worker or Ctrl-C kills the others' commands; every tree is removed

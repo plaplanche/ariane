@@ -134,6 +134,7 @@ class _TicketRun:
         self.not_updated: list[str] = []
         self.changed: list[str] = []
         self.truncated: list[str] = []  # the files whose hunks the last reviewed diff lacked
+        self.changes: dict[str, git.Changes] = {}  # per replayed commit, from the start commit
         self.processes_before: set[int] = set()
         self.registry = worktree.parent.parent / runs.FOLDER  # `runs.folder` of the repository
         self.witnessed: dict[int, runs.Run] = {}  # the other runs this run has seen live
@@ -251,8 +252,7 @@ class _TicketRun:
                 "fix the setup command, then start the ticket again",
                 ticket.fenced(done.output),
             )
-        leftovers = git.untracked(cwd)
-        if leftovers:
+        if leftovers := git.untracked(cwd):
             listing = "\n".join(f"- `{path}`" for path in leftovers)
             return Stop(
                 "setup left files that git does not ignore",

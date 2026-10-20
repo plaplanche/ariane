@@ -22,7 +22,8 @@
 - `Refused`: carries the exit code and next action; a tracker refusal (`TrackerError`, `IssueRefused`) passes its own through, so an issue refused by the issue gate (C21, ADR 0032) gives exit 2 before any checkout or review. The branch cannot be verified (unknown branch, uncommitted changes in the working tree that holds it, failed setup or reviewer).
 - Metrics (C19): the records also hold `metrics.json` (mode `verify`, the reviewer sessions, survivors and guard violations, outcome `delivered` when green, else `stopped`); a refused or interrupted run writes it to `stopped_metrics_path` instead.
 - Git guard (C11, ADR 0017, ADR 0028): a snapshot of git (as `ariane start` takes) is taken before the first check and compared after every check and the reviewer, before any other git command; a change is refused with the wording of `start`. The base branch's instructions are read once, before the first check. The remote-tracking ref of the base branch is part of the snapshot, and so are the instruction files the reviewer can load from outside its tree (`git.instruction_snapshot`; a change is refused as "changed instruction files the reviewer can load"). After every check and the reviewer, the replay tree must still be detached at the branch's head: one `git.detached_head` (one git process, `rev-parse HEAD --symbolic-full-name HEAD`, instead of `symbolic-ref` and `rev-parse HEAD`, ADR 0053), with the branch's ref read separately; a moved head is refused as "<step> moved a head". Each command's teardown kills what it left running (`process.kill_survivors`); the snapshot is compared right after each setup, before its check runs; after each setup (before a failing setup is refused), check and reviewer session, what was killed (`process.take_killed`) is counted in `metrics.json` and refused as a guard violation, and on any end of `run` (a refusal, Ctrl-C) the survivors are killed again and counted. A run that commits nothing (a refusal, Ctrl-C) writes its `metrics.json` (outcome `stopped`) to `stopped_metrics_path` before the temporary records folder is removed (ADR 0031). The review prompt gets the untruncated `git diff --name-status` of the branch, and a cut diff is journaled with the missing files; since that journal is temporary, the committed `review.md` ends with a `Diff given to the reviewer` section naming them (ADR 0031).
-- Review size (C10, ADR 0046): before the review it reads the diff, its name status and the changed lines from the base to the head in one git process (`git.changes`, without `work/`, a binary file counting 0, ADR 0053) and passes the count to `ReviewSession`, which uses `[agents.reviewer.small]` and the narrower prompt when the count is at most `max_lines` and records `changed_lines` with the reviewer session in `metrics.json`; `review.md` names the model of the selected reviewer.
+- Selective checks (C9, ADR 0056): before the first check it reads the diff, its name status and the changed lines from the base to the head in one git process (`git.changes`, without `work/`, ADR 0053); the changed files (`checks.changed_files`, renames on both sides) select the checks as for a ticket (`replay.replay_each` with `changed`, `project.check_all_paths` and the records folder `work/<n>/` of the issue): a check not selected is `skipped` in `checks.md`, and each check that runs gets `ARIANE_CHANGED_FILES`.
+- Review size (C10, ADR 0046): the same read gives the review its diff, name status and changed lines (a binary file counting 0), and verify passes the count to `ReviewSession`, which uses `[agents.reviewer.small]` and the narrower prompt when the count is at most `max_lines` and records `changed_lines` with the reviewer session in `metrics.json`; `review.md` names the model of the selected reviewer.
 - Dependency caches (C9, ADR 0054): each replay tree gets its `[[project.cache]]` folders before its setup (`cache.prepare` on `<repo>.ariane/cache` with `fill=True`: copied from the store, else built by the cache's own setup, guarded like the setup, and stored); after each build, before it is stored, and after each copy, before the next setup, the tree must still be detached at the branch's head ("a cache setup moved a head"), have no tracked or staged change ("a cache setup changed files that git tracks") and hold no file git does not ignore ("the dependency caches left files that git does not ignore"); `review.md` then has a `Dependency caches` section, one line per check with each cache hit or built. `verify` does not prune the store.
 - Records: written with `ticket.ensure_folder` and `ticket.write_file` (a symlink is replaced, never followed) and committed as regular files: each record path leaves the index first.
 - `replay_path`, `relative_folder`: where the replay tree and the records are.
@@ -34,10 +35,10 @@ flowchart TD
   A[verify branch] --> B{branch known, tree clean?}
   B -- no --> X[Refused: exit 1, or the tracker's exit code]
   B -- yes --> C[refs before]
-  C --> D[per check: add replay tree at head, caches, setup, run, remove]
-  D --> E[run_checks]
-  E --> E2[git.changes base..head, without work/]
-  E2 --> F[add reviewer tree, ReviewSession.run with changed_lines]
+  C --> C2[git.changes base..head, without work/: changed files select the checks]
+  C2 --> D[per selected check: add replay tree at head, caches, setup, run with ARIANE_CHANGED_FILES, remove]
+  D --> E[results, the skipped checks included]
+  E --> F[add reviewer tree, ReviewSession.run with changed_lines]
   F --> G[remote_changes against refs before]
   G -- changed --> X
   G -- ok --> H[branch moved or tree dirty?]
@@ -101,4 +102,4 @@ flowchart LR
 
 ## Serves
 
-C10, C23; ADR 0016, ADR 0020, ADR 0028, ADR 0034, ADR 0046, ADR 0053, ADR 0054, C19. See [the component view](../3-components.md).
+C10, C23; ADR 0016, ADR 0020, ADR 0028, ADR 0034, ADR 0046, ADR 0053, ADR 0054, ADR 0056, C19. See [the component view](../3-components.md).

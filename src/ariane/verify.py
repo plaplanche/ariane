@@ -290,7 +290,10 @@ class _Verification:
 
     def _replay_and_review(self, replay: Path, records: Path) -> Outcome:
         all_checks = (*self.config.checks, *self.config.documentation.checks())
-        wanted = min(self.config.parallel_checks, len(all_checks))
+        changes = git.changes(self.repo_root, self.base, self.head, ticket.WORK_DIR)
+        files = checks.changed_files(changes.name_status)
+        chosen = checks.selected(all_checks, files, self.config.check_all_paths)
+        wanted = max(1, min(self.config.parallel_checks, len(chosen)))
         with slots.several(wanted - 1) as more:  # each worker its own slot (ADR 0052)
             workers = [self.slot, *more]
             self.parallel = parallel_note(workers, wanted) if wanted > 1 else ""
@@ -304,11 +307,13 @@ class _Verification:
                 env=self.untrusted_env,
                 trees=self.trees,
                 slots=workers,
+                changed=files,
+                check_all_paths=self.config.check_all_paths,
+                records=ticket.relative_folder(self.issue.number),
             )
         changed = git.changed_between(self.repo_root, self.base, self.head)
         folder = ticket.TicketFolder(records, self.issue.number, secrets=self.secrets)
         folder.create(self.issue)
-        changes = git.changes(self.repo_root, self.base, self.head, ticket.WORK_DIR)
         record_truncation(folder, changes.diff)
         # The temporary journal is not committed: review.md carries the note (ADR 0031).
         self.truncation = truncation_note(changes.diff)

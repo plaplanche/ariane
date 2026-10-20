@@ -49,7 +49,9 @@ def test_c11_guard_hardening_verify_refuses_a_check_that_edits_git_config(
     code = f"import subprocess; subprocess.run({args!r})"
     config = make_config(checks=(_check_running(project, code),))
     monkeypatch.setattr(
-        git, "changes", lambda *a, **k: pytest.fail("a git command ran after the guard tripped")
+        git,
+        "changed_between",
+        lambda *a, **k: pytest.fail("a git command ran after the guard tripped"),
     )
     runtime = FakeRuntime()
     outcome = _verify(project, runtime, config)
