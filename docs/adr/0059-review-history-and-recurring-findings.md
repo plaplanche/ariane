@@ -28,12 +28,17 @@ C10 bounds the rounds at two; C19 asks for the failure causes per ticket.
 - **Three answers.** The reviewer's answer has an optional `earlier` array, one entry per listed
   finding: `finding` (the identifier), `answer` (`fixed`, `still open`, `replaced`) and, for
   `replaced` only, `caused`, the indexes (from 0) of the blocking findings of this answer that the
-  fix caused. A missing or doubled entry, an unknown identifier, an unknown answer, a `replaced`
-  without `caused` or a `caused` index that is not a blocking finding is an invalid answer, asked
-  again once like any other (C10). On round 0 the array may be missing.
-- **Recurring.** A blocking finding of the last review is recurring when the reviewer answers it
-  `still open` (an earlier finding) or when a `replaced` entry names it in `caused`. Its chain
-  follows the `replaced` answers of every round back to the oldest finding.
+  fix caused; for `still open` only, `current`, the indexes of the blocking findings of this
+  answer that report it now. A missing or doubled entry, an unknown identifier, an unknown answer,
+  a `replaced` without `caused`, a `still open` without `current`, or an index that is not a
+  blocking finding is an invalid answer, asked again once like any other (C10). So a blocker left
+  open is always a blocking finding of the answer, and a `go` cannot carry one. On round 0 the
+  array may be missing.
+- **Recurring.** A blocking finding of the last review is recurring when a `still open` entry
+  names it in `current` or a `replaced` entry names it in `caused`. It is counted once, however
+  many earlier rounds' findings point to it (one blocker seen in three rounds is one recurring
+  finding), and its chain follows the `still open` and `replaced` links of every round back to the
+  oldest finding.
 - **Said, not acted on.** When the last review of a draft has recurring findings, the journal
   records `Review circled on <files>` (`ticket.review.circled`) with the chains, and the draft pull
   request body says, above the review table, that the rounds circled on the same design question

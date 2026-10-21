@@ -28,12 +28,13 @@ def finding(title: str, line: int = 1) -> dict[str, Any]:
 
 
 def no_go(title: str, line: int, *earlier: tuple[str, str, list[int]]) -> dict[str, Any]:
-    entries = [{"finding": f, "answer": a} | ({"caused": c} if c else {}) for f, a, c in earlier]
+    key = {"replaced": "caused", "still open": "current"}
+    entries = [{"finding": f, "answer": a} | ({key[a]: c} if c else {}) for f, a, c in earlier]
     return {**NO_GO, "findings": [finding(title, line)], "earlier": entries}
 
 
 # Round 0 finds a split write; round 1's fix moved it (replaced); round 2's fix broke the other
-# writes (replaced again) and round 1's finding is still open.
+# writes (replaced again) and round 1's finding is still open: one recurring finding, 2.1.
 CIRCLING = [
     no_go("Check-then-write split", 1),
     no_go("Write moved, race left", 2, ("0.1", "replaced", [0])),
@@ -41,7 +42,7 @@ CIRCLING = [
         "Intermediate state breaks writes",
         3,
         ("0.1", "replaced", [0]),
-        ("1.1", "still open", []),
+        ("1.1", "still open", [0]),
     ),
 ]
 
@@ -93,9 +94,9 @@ def test_c10_fix_history_round_one_reviewer_prompt_lists_round_zero_and_parses_e
         two.prompt, "earlier-findings"
     )
     parsed = review.parse(CIRCLING[2])
-    assert [(e.finding, e.answer, e.caused) for e in parsed.earlier] == [
-        ("0.1", "replaced", (0,)),
-        ("1.1", "still open", ()),
+    assert [(e.finding, e.answer, e.caused, e.current) for e in parsed.earlier] == [
+        ("0.1", "replaced", (0,), ()),
+        ("1.1", "still open", (), (0,)),
     ]
     record = project.show("ariane/7", "work/7/review-1.md")
     assert "- 0.1: replaced, caused findings 0" in record
@@ -109,6 +110,8 @@ def test_c10_fix_history_round_one_reviewer_prompt_lists_round_zero_and_parses_e
         ([{"finding": "0.2", "answer": "fixed"}], "unknown earlier finding '0.2'"),
         ([{"finding": "0.1", "answer": "replaced"}], "names the findings it caused"),
         ([{"finding": "0.1", "answer": "replaced", "caused": [3]}], "indexes of blocking"),
+        ([{"finding": "0.1", "answer": "still open"}], "names the findings it is now"),
+        ([{"finding": "0.1", "answer": "fixed", "current": [0]}], "only a still open finding"),
         (None, "earlier: missing"),
     ],
 )
@@ -143,15 +146,39 @@ def test_c10_fix_history_circled_rounds_are_said_in_the_draft_journal_and_metric
     assert body.index("circled on the same design question") < body.index("## Review")
     assert (
         "- round 0 (`app.txt:1`): Check-then-write split → round 1 (`app.txt:2`): Write moved,"
-        " race left → still open in round 2"
-    ) in body
-    assert (
-        "- round 0 (`app.txt:1`): Check-then-write split → round 2 (`app.txt:3`): Intermediate"
-        " state breaks writes"
+        " race left → round 2 (`app.txt:3`): Intermediate state breaks writes → still open in"
+        " round 2"
     ) in body
     journal = (worktree(project) / "work/7/journal.md").read_text(encoding="utf-8")
     assert "Review circled on `app.txt`" in journal
-    assert metrics(project)["recurring_findings"] == 2
+    assert metrics(project)["recurring_findings"] == 1
+
+
+def test_c10_fix_history_still_open_blocker_cannot_pass_as_go() -> None:
+    contradictory = {**go_answer(), "earlier": [{"finding": "0.1", "answer": "still open"}]}
+    assert any("names the findings it is now" in e for e in review.validate(contradictory, ["0.1"]))
+    named = {
+        **contradictory,
+        "earlier": [{"finding": "0.1", "answer": "still open", "current": [0]}],
+    }
+    assert any("indexes of blocking findings" in e for e in review.validate(named, ["0.1"]))
+
+
+def test_c10_fix_history_one_blocker_through_three_rounds_counts_once(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    same = [
+        no_go("Race on the lease", 1),
+        no_go("Race on the lease", 1, ("0.1", "still open", [0])),
+        no_go("Race on the lease", 1, ("0.1", "still open", [0]), ("1.1", "still open", [0])),
+    ]
+    assert start(project, tracker, FakeRuntime(answers=same)).exit_code == 1
+    body = tracker.opened[0]["body"]
+    step = "round {} (`app.txt:1`): Race on the lease"
+    chain = " → ".join(step.format(n) for n in range(3)) + " → still open in round 2"
+    assert f"- {chain}\n" in body
+    assert body.count(" → still open in round 2") == 1
+    assert metrics(project)["recurring_findings"] == 1
 
 
 def test_c10_fix_history_rounds_that_fixed_everything_have_none(
