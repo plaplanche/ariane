@@ -9,11 +9,13 @@ Path globs (C9, C22, ADR 0056): the one set of rules for every glob of `ariane.t
 | `matching_paths(globs, paths)` | function | The paths matching at least one glob; a line break in a path is matched like any other character (ADR 0056). |
 | `is_glob(text)` | function | Whether `text` holds `*` or `?`, rather than naming one path. |
 | `glob_regex(glob)` | function | The regular expression of one glob: `*` and `?` stay within a path segment, `**` crosses segments, `**/` is any folders (none included). |
+| `overlap(first, second)` | function | Whether one path can match both globs (a path without wildcards included): `docs/**` and `docs/architecture/**` do, `*.md` and `docs/*.md` do not. |
 
 ## Behaviour and errors
 
 - Paths are relative, with `/` as separator, as git prints them; matching is case-sensitive and whole (`fullmatch`).
 - Every other character matches itself: there are no character classes or braces.
+- `overlap` builds each glob's automaton (one state per character, a looping state per `*` or `**`, `**/` as nothing or any characters then `/`) and walks the pairs of states from both starts; a step of both is taken when one character can take each (`*` and `?` take any but `/`). It answers whether both ends are reached together, without listing paths, so a file not created yet counts.
 
 ## Workflow
 
@@ -28,6 +30,7 @@ class globs {
   matching_paths(globs, paths) list~str~
   is_glob(text) bool
   glob_regex(glob) Pattern
+  overlap(first, second) bool
 }
 ```
 

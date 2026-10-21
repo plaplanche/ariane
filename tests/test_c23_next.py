@@ -5,21 +5,16 @@ ADR 0059)."""
 from __future__ import annotations
 
 import dataclasses
-import getpass
 import json
-import os
-import sys
-import time
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from ariane import config, flow, next_ticket, runs, slots, ticket
-from ariane.tracker import InMemoryTracker
+from ariane.tracker import InMemoryTracker, QueuedIssue, TrackerError
 
-from conftest import FakeRuntime, Project, commit_on_branch, make_config
-from test_flow import environ
+from conftest import Project, commit_on_branch, make_config
 
 LABEL = "ariane-next"
 
@@ -142,6 +137,87 @@ def test_c23_next_a_shared_file_with_a_running_ticket_is_named_and_not_proposed(
     assert "- #13: shares app.txt with running #12" in proposal.lines()
 
 
+def test_c23_next_overlapping_globs_share_their_known_files_or_the_globs(project: Project) -> None:
+    assert next_ticket.shared(["docs/**"], ["docs/architecture/**"]) == [
+        "docs/** and docs/architecture/**"
+    ]
+    known = ["docs/architecture/cli.md", "docs/x.md", "src/ariane/a.py", "src/b/c.py"]
+    assert next_ticket.shared(["docs/**"], ["docs/architecture/**"], known) == [
+        "docs/architecture/cli.md"
+    ]
+    assert next_ticket.shared(["src/**/*.py"], ["src/ariane/*.py"], known) == ["src/ariane/a.py"]
+    many = [f"docs/architecture/{n}.md" for n in range(5)]
+    assert next_ticket.shared(["docs/**"], ["docs/architecture/*.md"], many) == [
+        "docs/** and docs/architecture/*.md (5 files)"
+    ]
+    assert next_ticket.shared(["docs/**", "*.md"], ["src/**", "docs/*/x.py"], known) == [
+        "docs/** and docs/*/x.py"
+    ]
+    module_files(project)
+    commit_on_branch(project.root, "ariane/12", "work", {"app.txt": "v2\n"}, parent="main")
+    tracker = InMemoryTracker()
+    queued(tracker, 12, "Rewrite `docs/architecture/`.", at(0))
+    queued(tracker, 13, "Edit `docs/**/*.md`.", at(1))
+    with runs.registered(runs.folder(project.root), 12, "ariane/12"):
+        proposal = next_ticket.propose(project.root, make_config(), tracker)
+    assert reasons(proposal, 13) == ("shares docs/architecture/modules/cli.md with running #12",)
+    assert proposal.number is None
+
+
+def unreadable(tracker: InMemoryTracker, number: int) -> QueuedIssue:
+    raise TrackerError("HTTP 502")
+
+
+def test_c23_next_a_running_ticket_whose_files_cannot_be_read_holds_every_issue(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tracker = InMemoryTracker()
+    queued(tracker, 12, "Edit `a.txt`.", at(0))
+    queued(tracker, 13, "Edit `b.txt`.", at(1))
+    where = runs.folder(project.root)
+    with runs.registered(where, 12, "ariane/12"):  # registered, its branch not prepared yet
+        proposal = next_ticket.propose(project.root, make_config(), tracker)
+    why = "the files of running #12 are not known (its branch ariane/12 does not exist yet)"
+    assert reasons(proposal, 13) == (why,)
+    assert proposal.number is None
+    assert proposal.last_line() == (
+        f"Nothing to start: {why}. Next: wait for the running tickets to start their branches,"
+        " then run ariane next."
+    )
+    commit_on_branch(project.root, "ariane/12", "work", {"app.txt": "v2\n"}, parent="main")
+    cfg = dataclasses.replace(make_config(), base_branch="no-such-base")
+    with runs.registered(where, 12, "ariane/12"):
+        proposal = next_ticket.propose(project.root, cfg, tracker)
+        assert proposal.number is None
+        assert "git cannot read its changes" in reasons(proposal, 13)[0]
+        tracker.labels[12] = ["ariane"]  # no longer queued: its issue is read from the tracker
+        monkeypatch.setattr(InMemoryTracker, "peek_issue", unreadable)
+        proposal = next_ticket.propose(project.root, make_config(), tracker)
+    assert reasons(proposal, 13) == (
+        "the files of running #12 are not known (its issue cannot be read: HTTP 502)",
+    )
+    monkeypatch.undo()
+    assert next_ticket.propose(project.root, make_config(), tracker).number == 13
+
+
+def test_c23_next_a_running_ticket_outside_the_queue_keeps_its_label_globs(
+    project: Project,
+) -> None:
+    module_files(project)
+    commit_on_branch(project.root, "ariane/12", "work", {"app.txt": "v2\n"}, parent="main")
+    tracker = InMemoryTracker()
+    tracker.add_issue(12, "Started by hand", "Rewrite the documentation.")
+    tracker.labels[12] = ["ariane", "docs"]
+    queued(tracker, 13, "Update `docs/architecture/modules/cli.md`.", at(1))
+    settings = config.NextConfig(paths=(("docs", ("docs/**",)),))
+    cfg = dataclasses.replace(make_config(), next=settings)
+    with runs.registered(runs.folder(project.root), 12, "ariane/12"):
+        proposal = next_ticket.propose(project.root, cfg, tracker)
+    assert proposal.running == (12,)
+    assert reasons(proposal, 13) == ("shares docs/architecture/modules/cli.md with running #12",)
+    assert proposal.number is None
+
+
 def test_c23_next_an_already_started_issue_is_not_proposed(project: Project) -> None:
     commit_on_branch(project.root, "ariane/3", "work", {"app.txt": "v2\n"}, parent="main")
     tracker = InMemoryTracker()
@@ -200,110 +276,6 @@ def test_c23_next_a_last_run_stopped_otherwise_does_not_block(project: Project) 
     stopped_run(project, 20, "error")
     assert next_ticket.last_quota_stop(project.root) is None
     assert next_ticket.propose(project.root, make_config(), tracker).number == 4
-
-
-def test_c23_next_start_refuses_a_proposal_that_changed_since_it_was_printed(
-    project: Project,
-) -> None:
-    tracker = InMemoryTracker()
-    queued(tracker, 4, "", at(0), "ariane")
-    queued(tracker, 5, "", at(1), "ariane")
-    launched: list[int] = []
-
-    def launch(number: int) -> int:
-        launched.append(number)
-        return 1
-
-    _, outcome = next_ticket.start(project.root, make_config(), tracker, launch)
-    assert outcome.exit_code == flow.EXIT_STOPPED
-    assert "was none printed, now #4 (nothing runs)" in outcome.line
-    assert next_ticket.show(project.root, make_config(), tracker).number == 4
-    tracker.closed[4] = "completed"
-    _, outcome = next_ticket.start(project.root, make_config(), tracker, launch)
-    assert outcome.line == (
-        "Did not start: the proposal changed since it was printed (was #4 (nothing runs), now"
-        " #5 (nothing runs)). Next: read it above, then run ariane next --start to confirm it."
-    )
-    assert launched == []
-    assert tracker.removed_labels == []
-
-
-def test_c23_next_start_relabels_the_issue_and_starts_it(project: Project) -> None:
-    tracker = InMemoryTracker()
-    queued(tracker, 7, "Set `app.txt` to version 2.", at(0), "ariane")
-    queued(tracker, 8, "Needs #7", at(1), "ariane")
-    cfg = make_config()
-    outcomes: list[flow.Outcome] = []
-
-    def launch(number: int) -> int:
-        # The fake runtime: the ticket runs here, to its pull request.
-        outcomes.append(
-            flow.start(
-                number,
-                repo_root=project.root,
-                config=cfg,
-                tracker=tracker,
-                runtime=FakeRuntime(),
-                environ=environ(),
-            )
-        )
-        return 4242
-
-    assert next_ticket.show(project.root, cfg, tracker).number == 7
-    proposal, outcome = next_ticket.start(project.root, cfg, tracker, launch)
-    assert proposal.number == 7
-    assert tracker.removed_labels == [(7, "ariane")]
-    assert tracker.labels[7] == [LABEL, "ariane"]
-    assert outcomes[0].exit_code == flow.EXIT_OK, outcomes[0].line
-    journal = flow.worktree_path(project.root, 7) / "work/7/journal.md"
-    assert journal.is_file()
-    assert outcome.exit_code == flow.EXIT_OK
-    assert outcome.line == (
-        f"Started #7 in the background (process 4242); its journal will be {journal}, its output"
-        f" {next_ticket.output_path(project.root, 7)}. Next: follow it with ariane status 7."
-    )
-    _, again = next_ticket.start(project.root, cfg, tracker, launch)
-    assert again.exit_code == flow.EXIT_STOPPED  # #7 started since: the proposal changed
-    assert len(outcomes) == 1
-
-
-def test_c23_next_records_every_proposal_and_start_in_next_md(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(getpass, "getuser", lambda: "owner")
-    tracker = InMemoryTracker()
-    queued(tracker, 4, "Needs #2", at(0), "ariane")
-    queued(tracker, 5, "", at(1), "ariane")
-    next_ticket.show(project.root, make_config(), tracker)
-    next_ticket.start(project.root, make_config(), tracker, lambda number: 99)
-    text = next_ticket.record_path(project.root).read_text(encoding="utf-8")
-    assert next_ticket.record_path(project.root) == project.root.parent / "proj.ariane/next.md"
-    entries = text.split("\n## ")
-    assert entries[0] == "# Proposals of ariane next\n"
-    assert entries[1].split("\n", 1)[0].endswith(": proposal")
-    assert entries[2].split("\n", 1)[0].endswith(": start")
-    for entry in entries[1:]:
-        assert "- Running: none." in entry
-        assert "- #4: waits on #2" in entry
-        assert "- #5: can start" in entry
-        assert "- Proposal: #5 (nothing runs)" in entry
-    assert "- Confirmed by: owner (ariane next --start)" in entries[2]
-    assert "- Started: #5, process 99" in entries[2]
-
-
-def test_c23_next_spawn_runs_ariane_start_detached_with_its_output_kept(project: Project) -> None:
-    pid = next_ticket.spawn(project.root, 31, environ())
-    if sys.platform != "win32":
-        assert os.getsid(pid) == pid  # its own session: detached from the terminal
-    out = next_ticket.output_path(project.root, 31)
-    assert out == project.root.parent / "proj.ariane/logs/31.out"
-    deadline = time.monotonic() + 60
-    while runs.alive(pid) and time.monotonic() < deadline:  # it ends before the project goes
-        if sys.platform != "win32" and os.waitpid(pid, os.WNOHANG)[0]:
-            break
-        time.sleep(0.1)
-    text = out.read_text(encoding="utf-8", errors="replace")
-    assert "Refused configuration: ariane.toml: file not found" in text
 
 
 def test_c23_next_config_reads_the_queue_label_and_the_next_table() -> None:

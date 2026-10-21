@@ -189,6 +189,7 @@ flowchart LR
   context --> config
   flow --> config
   full_replay --> config
+  next_start --> config
   next_ticket --> config
   replay --> config
   review --> config

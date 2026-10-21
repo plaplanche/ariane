@@ -90,3 +90,15 @@ def test_c23_next_github_remove_label_ignores_a_missing_label(stub: tuple[Stub, 
     with pytest.raises(TrackerError, match="HTTP 403"):
         github.remove_label(9, "ariane")
     assert [r["method"] for r in state.requests] == ["DELETE"] * 3
+
+
+def test_c23_next_github_peek_issue_reads_its_body_and_labels_without_the_gate(
+    stub: tuple[Stub, str],
+) -> None:
+    state, api = stub
+    state.responses[("GET", f"{REPO}/issues/12")] = (200, issue(12, labels=[{"name": "docs"}]))
+    peeked = tracker(api).peek_issue(12)  # no `ariane` label: the gate would refuse it
+    assert (peeked.issue.body, peeked.labels, peeked.labelled_at) == ("Body 12", ("docs",), "")
+    state.responses[("GET", f"{REPO}/issues/13")] = (200, {"number": 13})
+    with pytest.raises(TrackerError, match="unexpected issue #13"):
+        tracker(api).peek_issue(13)

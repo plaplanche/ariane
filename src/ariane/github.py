@@ -242,6 +242,16 @@ class GitHubTracker:
             raise TrackerError(f"GitHub API: unexpected issues labelled {label}: {exc!r}") from None
         return sorted(found, key=lambda q: (_moment(q.labelled_at), q.issue.number))
 
+    def peek_issue(self, number: int) -> QueuedIssue:
+        data = self._request("GET", f"/repos/{self._repository}/issues/{number}")
+        try:
+            body, url = str(data.get("body") or ""), str(data.get("html_url") or "")
+            issue = Issue(number, str(data["title"]), body, url)
+            names = [str(i.get("name")) for i in data.get("labels") or [] if isinstance(i, dict)]
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise TrackerError(f"GitHub API: unexpected issue #{number}: {exc!r}") from None
+        return QueuedIssue(issue, "", tuple(names))
+
     def closed_as_completed(self, number: int) -> bool:
         data = self._request("GET", f"/repos/{self._repository}/issues/{number}")
         return data.get("state") == "closed" and data.get("state_reason") == "completed"

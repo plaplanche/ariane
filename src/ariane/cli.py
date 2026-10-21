@@ -16,7 +16,7 @@ from ariane import (
     flow,
     git,
     logs,
-    next_ticket,
+    next_start,
     process,
     report,
     risk,
@@ -304,12 +304,12 @@ def _next(root: Path, starting: bool) -> int:
     environ = _environment_with(cfg.tracker.token_env, token)
     try:
         if not starting:
-            proposal = next_ticket.show(root, cfg, tracker)
+            proposal = next_start.show(root, cfg, tracker)
             print("\n".join(proposal.lines()))
             code = EXIT_OK if proposal.number is not None else EXIT_STOPPED
             return _say(code, proposal.last_line())
-        launch = functools.partial(next_ticket.spawn, root, environ=environ)
-        proposal, outcome = next_ticket.start(root, cfg, tracker, launch)
+        launch = functools.partial(next_start.spawn, root, environ=environ)
+        proposal, outcome = next_start.start(root, cfg, tracker, launch)
     except (TrackerError, git.GitError, OSError) as exc:
         return _say(EXIT_STOPPED, f"Did nothing: {exc}. Next: fix it, then run ariane next.")
     print("\n".join(proposal.lines()))

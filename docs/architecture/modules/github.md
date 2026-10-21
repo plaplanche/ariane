@@ -7,7 +7,7 @@ The GitHub tracker over the REST API, with the standard library only (C1, C10, C
 | Name | Kind | What it does |
 | --- | --- | --- |
 | `web_url(api_url)` | function | The web address matching an API address (GitHub or GitHub Enterprise Server). |
-| `GitHubTracker(*, repository, token, api_url, ready_label, sleep=time.sleep)` | class | Implements `Tracker`: `read_issue`, `open_pull_request`, `add_labels`, `remove_label`, `queue`, `closed_as_completed`, `comment`, `file_url`, `set_commit_status`, `pull_request_state`, `changes_requested_at`. |
+| `GitHubTracker(*, repository, token, api_url, ready_label, sleep=time.sleep)` | class | Implements `Tracker`: `read_issue`, `open_pull_request`, `add_labels`, `remove_label`, `queue`, `peek_issue`, `closed_as_completed`, `comment`, `file_url`, `set_commit_status`, `pull_request_state`, `changes_requested_at`. |
 
 ## Behaviour and errors
 
@@ -15,6 +15,7 @@ The GitHub tracker over the REST API, with the standard library only (C1, C10, C
 - `open_pull_request` opens a draft when asked and returns the `PullRequest`; `add_labels` posts the labels to the pull request's issue (`POST /repos/<repository>/issues/<n>/labels`, GitHub creates a label it does not have, ADR 0057); `comment` posts a comment on the pull request's conversation (`POST /repos/<repository>/issues/<n>/comments`, the full replay's escapes); `set_commit_status` publishes a status.
 - `remove_label(number, label)`: `DELETE /repos/<repository>/issues/<n>/labels/<label>` (the label URL-quoted); an HTTP 404 (the issue lacks the label) is no error, any other failure a `TrackerError`.
 - `queue(label)`: `GET /issues?state=open&labels=<label>`, page after page, pull requests left out; for each issue its events, the time of the last `labeled` event of `label` (an issue whose event is not listed yet takes its `updated_at`); sorted by that time, then number. The issue gate does not run: `ariane next` only reads the queue (ADR 0059). An unexpected listing is a `TrackerError`.
+- `peek_issue(number)`: `GET /issues/<n>`; its title, body, URL and label names, without the issue gate; an unexpected answer is a `TrackerError`.
 - `closed_as_completed(number)`: `GET /issues/<n>`; true when `state` is `closed` and `state_reason` is `completed`.
 - `pull_request_state(branch)`: `GET /pulls?state=all&head=<owner>:<branch>`, newest first; the end is `merged_at`, else `closed_at`, with the pull request's `number`; none when the branch has no pull request.
 - `changes_requested_at(number)`: `GET /pulls/<n>/reviews`, page after page (100 per page, as the issue events); the `submitted_at` (ISO 8601 UTC, compared as text) of every review whose `state` is `CHANGES_REQUESTED` and whose `user.type` is `User` (a bot account's is `Bot`), for the review escapes of `ariane report` (C19, ADR 0058).
@@ -63,6 +64,7 @@ class GitHubTracker {
   add_labels(number, labels) None
   remove_label(number, label) None
   queue(label) list~QueuedIssue~
+  peek_issue(number) QueuedIssue
   closed_as_completed(number) bool
   comment(number, body) None
   file_url(branch, path) str

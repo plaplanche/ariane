@@ -78,6 +78,11 @@ class Tracker(Protocol):
         their bodies read without the issue gate: `ariane next` only reads them (ADR 0059)."""
         ...
 
+    def peek_issue(self, number: int) -> QueuedIssue:
+        """Issue `number`'s body and every label it carries, read without the issue gate
+        (`labelled_at` empty): `ariane next` reads a running ticket's expected files (ADR 0059)."""
+        ...
+
     def closed_as_completed(self, number: int) -> bool:
         """Whether issue `number` is closed as completed (not open, not closed as not planned)."""
         ...
@@ -168,6 +173,12 @@ class InMemoryTracker:
             if n not in self.closed and label in self.labels.get(n, [])
         ]
         return sorted(found, key=lambda q: (q.labelled_at, q.issue.number))
+
+    def peek_issue(self, number: int) -> QueuedIssue:
+        if self.unreachable:
+            raise TrackerError("the tracker is unreachable")
+        issue = self.read_issue(number)
+        return QueuedIssue(issue, "", tuple(self.labels.get(number, [])))
 
     def closed_as_completed(self, number: int) -> bool:
         return self.closed.get(number) == "completed"

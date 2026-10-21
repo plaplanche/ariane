@@ -26,7 +26,7 @@ flowchart TD
   cli --> git
   cli --> github
   cli --> logs
-  cli --> next_ticket
+  cli --> next_start
   cli --> opencode
   cli --> pi
   cli --> process
@@ -101,6 +101,13 @@ flowchart TD
   metrics --> stop
   metrics --> ticket
   metrics --> tracker
+  next_start --> config
+  next_start --> flow
+  next_start --> logs
+  next_start --> next_ticket
+  next_start --> runs
+  next_start --> ticket
+  next_start --> tracker
   next_ticket --> config
   next_ticket --> flow
   next_ticket --> git
@@ -478,27 +485,38 @@ sequenceDiagram
 sequenceDiagram
   actor U as Owner
   participant CLI as cli
+  participant H as next_start
   participant X as next_ticket
   participant T as tracker (github)
   participant N as runs
   participant S as slots
   participant G as git
   U->>CLI: ariane next
-  CLI->>X: show
+  CLI->>H: show
+  H->>N: take the handoff lock (repo.ariane/next/.lock)
+  H->>H: reconcile leftover reservations into next.md
+  H->>X: propose
   X->>T: queue(next_label): open issues in label order
   X->>N: running tickets; ended.jsonl for the last run
-  X->>G: each running branch's changes since its base
+  X->>G: each running branch's changes since its base (unreadable: nothing is proposed)
+  X->>T: peek_issue for a running ticket outside the queue (its body and labels)
   X->>S: take and release a slot (is one free?)
   X->>T: closed_as_completed for each Needs #N
-  X->>X: reasons per issue, first one without: the proposal; append to next.md
-  X-->>CLI: Proposal
+  X->>X: reasons per issue, first one without: the proposal
+  X-->>H: Proposal
+  H->>X: record the proposal in next.md
+  H-->>CLI: Proposal
   CLI-->>U: one line per issue, then Next: #N (no shared file with #M)
   U->>CLI: ariane next --start
-  CLI->>X: start
-  X->>X: propose again; refuse unless the phrase equals the last one in next.md
-  X->>T: remove_label, add_labels (ready label)
-  X->>X: spawn ariane start N detached, output in logs/N.out; append the start to next.md
-  X-->>CLI: Outcome
+  CLI->>H: start
+  H->>N: take the handoff lock
+  H->>X: propose again; refuse unless the phrase equals the one last printed in next.md
+  H->>H: write the reservation, record the start intent (the proposal is consumed)
+  H->>T: remove_label, add_labels (ready label)
+  H->>H: spawn ariane start N detached (ARIANE_NEXT_LAUNCH=N), output in logs/N.out
+  H->>N: registered_since: wait for N to register, end, or 60 s
+  H->>X: record the start in next.md; remove the reservation
+  H-->>CLI: Outcome
   CLI-->>U: started #N, its journal and its output
 ```
 

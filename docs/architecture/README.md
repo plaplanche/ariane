@@ -67,6 +67,7 @@ flowchart LR
 - [`logs`](modules/logs.md)
 - [`measures`](modules/measures.md)
 - [`metrics`](modules/metrics.md)
+- [`next_start`](modules/next_start.md)
 - [`next_ticket`](modules/next_ticket.md)
 - [`opencode`](modules/opencode.md)
 - [`pi`](modules/pi.md)

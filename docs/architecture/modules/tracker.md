@@ -12,17 +12,17 @@ The tracker interface (C1, C10): the only way Ariane talks to GitHub, another fo
 | `QueuedIssue` | dataclass | An issue of the queue of `ariane next` (ADR 0059): `issue`, `labelled_at` (when the queue label was last added, ISO 8601), `labels` (every label it carries). |
 | `PullRequest` | dataclass | A pull request: `number`, `url`. |
 | `PullRequestState` | dataclass | When a pull request opened and ended (merged or closed): `opened`, `ended` (empty while open), `merged`, `number` (0 when not known). |
-| `Tracker` | protocol | `read_issue`, `open_pull_request`, `add_labels`, `remove_label`, `queue`, `closed_as_completed`, `comment`, `file_url`, `pull_request_state`, `changes_requested_at`, `set_commit_status`. |
+| `Tracker` | protocol | `read_issue`, `open_pull_request`, `add_labels`, `remove_label`, `queue`, `peek_issue`, `closed_as_completed`, `comment`, `file_url`, `pull_request_state`, `changes_requested_at`, `set_commit_status`. |
 | `InMemoryTracker` | dataclass | The tracker double used by tests; it records pull requests (with their draft flag) and statuses. |
 
 ## Behaviour and errors
 
 - `open_pull_request(..., draft=False)`: a draft pull request is not ready to merge (C10).
 - `add_labels(number, labels)` labels an issue or a pull request; `remove_label(number, label)` removes a label from an issue, a label it does not carry being no error: `ariane next --start` puts the ready label back with both (ADR 0059).
-- `queue(label)`: the open issues, never pull requests, carrying `label`, ordered by when it was last added (ties by number), their bodies read without the issue gate, for `ariane next` (ADR 0059). `closed_as_completed(number)`: whether the issue is closed with the reason completed; open or closed as not planned is False (the `Needs #N` lines).
+- `queue(label)`: the open issues, never pull requests, carrying `label`, ordered by when it was last added (ties by number), their bodies read without the issue gate, for `ariane next` (ADR 0059). `peek_issue(number)`: the issue's body and every label it carries as a `QueuedIssue` (`labelled_at` empty), read without the issue gate: `ariane next` reads a running ticket's expected files with it once the ticket left the queue. `closed_as_completed(number)`: whether the issue is closed with the reason completed; open or closed as not planned is False (the `Needs #N` lines).
 - `pull_request_state(branch)`: when the latest pull request from a branch opened and ended, and its number, for the report (C19, ADR 0038), or None.
 - `changes_requested_at(number)`: when a human, not a bot account, left a "changes requested" review on pull request `number`, as submission times (ISO 8601 UTC); one of the facts after a `go` that make a review escape in the report (C10, C19, ADR 0058). Nothing is posted.
-- `InMemoryTracker` takes `issues`, `pull_states`, `refuse_statuses`, `refuse_labels`, `refuse_comments`, `changes_requested_on` (pull request number: the times of its "changes requested" reviews), `labelled_at` ((number, label): the time the label was added), `closed` (number: the state reason of a closed issue, such as `completed`) and `unreachable`; `remove_label` records each removal in `removed_labels` and drops the label from `labels`, or raises `TrackerError` when `refuse_labels`; `queue` lists the issues of `issues` carrying the label in `labels` and not `closed`, by `labelled_at`, or raises `TrackerError` when `unreachable`; `comment` records the comments per pull request in `comments`, or raises `TrackerError` when `refuse_comments`; `add_labels` records the labels per pull request in `labels`, or raises `TrackerError` when `refuse_labels`; `read_issue` raises `TrackerError` for an unknown issue, for a pull request number, or when `unreachable`; `set_commit_status` raises it when `refuse_statuses`, and `pull_request_state` and `changes_requested_at` when `unreachable`. It reads and writes no file.
+- `InMemoryTracker` takes `issues`, `pull_states`, `refuse_statuses`, `refuse_labels`, `refuse_comments`, `changes_requested_on` (pull request number: the times of its "changes requested" reviews), `labelled_at` ((number, label): the time the label was added), `closed` (number: the state reason of a closed issue, such as `completed`) and `unreachable`; `remove_label` records each removal in `removed_labels` and drops the label from `labels`, or raises `TrackerError` when `refuse_labels`; `queue` lists the issues of `issues` carrying the label in `labels` and not `closed`, by `labelled_at`, or raises `TrackerError` when `unreachable`; `peek_issue` returns an issue of `issues` with its `labels`, or raises `TrackerError` when unknown or `unreachable`; `comment` records the comments per pull request in `comments`, or raises `TrackerError` when `refuse_comments`; `add_labels` records the labels per pull request in `labels`, or raises `TrackerError` when `refuse_labels`; `read_issue` raises `TrackerError` for an unknown issue, for a pull request number, or when `unreachable`; `set_commit_status` raises it when `refuse_statuses`, and `pull_request_state` and `changes_requested_at` when `unreachable`. It reads and writes no file.
 - `IssueRefused` is a `TrackerError`, so a caller that handles tracker failures also handles a refused issue.
 
 ## Workflow
@@ -59,6 +59,7 @@ class Tracker {
   add_labels(number, labels) None
   remove_label(number, label) None
   queue(label) list~QueuedIssue~
+  peek_issue(number) QueuedIssue
   closed_as_completed(number) bool
   comment(number, body) None
   file_url(branch, path) str
@@ -135,6 +136,7 @@ flowchart LR
   github --> tracker
   measures --> tracker
   metrics --> tracker
+  next_start --> tracker
   next_ticket --> tracker
   report --> tracker
   review --> tracker

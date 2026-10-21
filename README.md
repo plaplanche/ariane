@@ -495,16 +495,22 @@ Next: #15 (no shared file with #12). Start it with ariane next --start.
 An issue is expected to touch the file paths written in its body (`src/app/cli.py`, a folder
 `docs/adr/`), and for a module file (`docs/architecture/modules/cli.md`, or just `cli.md`) the
 module's source `src/<package>/cli.py` and its tests by name; `[next.paths]` adds globs per
-label. A running ticket touches what its branch changed plus its own expected files. An issue
-already started (it has a branch `ariane/<n>`) is never proposed. No free run slot, or a last run
-stopped on its agent's quota, proposes nothing and says what to do.
+label. A running ticket touches what its branch changed plus its own expected files, read from
+its issue even once it left the queue. Two globs share a path when one path can match both
+(`docs/**` and `docs/architecture/**`). An issue already started (it has a branch `ariane/<n>`)
+is never proposed. No free run slot, a last run stopped on its agent's quota, or a running
+ticket whose files cannot be read yet (it is still preparing its branch) proposes nothing and
+says what to do.
 
 `ariane next` starts nothing. `ariane next --start` proposes again and, only if the proposal is
 the one last printed, removes and adds the issue's `ariane` label (as a maintainer would, so the
 issue gate accepts it) and runs `ariane start <n>` in the background, detached from the
-terminal. It prints the ticket number, where its journal will be, and its output file
-(`<repo>.ariane/logs/<n>.out`). Every proposal and start, with the reasons for the other issues
-and who confirmed, is appended to `<repo>.ariane/next.md`
+terminal. It waits until that ticket registers as running, so a second `--start`, or an
+`ariane start` by hand, never slips in between; then it prints the ticket number, where its
+journal will be, and its output file (`<repo>.ariane/logs/<n>.out`). A start consumes the
+confirmation: run `ariane next` again before the next `--start`. Every proposal and start, with
+the reasons for the other issues and who confirmed, is appended to `<repo>.ariane/next.md`; a
+start whose record could not be written is recorded by the next `ariane next`
 ([ADR 0059](docs/adr/0059-next-ticket-proposal.md)).
 
 ```toml

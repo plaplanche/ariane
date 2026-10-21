@@ -22,6 +22,8 @@ FOLDER = "runs"
 LOCK = ".lock"  # serializes every read and write of the registry
 ENDED = "ended.jsonl"  # one line per run that ended: number, branch, start and end
 REMOTE = "origin"
+HANDOFF = "next"  # `<repo>.ariane/next`: its lock covers `ariane next --start`'s handoff
+HANDOFF_ENV = "ARIANE_NEXT_LAUNCH"  # set to `<n>` in the `ariane start <n>` it launches
 WATCH_SECONDS = 0.2  # how often a run reads the registry for the runs it can vouch for
 
 
@@ -108,6 +110,25 @@ def _locked(where: Path) -> Iterator[None]:
                 fcntl.flock(file.fileno(), fcntl.LOCK_UN)
 
 
+def handoff_folder(where: Path) -> Path:
+    """`<repo>.ariane/next`, beside the registry `where`."""
+    return where.parent / HANDOFF
+
+
+def locked(where: Path) -> contextlib.AbstractContextManager[None]:
+    """Hold `where/.lock` for the block, as the registry does with its own (`_locked`)."""
+    return _locked(where)
+
+
+def _handoff(where: Path, number: int) -> contextlib.AbstractContextManager[None]:
+    """The handoff lock of `ariane next --start` (ADR 0059): a registration waits while it
+    checks a proposal and launches it, so its check sees every run registered before its own;
+    the ticket it launches (`HANDOFF_ENV`) registers inside it."""
+    if os.environ.get(HANDOFF_ENV) == str(number):
+        return contextlib.nullcontext()
+    return _locked(handoff_folder(where))
+
+
 @contextlib.contextmanager
 def registered(where: Path, number: int, branch: str, kept: str = "") -> Iterator[Run]:
     """Record ticket `number` as running in `where/<number>` for the time of the block, then
@@ -116,7 +137,7 @@ def registered(where: Path, number: int, branch: str, kept: str = "") -> Iterato
     `kept` is the branch a restart renames the previous `branch` to, registered before it."""
     entry = where / str(number)
     run = Run(number, branch, os.getpid(), now(), kept)
-    with _locked(where):
+    with _handoff(where, number), _locked(where):
         other = _read(entry)
         if other is not None and alive(other.pid):
             raise Stop(
@@ -169,6 +190,18 @@ def _live(where: Path) -> dict[int, Run]:
         if run is not None and alive(run.pid):
             found[run.number] = run
     return found
+
+
+def registered_since(where: Path, number: int, since: str) -> bool:
+    """Whether a run of ticket `number` registered at or after `since`: live, or ended."""
+    if not where.is_dir():
+        return False
+    with _locked(where):
+        _reclaim(where)
+        live = _live(where).get(number)
+        ended = _ended(where, since)
+    runs = [live] if live is not None else []
+    return any(run.number == number and run.started >= since for run in [*runs, *ended])
 
 
 def _reclaim(where: Path) -> None:

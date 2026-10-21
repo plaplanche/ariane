@@ -4,18 +4,16 @@ running ones, and start it on the owner's confirmation (C11, C22, C23, ADR 0059)
 from __future__ import annotations
 
 import contextlib
-import getpass
 import json
 import re
-import subprocess
-import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from ariane import flow, git, logs, process, runs, slots, ticket
 from ariane.config import Config, NextConfig
-from ariane.globs import glob_regex, is_glob
+from ariane.globs import glob_regex, is_glob, overlap
 from ariane.metrics import METRICS
 from ariane.runtime import StopReason
 from ariane.stop import Stop
@@ -25,6 +23,9 @@ RECORD = "next.md"
 MODULE_DOCS = "docs/architecture/modules/"
 START = "ariane next --start"
 PROPOSAL = "Proposal: "  # the line of a `next.md` entry that `--start` compares
+PRINTED = ("proposal", "start refused")  # the entries whose proposal `--start` may confirm
+GRACE = timedelta(seconds=60)  # a reservation whose process is gone still holds this long
+SHOWN = 3  # the files named for two overlapping globs, beyond which they are counted
 # `Needs #N`, `Needs #N and #M`, `Needs #N, #M`: at the start of a line, a list marker allowed.
 _NEEDS = re.compile(r"^\s*(?:[-*]\s+)?Needs\s+(#\d+(?:\s*(?:,|and|&)\s*#\d+)*)", re.MULTILINE)
 _NUMBER = re.compile(r"#(\d+)")
@@ -132,18 +133,30 @@ def _module_files(root: Path, module: str) -> list[str]:
     return found
 
 
-def shared(first: Sequence[str], second: Sequence[str]) -> list[str]:
-    """The paths both lists name: the same path or glob, or a path one's glob matches."""
+def shared(first: Sequence[str], second: Sequence[str], known: Sequence[str] = ()) -> list[str]:
+    """The paths both lists can name: the same path or glob, a path one's glob matches, or
+    two globs some path matches (`overlap`), named by the `known` files both match (counted
+    beyond `SHOWN`), else as the two globs."""
     found: set[str] = set()
     for a in first:
         for b in second:
             if a == b:
                 found.add(a)
-            elif is_glob(a) and not is_glob(b) and glob_regex(a).fullmatch(b):
-                found.add(b)
-            elif is_glob(b) and not is_glob(a) and glob_regex(b).fullmatch(a):
-                found.add(a)
+            elif not overlap(a, b):
+                continue
+            elif not (is_glob(a) and is_glob(b)):
+                found.add(b if is_glob(a) else a)
+            else:
+                found.update(_both(a, b, known))
     return sorted(found)
+
+
+def _both(a: str, b: str, known: Sequence[str]) -> list[str]:
+    """How two overlapping globs are named: the `known` files both match, else the globs."""
+    both = [p for p in known if glob_regex(a).fullmatch(p) and glob_regex(b).fullmatch(p)]
+    if both and len(both) <= SHOWN:
+        return both
+    return [f"{min(a, b)} and {max(a, b)}" + (f" ({len(both)} files)" if both else "")]
 
 
 def propose(
@@ -155,11 +168,24 @@ def propose(
     queue = tracker.queue(config.tracker.next_label)
     by_number = {q.issue.number: q for q in queue}
     running = runs.running(runs.folder(root))
-    files = {m: _running_files(root, config, run, by_number.get(m)) for m, run in running.items()}
+    starting = {r.number: r for r in pending(root) if r.number not in running}
+    files: dict[int, list[str]] = {}
+    unknown: list[str] = []  # a running ticket whose files cannot be read holds every issue
+    for m, run in sorted(running.items()):
+        try:
+            files[m] = _running_files(root, config, tracker, run, by_number.get(m))
+        except _Unknown as exc:
+            unknown.append(f"the files of running #{m} are not known ({exc})")
+    unknown += [f"#{r.number} is starting (process {r.pid})" for r in starting.values()]
     blockers, action = _blockers(root, slot_folder)
+    blockers = (*unknown, *blockers)
+    if unknown:
+        action = "wait for the running tickets to start their branches, then run ariane next"
+    known = _known(root, files)
     candidates = []
-    for queued in [q for q in queue if q.issue.number not in running][: settings.look_ahead]:
-        reasons = _reasons(root, tracker, settings, queued, files)
+    left = [q for q in queue if q.issue.number not in running and q.issue.number not in starting]
+    for queued in left[: settings.look_ahead]:
+        reasons = _reasons(root, tracker, settings, queued, files, known)
         candidates.append(Candidate(queued.issue.number, (*reasons, *blockers)))
     number = next((c.number for c in candidates if not c.reasons), None)
     if not action:
@@ -177,6 +203,7 @@ def _reasons(
     settings: NextConfig,
     queued: QueuedIssue,
     files: Mapping[int, Sequence[str]],
+    known: Sequence[str],
 ) -> list[str]:
     number = queued.issue.number
     branch = flow.branch_name(number)
@@ -193,31 +220,98 @@ def _reasons(
             reasons.append(f"waits on #{other}")
     expected = expected_paths(queued.issue.body, queued.labels, root, settings)
     for m in sorted(files):
-        common = shared(expected, files[m])
+        common = shared(expected, files[m], known)
         if common:
             reasons.append(f"shares {', '.join(common)} with running #{m}")
     return reasons
 
 
+class _Unknown(Exception):
+    """A running ticket's files cannot be read: no issue is proposed next to it."""
+
+
 def _running_files(
-    root: Path, config: Config, run: runs.Run, queued: QueuedIssue | None
+    root: Path, config: Config, tracker: Tracker, run: runs.Run, queued: QueuedIssue | None
 ) -> list[str]:
     """A running ticket's files: its branch's changes since its start base (its tree's
-    uncommitted work included), plus its own expected files, from the queue or its brief."""
+    uncommitted work included), plus its own expected files, from its issue's body and labels
+    (the queue's entry, else read from the tracker). `_Unknown` when either cannot be read,
+    for example while the run prepares its branch."""
     worktree = flow.worktree_path(root, run.number)
-    found: list[str] = []
-    with contextlib.suppress(git.GitError, process.CommandNotFoundError):
+    try:
+        if not git.local_branch_exists(root, run.branch):
+            raise _Unknown(f"its branch {run.branch} does not exist yet")
         base = git.merge_base(root, f"{flow.REMOTE}/{config.base_branch}", run.branch)
         if worktree.is_dir():
             found = git.changed_paths(worktree, base)
         else:
             found = [p for p in git.changed_between(root, base, run.branch) if p]
-    body, labels = (queued.issue.body, queued.labels) if queued is not None else ("", ())
-    if queued is None:
-        with contextlib.suppress(OSError):
-            body = (ticket.folder_path(worktree, run.number) / ticket.BRIEF).read_text("utf-8")
-    expected = expected_paths(body, labels, root, config.next)
+    except (git.GitError, process.CommandNotFoundError) as exc:
+        raise _Unknown(f"git cannot read its changes: {exc}") from None
+    try:
+        issue = queued if queued is not None else tracker.peek_issue(run.number)
+    except TrackerError as exc:
+        raise _Unknown(f"its issue cannot be read: {exc}") from None
+    expected = expected_paths(issue.issue.body, issue.labels, root, config.next)
     return found + [p for p in expected if p not in found]
+
+
+def _known(root: Path, files: Mapping[int, Sequence[str]]) -> list[str]:
+    """The files that name two overlapping globs: the main checkout's files (tracked, or
+    untracked and not ignored) and the running tickets' changes."""
+    found: set[str] = set()
+    with contextlib.suppress(git.GitError, process.CommandNotFoundError):
+        listing = git.out(["ls-files", "--cached", "--others", "--exclude-standard"], root)
+        found.update(p for p in listing.splitlines() if p)
+    for paths in files.values():
+        found.update(p for p in paths if not is_glob(p))
+    return sorted(found)
+
+
+@dataclass(frozen=True)
+class Reservation:
+    """A start of `ariane next --start` (ADR 0059), from before its first external write until
+    its ticket registers: by `pid` (`next --start`'s own, then the launched ticket's), since
+    `at`; `state` is `intent`, `launched` or `recorded` (its start entry is in `next.md`)."""
+
+    number: int
+    pid: int
+    at: str
+    state: str
+
+    def path(self, root: Path) -> Path:
+        return reservations_folder(root) / f"{self.number}.json"
+
+    def pending(self, root: Path) -> bool:
+        """Its ticket has not registered since `at` (live or ended) and may still: its process
+        lives, or the reservation is recent."""
+        if runs.registered_since(runs.folder(root), self.number, self.at):
+            return False
+        try:
+            recent = datetime.now(UTC) - datetime.fromisoformat(self.at) < GRACE
+        except (ValueError, TypeError):
+            recent = False
+        return runs.alive(self.pid) or recent
+
+
+def reservations_folder(root: Path) -> Path:
+    """`<repo>.ariane/next`, the folder of the handoff lock and of the reservations."""
+    return runs.handoff_folder(runs.folder(root))
+
+
+def reservations(root: Path) -> list[Reservation]:
+    """Every reservation written, readable or not yet removed."""
+    found = []
+    with contextlib.suppress(OSError):
+        for path in sorted(reservations_folder(root).glob("*.json")):
+            with contextlib.suppress(OSError, ValueError, TypeError):
+                found.append(Reservation(**json.loads(path.read_text(encoding="utf-8"))))
+    return found
+
+
+def pending(root: Path) -> list[Reservation]:
+    """The reservations whose ticket has not registered as running and may still."""
+    return [r for r in reservations(root) if r.pending(root)]
 
 
 def _blockers(root: Path, slot_folder: Path | None) -> tuple[tuple[str, ...], str]:
@@ -283,105 +377,14 @@ def record(root: Path, title: str, proposal: Proposal, extra: Sequence[str] = ()
 
 
 def last_printed(root: Path) -> str | None:
-    """The proposal of the last entry of `next.md`, None without one."""
+    """The proposal `--start` may confirm: the last entry of `next.md`'s, if that entry is a
+    printed proposal (`PRINTED`); None after a start, which consumes it, or without one."""
     try:
         text = record_path(root).read_text(encoding="utf-8")
     except OSError:
         return None
-    found = [line for line in text.splitlines() if line.startswith("- " + PROPOSAL)]
+    entries = text.split("\n## ")[1:]
+    if not entries or entries[-1].split("\n", 1)[0].rsplit(": ", 1)[-1] not in PRINTED:
+        return None
+    found = [line for line in entries[-1].splitlines() if line.startswith("- " + PROPOSAL)]
     return found[-1].removeprefix("- " + PROPOSAL) if found else None
-
-
-def show(root: Path, config: Config, tracker: Tracker, slot_folder: Path | None = None) -> Proposal:
-    """`ariane next`: propose, and record the proposal."""
-    proposal = propose(root, config, tracker, slot_folder)
-    record(root, "proposal", proposal)
-    logs.emit("next.proposed", f"proposal: {proposal.summary()}")
-    return proposal
-
-
-Launch = Callable[[int], int]  # starts `ariane start <n>` in the background: its process id
-
-
-def start(
-    root: Path,
-    config: Config,
-    tracker: Tracker,
-    launch: Launch,
-    slot_folder: Path | None = None,
-) -> tuple[Proposal, flow.Outcome]:
-    """`ariane next --start`: propose again; if the proposal is the one last printed, put the
-    issue's ready label back (remove, then add, as a maintainer would) and `launch` it."""
-    printed = last_printed(root)
-    proposal = propose(root, config, tracker, slot_folder)
-    if printed is None or printed != proposal.summary():
-        was = printed or "none printed"
-        record(root, "start refused", proposal, [f"Printed before: {was}"])
-        return proposal, flow.Outcome(
-            flow.EXIT_STOPPED,
-            f"Did not start: the proposal changed since it was printed (was {was}, now"
-            f" {proposal.summary()}). Next: read it above, then run {START} to confirm it.",
-        )
-    number = proposal.number
-    if number is None:
-        record(root, "start refused", proposal)
-        return proposal, flow.Outcome(flow.EXIT_STOPPED, proposal.last_line())
-    label = config.tracker.ready_label
-    try:
-        tracker.remove_label(number, label)
-        tracker.add_labels(number, [label])
-    except TrackerError as exc:
-        record(root, "start refused", proposal, [f"Relabel failed: {exc}"])
-        return proposal, flow.Outcome(
-            flow.EXIT_STOPPED,
-            f"Did not start #{number}: the label `{label}` could not be put back ({exc})."
-            f" Next: check the token can label issues, then run {START}.",
-        )
-    pid = launch(number)
-    journal = ticket.folder_path(flow.worktree_path(root, number), number) / ticket.JOURNAL
-    confirmed = f"Confirmed by: {_user()} ({START})"
-    record(root, "start", proposal, [confirmed, f"Started: #{number}, process {pid}"])
-    logs.emit("next.started", f"#{number} started in the background, process {pid}")
-    return proposal, flow.Outcome(
-        flow.EXIT_OK,
-        f"Started #{number} in the background (process {pid}); its journal will be {journal},"
-        f" its output {output_path(root, number)}. Next: follow it with ariane status {number}.",
-    )
-
-
-def _user() -> str:
-    try:
-        return getpass.getuser()
-    except (OSError, KeyError, ImportError):
-        return "unknown"
-
-
-def spawn(root: Path, number: int, environ: Mapping[str, str]) -> int:
-    """Run `ariane start <number>` detached from the terminal (its own session or process
-    group, no input), its output appended to `output_path`; return its process id."""
-    out = output_path(root, number)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    argv = [sys.executable, "-m", "ariane", "start", str(number)]
-    with out.open("ab") as file:
-        if sys.platform == "win32":
-            flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-            child = subprocess.Popen(
-                argv,
-                cwd=root,
-                env=dict(environ),
-                stdin=subprocess.DEVNULL,
-                stdout=file,
-                stderr=subprocess.STDOUT,
-                creationflags=flags,
-            )
-        else:
-            child = subprocess.Popen(
-                argv,
-                cwd=root,
-                env=dict(environ),
-                stdin=subprocess.DEVNULL,
-                stdout=file,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-    return child.pid
