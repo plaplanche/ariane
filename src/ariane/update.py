@@ -23,7 +23,7 @@ from ariane.flow import (
     branch_name,
     worktree_path,
 )
-from ariane.metrics import METRICS
+from ariane.metrics import METRICS, keep_refused
 from ariane.restart import lock_path, locked
 from ariane.runtime import AgentRuntime
 from ariane.slots import held as held_slot
@@ -73,8 +73,10 @@ def update(
     try:
         issue = tracker.read_issue(number)
     except TrackerError as exc:
+        keep_refused(worktree, number, exc)  # the gate's refusal `spec`, the tracker's `infra`
         return Outcome(exc.exit_code, f"Did not update #{number}: {exc}. Next: {exc.next_action}.")
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
+        keep_refused(worktree, number, exc)
         return _interrupted(number)
     with contextlib.ExitStack() as held:
         try:
@@ -109,6 +111,7 @@ def update(
             line = f"Did not update ticket #{number}: {exc.reason}. Next: {exc.next_action}."
             return Outcome(EXIT_STOPPED, line)
         except (Stop, KeyboardInterrupt, *FAILURES) as exc:
+            keep_refused(worktree, number, exc)  # lock, slot, registry, git, read back: `infra`
             reason, next_action = describe(exc)
             code = EXIT_INTERRUPTED if isinstance(exc, KeyboardInterrupt) else EXIT_STOPPED
             return Outcome(code, f"Did not update ticket #{number}: {reason}. Next: {next_action}.")

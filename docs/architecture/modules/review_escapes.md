@@ -19,7 +19,7 @@ Review escapes per model pair and stopped tickets per category, for `ariane repo
 ## Behaviour and errors
 
 - A review is a reviewer session that recorded its `verdict` and `findings` (`Metrics.reviewed`); older records without them are not counted. Reviews are grouped by implementer model, reviewer model and reviewer runtime; each line gives the reviews and the tickets they cover, the `go` verdicts, the findings per review, the escapes and the escape rate.
-- An escape is counted on a record delivered green on a `go` (its last review): not a shadow ticket, outcome `delivered`, no `category`. The tracker is read at report time, the pull request of `ariane/<n>`, or of the branch of a hand takeover; a record whose branch has no pull request is left out. An open pull request with green or no CI is not an escape (yet). The escape rate is escapes over those `go` tickets, counted per distinct ticket number (several records of one ticket, such as hand takeovers, count once, escaped if any of them escaped), shown only from `MIN_TICKETS` distinct tickets; below, the line says how many tickets there are.
+- An escape is counted per pushed `go` (`pushed_gos`): every `go` a run marked `pushed`, in a record of any outcome (an update that stopped keeps the delivery's `go`); a record from before the mark counts its last review when it is a `go` and the record ended delivered green; never a shadow ticket. A hand takeover's `go` (`ariane verify`, delivered green) is marked too: the branch it verified is the one pushed and merged. The tracker is read at report time, the pull request of `ariane/<n>`, or of the branch of a hand takeover; a record whose branch has no pull request is left out. An open pull request with green or no CI is not an escape (yet). The escape rate is escapes over those `go` tickets, counted per distinct ticket number (several records of one ticket, such as hand takeovers, count once, escaped if any of them escaped), shown only from `MIN_TICKETS` distinct tickets; below, the line says how many tickets there are.
 - Without CI data on any counted ticket, the `NO_CI` line says that the CI part was skipped. Without a tracker, or after its first failure (it is not asked again for the next tickets), the `NO_TRACKER` line replaces it and nothing more is counted. Nothing is posted.
 - When two groups or more show a rate, "Escape rates compared:" lists them side by side, each with its number of tickets.
 - `category_lines`: the tickets whose outcome is neither `delivered` nor `running`, or that have a `category` (a delivered draft or a red verification), counted per category in the order of `stop.CATEGORIES` (`not recorded` for a record from before categories), then the same per implementer model.
@@ -29,7 +29,7 @@ Review escapes per model pair and stopped tickets per category, for `ariane repo
 ```mermaid
 flowchart TD
   A[report rows] --> B[reviewer sessions with a verdict, grouped per pair and runtime]
-  B --> C{delivered green on a go, tracker known?}
+  B --> C{a pushed go, tracker known?}
   C -- no --> E[count reviews, go, findings]
   C -- yes --> D[escaped: CI data, pull request state, changes requested]
   D -- tracker fails --> F[stop asking the tracker, say it]

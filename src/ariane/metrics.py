@@ -202,7 +202,10 @@ class Metrics:
     def keep_stopped(self, path: Path, category: str) -> None:
         """Write the metrics, outcome `stopped` and its `category`, to `path` outside the
         repository, without the usual writer (best effort: a failure to record must not hide
-        the stop; ADR 0031)."""
+        the stop; ADR 0031). Nothing was pushed: a `pushed` mark of this run is taken back."""
+        if self._marked is not None:
+            self._marked.pop("pushed", None)
+            self._marked = None
         self.outcome = "stopped"
         self.category = category
         with contextlib.suppress(OSError):

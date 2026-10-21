@@ -45,7 +45,9 @@ per ticket. Choosing a reviewer model or a risk tier without those numbers is gu
   for blocking checks red after the merge, `review` for its `no-go`, `guard` for its remote branch
   moved or a merge commit with unexpected parents, `infra` for the rest; an update refused before
   any change (no pull request, a dirty tree, nothing to merge) leaves the ticket as delivered and
-  is not a stop. `ci` is reserved for the CI rounds, which do not exist yet. An update left
+  is not a stop. `ci` is reserved for the CI rounds, which do not exist yet. An update that fails
+  before its run exists (the issue read, Ctrl-C, the lock, a slot, the registry, git) records
+  its category like such a start, in its own folder. An update left
   with an unresolved merge records no category (see the accepted residual below). The tracker's refusal of the pull request is `infra`, a guard's refusal of the push
   `guard`. A delivered green ticket has no `category` key. `Stop` carries its category
   (`infra` by default), so each raiser names its own; `ReviewFailed` and `verify.Refused` carry one
@@ -66,7 +68,10 @@ per ticket. Choosing a reviewer model or a risk tier without those numbers is gu
   recorded, not inferred from the outcome: `Metrics.finish("delivered")` marks the last review's
   `go` `pushed` (the push publishes that `metrics.json`), and a stop of the same run before its
   push takes the mark back; a stop after the push (the pull request refused) keeps it, and an
-  update that stops before its own review leaves the delivery's mark. A record from before the
+  update that stops before its own review leaves the delivery's mark. A hand takeover's `go`
+  (`ariane verify`, delivered green) is marked as well: verify pushes nothing itself, but the
+  branch it verified is the one then pushed and merged; a verification refused before its commit
+  (`keep_stopped`) takes the mark back. A record from before the
   mark (no reviewer `at`) counts its last review when it is a `go` and the record ended delivered
   green. The pull request is the branch's latest: Ariane opens one per ticket branch. The 5-ticket threshold
   counts distinct ticket numbers: several records of one ticket (hand takeovers) count once, as
