@@ -137,7 +137,7 @@ def digest(body: str) -> str:
 def read_issue(tracker: Tracker, number: int) -> Issue:
     """`tracker.read_issue`; in the ticket `ariane next --start` launched, `IssueRefused`
     unless the body is the one `ariane next` analysed (`ISSUE_ENV`): an edit made before the
-    relabel is not blessed by it (ADR 0059)."""
+    relabel is not blessed by it (ADR 0060)."""
     issue = tracker.read_issue(number)
     if launched(number) and os.environ.get(ISSUE_ENV) != digest(issue.body):
         refused = IssueRefused(f"issue #{number} changed since ariane next analysed it")
@@ -147,7 +147,7 @@ def read_issue(tracker: Tracker, number: int) -> Issue:
 
 
 def _handoff(where: Path, number: int) -> contextlib.AbstractContextManager[None]:
-    """The handoff lock of `ariane next --start` (ADR 0059): a registration waits while it
+    """The handoff lock of `ariane next --start` (ADR 0060): a registration waits while it
     checks a proposal and launches it, so its check sees every run registered before its own;
     the ticket it launches (`HANDOFF_ENV`) registers inside it, under its reservation."""
     if launched(number):

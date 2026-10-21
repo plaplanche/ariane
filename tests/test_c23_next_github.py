@@ -1,5 +1,5 @@
 """The GitHub side of `ariane next` against the local HTTP stub: the queue in label order, the
-dependencies' state and the relabel (C23, ADR 0059)."""
+dependencies' state and the relabel (C23, ADR 0060)."""
 
 from __future__ import annotations
 

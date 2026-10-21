@@ -1,6 +1,6 @@
 # Module `ariane.globs`
 
-Path globs (C9, C22, ADR 0056): the one set of rules for every glob of `ariane.toml` (`documentation.map`, `checks[].paths`, `not_run_locally`, `check_all_paths`, `review.sensitive_paths`, `next.paths`) and for the expected files of `ariane next` (ADR 0059).
+Path globs (C9, C22, ADR 0056): the one set of rules for every glob of `ariane.toml` (`documentation.map`, `checks[].paths`, `not_run_locally`, `check_all_paths`, `review.sensitive_paths`, `next.paths`) and for the expected files of `ariane next` (ADR 0060).
 
 ## Public API
 
@@ -51,4 +51,4 @@ flowchart LR
 
 ## Serves
 
-C9, C22; ADR 0056, ADR 0059. See [the component view](../3-components.md).
+C9, C22; ADR 0056, ADR 0060. See [the component view](../3-components.md).

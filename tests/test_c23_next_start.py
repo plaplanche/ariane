@@ -1,6 +1,6 @@
 """`ariane next --start`: a confirmed proposal is reserved before any external write, consumed
 by its start, held until its ticket registers, and every start is recorded, even one whose
-record fails after the launch (C11, C23, ADR 0059)."""
+record fails after the launch (C11, C23, ADR 0060)."""
 
 from __future__ import annotations
 

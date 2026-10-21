@@ -515,7 +515,7 @@ journal will be, and its output file (`<repo>.ariane/logs/<n>.out`). A start con
 confirmation: run `ariane next` again before the next `--start`. Every proposal and start, with
 the reasons for the other issues and who confirmed, is appended to `<repo>.ariane/next.md`; a
 start whose record could not be written is recorded by the next `ariane next`
-([ADR 0059](docs/adr/0059-next-ticket-proposal.md)).
+([ADR 0060](docs/adr/0060-next-ticket-proposal.md)).
 
 ```toml
 [tracker]

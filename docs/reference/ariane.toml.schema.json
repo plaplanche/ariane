@@ -142,7 +142,7 @@
           "type": "string",
           "minLength": 1,
           "default": "ariane-next",
-          "description": "Label of the issues in the queue of `ariane next`, in the order it was added (ADR 0059); differs from ready_label."
+          "description": "Label of the issues in the queue of `ariane next`, in the order it was added (ADR 0060); differs from ready_label."
         }
       }
     },
@@ -514,7 +514,7 @@
     "next": {
       "type": "object",
       "additionalProperties": false,
-      "description": "How `ariane next` reads the queue (ADR 0059).",
+      "description": "How `ariane next` reads the queue (ADR 0060).",
       "properties": {
         "look_ahead": {
           "type": "integer",

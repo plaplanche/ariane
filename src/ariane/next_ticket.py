@@ -1,5 +1,5 @@
 """`ariane next`: propose the next ticket of the queue that can start safely next to the
-running ones, and start it on the owner's confirmation (C11, C22, C23, ADR 0059)."""
+running ones, and start it on the owner's confirmation (C11, C22, C23, ADR 0060)."""
 
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ def needs(body: str) -> list[int]:
 def expected_paths(
     body: str, labels: Sequence[str], root: Path, settings: NextConfig
 ) -> tuple[str, ...]:
-    """The paths, and globs, an issue is expected to touch (ADR 0059): the file paths its body
+    """The paths, and globs, an issue is expected to touch (ADR 0060): the file paths its body
     names (a folder `a/b/` as `a/b/**`; a bare file name only if it is at the root of `root` or
     a module file), the source files and tests of each `docs/architecture/modules/<m>.md`, and
     the `[next] paths` globs of its labels."""
@@ -289,7 +289,7 @@ def _known(root: Path, files: Mapping[int, Sequence[str]]) -> list[str]:
 
 @dataclass(frozen=True)
 class Reservation:
-    """A start of `ariane next --start` (ADR 0059), from before its first external write until
+    """A start of `ariane next --start` (ADR 0060), from before its first external write until
     its ticket registers: by `pid` (`next --start`'s own, then the launched ticket's), since
     `at`; `state` is `intent`, `launched` or `recorded` (its start entry is in `next.md`)."""
 
@@ -351,7 +351,7 @@ def _blockers(root: Path, slot_folder: Path | None) -> tuple[tuple[str, ...], st
 
 def last_quota_stop(root: Path) -> int | None:
     """The ticket of the last run that ended, if it stopped on a quota: its outcome is
-    `stopped` and its last agent session ended with the stop reason `quota` (ADR 0059)."""
+    `stopped` and its last agent session ended with the stop reason `quota` (ADR 0060)."""
     ended = []
     with contextlib.suppress(OSError):
         for line in (runs.folder(root) / runs.ENDED).read_text(encoding="utf-8").splitlines():

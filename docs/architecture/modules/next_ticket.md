@@ -1,6 +1,6 @@
 # Module `ariane.next_ticket`
 
-`ariane next`'s analysis (C11, C22, C23, ADR 0059): reads the queue (the open issues labelled `[tracker] next_label`, in label order), their `Needs #N` lines, the files each issue is expected to touch, the running tickets and the starts still pending, the run slots and the last run, and proposes the first issue that can start safely next to the running ones. It also writes and reads the record `<repo>.ariane/next.md` and reads the reservations of `ariane next --start`; `next_start` runs the commands under the handoff lock.
+`ariane next`'s analysis (C11, C22, C23, ADR 0060): reads the queue (the open issues labelled `[tracker] next_label`, in label order), their `Needs #N` lines, the files each issue is expected to touch, the running tickets and the starts still pending, the run slots and the last run, and proposes the first issue that can start safely next to the running ones. It also writes and reads the record `<repo>.ariane/next.md` and reads the reservations of `ariane next --start`; `next_start` runs the commands under the handoff lock.
 
 ## Public API
 
@@ -113,4 +113,4 @@ flowchart LR
 
 ## Serves
 
-C11, C22, C23; ADR 0059. See [the component view](../3-components.md).
+C11, C22, C23; ADR 0060. See [the component view](../3-components.md).

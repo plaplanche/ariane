@@ -282,7 +282,7 @@ def _report_tracker(root: Path) -> GitHubTracker | None:
 
 
 def _next(root: Path, starting: bool) -> int:
-    """`ariane next`, or `ariane next --start` (ADR 0059)."""
+    """`ariane next`, or `ariane next --start` (ADR 0060)."""
     try:
         cfg = config.load(root)
     except config.ConfigError as exc:

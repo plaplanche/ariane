@@ -303,7 +303,7 @@ SCHEMA: dict[str, Any] = {
                     **_STR,
                     "default": "ariane-next",
                     "description": "Label of the issues in the queue of `ariane next`, in the"
-                    " order it was added (ADR 0059); differs from ready_label.",
+                    " order it was added (ADR 0060); differs from ready_label.",
                 },
             },
         },
@@ -418,7 +418,7 @@ SCHEMA: dict[str, Any] = {
         "next": {
             "type": "object",
             "additionalProperties": False,
-            "description": "How `ariane next` reads the queue (ADR 0059).",
+            "description": "How `ariane next` reads the queue (ADR 0060).",
             "properties": {
                 "look_ahead": {
                     **_COUNT,

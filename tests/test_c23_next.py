@@ -1,6 +1,6 @@
 """`ariane next`: the queue, its dependencies, the files each ticket is expected to touch, the run
 slots and the last run decide the proposal; `--start` starts it on confirmation (C11, C22, C23,
-ADR 0059)."""
+ADR 0060)."""
 
 from __future__ import annotations
 

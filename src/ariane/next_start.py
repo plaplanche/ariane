@@ -1,6 +1,6 @@
 """`ariane next` and `ariane next --start` under the handoff lock: a confirmed proposal is
 reserved before any external write, consumed by its start, and held until the ticket it
-launches registers as running (C11, C23, ADR 0059)."""
+launches registers as running (C11, C23, ADR 0060)."""
 
 from __future__ import annotations
 
@@ -139,6 +139,7 @@ def _launch(
         runs.CLAIM_ENV: intent.at,
         runs.ISSUE_ENV: runs.digest(analysed.issue.body if analysed else ""),
     }
+    relabelled = False
     try:
         # An edit since the analysis is refused before the relabel: a fresh label never exists
         # for it, so no start run by hand at that moment can pass the issue gate with it.
@@ -147,6 +148,7 @@ def _launch(
         if not changed:
             tracker.remove_label(number, label)
             tracker.add_labels(number, [label])
+            relabelled = True
             changed = _changed(tracker, analysed, label)  # an edit during the relabel
             if changed:
                 tracker.remove_label(number, label)  # the fresh label blesses no unanalysed edit
@@ -161,6 +163,9 @@ def _launch(
             )
         child = launch(number, handed)
     except (TrackerError, OSError) as exc:
+        if relabelled:  # nothing started: the fresh label must not outlive this start
+            with contextlib.suppress(TrackerError):
+                tracker.remove_label(number, label)
         what = "launch" if isinstance(exc, OSError) else f"relabel (`{label}`)"
         record(root, "start refused", proposal, [f"The {what} failed: {exc}"])
         intent.path(root).unlink(missing_ok=True)
@@ -217,7 +222,7 @@ def _launch(
 def _changed(tracker: Tracker, analysed: QueuedIssue | None, label: str) -> str:
     """What changed in the issue since `analysed` (its body, its labels other than `label`), or
     "": read before the relabel and again after it, so an edit made before the fresh label is
-    seen here, and one made after it is refused by the issue gate (ADR 0059)."""
+    seen here, and one made after it is refused by the issue gate (ADR 0060)."""
     if analysed is None:
         return "it was not analysed"
     now = tracker.peek_issue(analysed.issue.number)

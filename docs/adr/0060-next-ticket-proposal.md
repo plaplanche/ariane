@@ -1,4 +1,4 @@
-# 0059. `ariane next`: propose the next ticket of a labelled queue, started on the owner's confirmation
+# 0060. `ariane next`: propose the next ticket of a labelled queue, started on the owner's confirmation
 
 - Status: accepted
 - Date: 2026-10-21
@@ -94,7 +94,15 @@ records it and the choices it left open.
   reads the issue before the relabel and again after it: if its body or labels differ from the
   analysed ones, it starts nothing and the confirmation is consumed; seen before the relabel, the
   label is never touched, so no fresh label exists for the edited revision (an `ariane start` run
-  by hand at that moment is refused by the issue gate); seen after it, the ready label is removed. The launched
+  by hand at that moment is refused by the issue gate); seen after it, the ready label is removed. A failure after the relabel (the
+  read, the launch) removes the fresh label too: nothing started, nothing stays blessed.
+- **Accepted residual.** Until `ariane start` validates its issue under the handoff lock (a
+  later ticket, or the sandbox of slice 7), an edit made in the milliseconds between
+  `--start`'s read before the relabel and the relabel itself, together with an `ariane start`
+  of the same ticket run by hand in that same window, lets that manual start keep the edited
+  revision: it reads the issue before it waits on the handoff lock, and `--start`'s later read
+  only refuses its own launch. Accepted by the owner on 21 October 2026 as needing two
+  coincident actions within milliseconds. The launched
   ticket also gets the digest of the analysed body (`ARIANE_NEXT_ISSUE`) and refuses an issue
   whose body differs; an edit after the relabel postdates the label, which the issue gate
   refuses.

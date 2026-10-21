@@ -1,7 +1,7 @@
 """`ariane next --start`'s handoff binds the ticket it launches to what `ariane next` analysed:
 the issue's revision (an edit before the relabel is refused, by `--start` and by the ticket),
 and its reservation (a ticket whose reservation was dropped does not register) (C11, C23,
-ADR 0059)."""
+ADR 0060)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from test_c23_next_start import Child, entries, handing
 
 from ariane import flow, next_start, next_ticket, runs
 from ariane.stop import Stop
-from ariane.tracker import InMemoryTracker
+from ariane.tracker import InMemoryTracker, TrackerError
 
 from conftest import FakeRuntime, Project, make_config
 from test_flow import environ
@@ -175,3 +175,35 @@ def test_c23_next_start_a_launched_ticket_registers_only_under_its_own_reservati
     monkeypatch.setenv(runs.CLAIM_ENV, claim)
     with runs.registered(where, 9, "ariane/9"):
         assert list(runs.running(where)) == [9]
+
+
+class FailsAfterRelabel(InMemoryTracker):
+    """A tracker whose issue read fails once the ready label was given again."""
+
+    relabelled: bool = False
+
+    def add_labels(self, number: int, labels: list[str]) -> None:
+        super().add_labels(number, labels)
+        self.relabelled = True
+
+    def peek_issue(self, number: int) -> Any:
+        if self.relabelled:
+            raise TrackerError("the tracker is unreachable")
+        return super().peek_issue(number)
+
+
+def test_c23_next_start_a_failed_read_after_the_relabel_leaves_no_fresh_label(
+    project: Project,
+) -> None:
+    tracker = FailsAfterRelabel()
+    queued(tracker, 7, "Edit `b.txt`.", at(0), "ariane")
+    next_start.show(project.root, make_config(), tracker)
+    launched: list[int] = []
+
+    def launch(number: int, handed: Mapping[str, str]) -> Child:
+        launched.append(number)
+        return Child(4007)
+
+    _, outcome = next_start.start(project.root, make_config(), tracker, launch)
+    assert outcome.line.startswith("Did not start #7: the relabel (`ariane`) failed")
+    assert launched == [] and "ariane" not in tracker.labels[7]  # nothing blessed, nothing run

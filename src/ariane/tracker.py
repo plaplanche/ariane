@@ -30,7 +30,7 @@ class Issue:
 
 @dataclass(frozen=True)
 class QueuedIssue:
-    """An open issue of the queue of `ariane next` (ADR 0059): when the queue label was last
+    """An open issue of the queue of `ariane next` (ADR 0060): when the queue label was last
     added to it (ISO 8601), and every label it carries."""
 
     issue: Issue
@@ -75,12 +75,12 @@ class Tracker(Protocol):
 
     def queue(self, label: str) -> list[QueuedIssue]:
         """The open issues (never pull requests) carrying `label`, in the order it was added,
-        their bodies read without the issue gate: `ariane next` only reads them (ADR 0059)."""
+        their bodies read without the issue gate: `ariane next` only reads them (ADR 0060)."""
         ...
 
     def peek_issue(self, number: int) -> QueuedIssue:
         """Issue `number`'s body and every label it carries, read without the issue gate
-        (`labelled_at` empty): `ariane next` reads a running ticket's expected files (ADR 0059)."""
+        (`labelled_at` empty): `ariane next` reads a running ticket's expected files (ADR 0060)."""
         ...
 
     def closed_as_completed(self, number: int) -> bool:

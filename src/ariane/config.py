@@ -46,7 +46,7 @@ class TrackerConfig:
     token_env: str
     api_url: str
     ready_label: str = "ariane"
-    next_label: str = "ariane-next"  # the queue of `ariane next` (ADR 0059)
+    next_label: str = "ariane-next"  # the queue of `ariane next` (ADR 0060)
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,7 @@ class AgentConfig:
 
 @dataclass(frozen=True)
 class NextConfig:
-    """`[next]`: how far `ariane next` looks, and the globs per issue label (ADR 0059)."""
+    """`[next]`: how far `ariane next` looks, and the globs per issue label (ADR 0060)."""
 
     look_ahead: int = 5
     paths: tuple[tuple[str, tuple[str, ...]], ...] = ()
@@ -183,7 +183,7 @@ class Config:
     check_all_paths: tuple[str, ...] = ()  # globs whose change selects every check
     checks_policy: ChecksPolicy | None = None  # `[checks_policy]`; None: every round is high
     sensitive_paths: tuple[str, ...] = ()  # `[review]`: globs labelled for the owner (ADR 0057)
-    next: NextConfig = NextConfig()  # `[next]`: the queue of `ariane next` (ADR 0059)
+    next: NextConfig = NextConfig()  # `[next]`: the queue of `ariane next` (ADR 0060)
 
 
 def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:

@@ -173,7 +173,7 @@ generated = [
   { name = "references", check = ["python", "scripts/generate_docs.py", "--check"] },
 ]
 
-# Optional: how `ariane next` reads the queue (ADR 0059). It looks at the first `look_ahead`
+# Optional: how `ariane next` reads the queue (ADR 0060). It looks at the first `look_ahead`
 # issues (default 5); each label of `paths` adds globs an issue carrying it is expected to touch.
 [next]
 look_ahead = 5
