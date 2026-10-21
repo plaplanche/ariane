@@ -114,6 +114,19 @@ def test_c23_next_expected_paths_from_the_body_modules_and_label_globs(project: 
     ]
 
 
+def test_c23_next_a_module_not_created_yet_is_still_shared(project: Project) -> None:
+    """A ticket that will add `scheduler` names only its module doc: its source, absent from the
+    checkout, is the glob `src/*/scheduler.py`, which another issue naming the source shares."""
+    adding = next_ticket.expected_paths(
+        "Add `docs/architecture/modules/scheduler.md`.", (), project.root, config.NextConfig()
+    )
+    assert "src/*/scheduler.py" in adding
+    naming = next_ticket.expected_paths(
+        "Change `src/ariane/scheduler.py`.", (), project.root, config.NextConfig()
+    )
+    assert next_ticket.shared(adding, naming) == ["src/ariane/scheduler.py"]
+
+
 def test_c23_next_a_shared_file_with_a_running_ticket_is_named_and_not_proposed(
     project: Project,
 ) -> None:

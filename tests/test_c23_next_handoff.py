@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from typing import Any
 
 import pytest
 from test_c23_next import at, queued
@@ -66,6 +67,47 @@ def test_c23_next_start_an_edit_between_the_analysis_and_the_relabel_starts_noth
     _, again = next_start.start(project.root, make_config(), tracker, launch)
     assert "was none printed since the last start" in again.line  # analyse it again first
     assert launched == []
+
+
+class Relabels(InMemoryTracker):
+    """A tracker that counts the relabels of `--start`."""
+
+    removed: int = 0
+
+    def remove_label(self, number: int, label: str) -> None:
+        self.removed += 1
+        super().remove_label(number, label)
+
+
+def test_c23_next_start_an_edit_before_the_relabel_touches_no_label(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An edit between `--start`'s analysis and its relabel is seen before the relabel: no fresh
+    label exists for the edited revision, so a start run by hand meanwhile cannot pass the gate."""
+    tracker = Relabels()
+    queued(tracker, 7, "Edit `b.txt`.", at(0), "ariane")
+    next_start.show(project.root, make_config(), tracker)
+    real = next_start.propose  # type: ignore[attr-defined]  # imported there, patched there
+
+    def then_edited(*args: Any, **kwargs: Any) -> Any:
+        proposal = real(*args, **kwargs)
+        tracker.add_issue(7, "Issue 7", "Edited after the analysis.")
+        return proposal
+
+    monkeypatch.setattr(next_start, "propose", then_edited)
+    launched: list[int] = []
+
+    def launch(number: int, handed: Mapping[str, str]) -> Child:
+        launched.append(number)
+        return Child(4007)
+
+    _, outcome = next_start.start(project.root, make_config(), tracker, launch)
+    assert outcome.line == (
+        "Did not start #7: its body changed since ariane next analysed it. Next: read the issue,"
+        " then run ariane next."
+    )
+    assert tracker.removed == 0 and launched == []
+    assert entries(project)[-1] == next_start.CHANGED
 
 
 def test_c23_next_start_the_launched_ticket_runs_only_the_analysed_issue(

@@ -32,7 +32,8 @@ records it and the choices it left open.
   a path only when it names a file at the repository root (`README.md`) or a module file
   (`cli.md` is `docs/architecture/modules/cli.md`). URLs, absolute paths, paths leaving the repository and words with
   placeholders (`<module>`) are never paths. Each module file adds `src/<package>/<module>.py`
-  and the tests whose file name holds the module's name as whole words (`test_cli.py` and
+  (the glob `src/*/<module>.py` while no such file exists: a ticket about to add the module still
+  shares it with another issue that names its source) and the tests whose file name holds the module's name as whole words (`test_cli.py` and
   `test_c23_cli_x.py` for `cli`, not `test_client.py`). `[next.paths]` adds globs per label
   (`docs = ["docs/**"]`). The names are matched against the main checkout's files.
 - **Running files.** A running ticket (a live entry of the run registry, ADR 0017) touches its
@@ -89,9 +90,11 @@ records it and the choices it left open.
   that crashed, or could not write its `start` entry) is recorded as `start reconciled` by the
   next `ariane next`, with whether the ticket registered. A failure after the launch says the
   ticket started (`Started #N ..., but ...`), never that nothing was done.
-- **The analysed revision.** The relabel would bless any edit made before it, so after the
-  relabel `--start` reads the issue again: if its body or labels differ from the analysed ones,
-  it removes the ready label and starts nothing, and the confirmation is consumed. The launched
+- **The analysed revision.** The relabel would bless any edit made before it, so `--start`
+  reads the issue before the relabel and again after it: if its body or labels differ from the
+  analysed ones, it starts nothing and the confirmation is consumed; seen before the relabel, the
+  label is never touched, so no fresh label exists for the edited revision (an `ariane start` run
+  by hand at that moment is refused by the issue gate); seen after it, the ready label is removed. The launched
   ticket also gets the digest of the analysed body (`ARIANE_NEXT_ISSUE`) and refuses an issue
   whose body differs; an edit after the relabel postdates the label, which the issue gate
   refuses.

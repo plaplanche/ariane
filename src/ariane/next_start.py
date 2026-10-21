@@ -140,17 +140,24 @@ def _launch(
         runs.ISSUE_ENV: runs.digest(analysed.issue.body if analysed else ""),
     }
     try:
-        tracker.remove_label(number, label)
-        tracker.add_labels(number, [label])
+        # An edit since the analysis is refused before the relabel: a fresh label never exists
+        # for it, so no start run by hand at that moment can pass the issue gate with it.
         changed = _changed(tracker, analysed, label)
+        removed = ""
+        if not changed:
+            tracker.remove_label(number, label)
+            tracker.add_labels(number, [label])
+            changed = _changed(tracker, analysed, label)  # an edit during the relabel
+            if changed:
+                tracker.remove_label(number, label)  # the fresh label blesses no unanalysed edit
+                removed = f"; its `{label}` label was removed"
         if changed:
-            tracker.remove_label(number, label)  # the fresh label blesses no unanalysed edit
             record(root, CHANGED, proposal, [f"The issue changed: {changed}"])  # consumed
             intent.path(root).unlink(missing_ok=True)
             return flow.Outcome(
                 flow.EXIT_STOPPED,
-                f"Did not start #{number}: {changed} since ariane next analysed it; its"
-                f" `{label}` label was removed. Next: read the issue, then run ariane next.",
+                f"Did not start #{number}: {changed} since ariane next analysed it{removed}."
+                " Next: read the issue, then run ariane next.",
             )
         child = launch(number, handed)
     except (TrackerError, OSError) as exc:
@@ -208,9 +215,9 @@ def _launch(
 
 
 def _changed(tracker: Tracker, analysed: QueuedIssue | None, label: str) -> str:
-    """What changed in the issue since `analysed`, read again after the relabel (its body, its
-    labels other than `label`), or "": an edit made before the fresh label is seen here, one
-    made after it is refused by the issue gate (ADR 0059)."""
+    """What changed in the issue since `analysed` (its body, its labels other than `label`), or
+    "": read before the relabel and again after it, so an edit made before the fresh label is
+    seen here, and one made after it is refused by the issue gate (ADR 0059)."""
     if analysed is None:
         return "it was not analysed"
     now = tracker.peek_issue(analysed.issue.number)

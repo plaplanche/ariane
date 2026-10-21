@@ -138,9 +138,12 @@ def _path(word: str, root: Path) -> str:
 
 
 def _module_files(root: Path, module: str) -> list[str]:
-    """`src/<package>/<module>.py` and the tests whose name holds the module's name."""
+    """`src/<package>/<module>.py` and the tests whose name holds the module's name; a module
+    not created yet is the glob `src/*/<module>.py`, so a ticket about to add it still shares
+    it with another that names it."""
     parts = module.split("_")
     found = sorted(p.relative_to(root).as_posix() for p in root.glob(f"src/*/{module}.py"))
+    found = found or [f"src/*/{module}.py"]
     for test in sorted((root / "tests").rglob("test_*.py")):
         words = test.stem.split("_")
         if any(words[i : i + len(parts)] == parts for i in range(len(words))):
