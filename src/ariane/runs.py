@@ -4,6 +4,7 @@ another run's own branch bookkeeping from an agent's change to git (C11, ADR 001
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import sys
@@ -17,11 +18,16 @@ from pathlib import Path
 
 from ariane import git, process, restart
 from ariane.stop import GUARD, Stop
+from ariane.tracker import Issue, IssueRefused, Tracker
 
 FOLDER = "runs"
 LOCK = ".lock"  # serializes every read and write of the registry
 ENDED = "ended.jsonl"  # one line per run that ended: number, branch, start and end
 REMOTE = "origin"
+HANDOFF = "next"  # `<repo>.ariane/next`: its lock covers `ariane next --start`'s handoff
+HANDOFF_ENV = "ARIANE_NEXT_LAUNCH"  # set to `<n>` in the `ariane start <n>` it launches
+CLAIM_ENV = "ARIANE_NEXT_CLAIM"  # and to the time of the reservation it registers under
+ISSUE_ENV = "ARIANE_NEXT_ISSUE"  # and to the digest of the issue body `ariane next` analysed
 WATCH_SECONDS = 0.2  # how often a run reads the registry for the runs it can vouch for
 
 
@@ -108,6 +114,66 @@ def _locked(where: Path) -> Iterator[None]:
                 fcntl.flock(file.fileno(), fcntl.LOCK_UN)
 
 
+def handoff_folder(where: Path) -> Path:
+    """`<repo>.ariane/next`, beside the registry `where`."""
+    return where.parent / HANDOFF
+
+
+def locked(where: Path) -> contextlib.AbstractContextManager[None]:
+    """Hold `where/.lock` for the block, as the registry does with its own (`_locked`)."""
+    return _locked(where)
+
+
+def launched(number: int) -> bool:
+    """Whether this process is the `ariane start <number>` that `ariane next --start` launched."""
+    return os.environ.get(HANDOFF_ENV) == str(number)
+
+
+def digest(body: str) -> str:
+    """The digest of an issue body, as `ariane next --start` passes it in `ISSUE_ENV`."""
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def read_issue(tracker: Tracker, number: int) -> Issue:
+    """`tracker.read_issue`; in the ticket `ariane next --start` launched, `IssueRefused`
+    unless the body is the one `ariane next` analysed (`ISSUE_ENV`): an edit made before the
+    relabel is not blessed by it (ADR 0060)."""
+    issue = tracker.read_issue(number)
+    if launched(number) and os.environ.get(ISSUE_ENV) != digest(issue.body):
+        refused = IssueRefused(f"issue #{number} changed since ariane next analysed it")
+        refused.next_action = "read the issue, label it again if it is right, then run ariane next"
+        raise refused
+    return issue
+
+
+def _handoff(where: Path, number: int) -> contextlib.AbstractContextManager[None]:
+    """The handoff lock of `ariane next --start` (ADR 0060): a registration waits while it
+    checks a proposal and launches it, so its check sees every run registered before its own;
+    the ticket it launches (`HANDOFF_ENV`) registers inside it, under its reservation."""
+    if launched(number):
+        return contextlib.nullcontext()
+    return _locked(handoff_folder(where))
+
+
+def _claimed(where: Path, number: int) -> None:
+    """In the ticket `ariane next --start` launched, `Stop` unless its reservation is still
+    there (`CLAIM_ENV`): once a later `ariane next` dropped it (its starter died, and it did not
+    register in time), proposals no longer count it, so it may not register outside the lock."""
+    if not launched(number):
+        return
+    try:
+        left = json.loads((handoff_folder(where) / f"{number}.json").read_text(encoding="utf-8"))
+        held = left["at"] == os.environ.get(CLAIM_ENV)
+    except (OSError, ValueError, TypeError, KeyError):
+        held = False
+    if not held:
+        raise Stop(
+            f"the reservation of ariane next --start for #{number} was dropped before it"
+            " registered as running",
+            f"run ariane next, then ariane next --start to start #{number} again",
+        )
+
+
 @contextlib.contextmanager
 def registered(where: Path, number: int, branch: str, kept: str = "") -> Iterator[Run]:
     """Record ticket `number` as running in `where/<number>` for the time of the block, then
@@ -116,7 +182,8 @@ def registered(where: Path, number: int, branch: str, kept: str = "") -> Iterato
     `kept` is the branch a restart renames the previous `branch` to, registered before it."""
     entry = where / str(number)
     run = Run(number, branch, os.getpid(), now(), kept)
-    with _locked(where):
+    with _handoff(where, number), _locked(where):
+        _claimed(where, number)  # under the registry's lock, which a reconciliation reads under
         other = _read(entry)
         if other is not None and alive(other.pid):
             raise Stop(
@@ -169,6 +236,18 @@ def _live(where: Path) -> dict[int, Run]:
         if run is not None and alive(run.pid):
             found[run.number] = run
     return found
+
+
+def registered_since(where: Path, number: int, since: str) -> bool:
+    """Whether a run of ticket `number` registered at or after `since`: live, or ended."""
+    if not where.is_dir():
+        return False
+    with _locked(where):
+        _reclaim(where)
+        live = _live(where).get(number)
+        ended = _ended(where, since)
+    runs = [live] if live is not None else []
+    return any(run.number == number and run.started >= since for run in [*runs, *ended])
 
 
 def _reclaim(where: Path) -> None:

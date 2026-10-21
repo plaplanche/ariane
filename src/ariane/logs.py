@@ -193,6 +193,17 @@ TECHNICAL_TYPES = _declare(
             "`ariane update` found the base branch merged already: nothing written.",
         ),
         ("journal.warning", "warning", "A warning was written to the ticket journal."),
+        ("next.proposed", "info", "`ariane next` proposed an issue of the queue, or nothing."),
+        (
+            "next.started",
+            "info",
+            "`ariane next --start` relabelled the proposed issue and started it in the background.",
+        ),
+        (
+            "next.reconciled",
+            "warning",
+            "`ariane next` recorded a start whose `--start` ended before recording it.",
+        ),
         ("run.stopped", "error", "A ticket run stopped."),
     ],
 )

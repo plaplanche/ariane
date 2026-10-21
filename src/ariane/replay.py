@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ariane import cache, checks, context, git, process, review, review_history, slots, ticket
-from ariane.config import CheckConfig, matching_paths
+from ariane.config import CheckConfig
 from ariane.delivery import FAILURES
+from ariane.globs import matching_paths
 from ariane.restart import command
 from ariane.review_session import ReviewFailed, ReviewSession
 from ariane.risk import FULL_REPLAY, Tier

@@ -90,6 +90,7 @@ flowchart LR
   verify --> context
   verify --> flow
   verify --> git
+  verify --> globs
   verify --> metrics
   verify --> process
   verify --> redact

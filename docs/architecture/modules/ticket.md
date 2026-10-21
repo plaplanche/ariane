@@ -100,6 +100,8 @@ flowchart LR
   flow --> ticket
   full_replay --> ticket
   metrics --> ticket
+  next_start --> ticket
+  next_ticket --> ticket
   replay --> ticket
   report --> ticket
   resolve --> ticket

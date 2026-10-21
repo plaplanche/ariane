@@ -105,6 +105,7 @@ flowchart LR
   delivery --> process
   flow --> process
   git --> process
+  next_ticket --> process
   opencode --> process
   pi --> process
   process --> logs

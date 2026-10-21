@@ -54,6 +54,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 ```mermaid
 flowchart LR
   flow --> slots
+  next_ticket --> slots
   replay --> slots
   restart --> slots
   shadow --> slots

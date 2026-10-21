@@ -16,6 +16,7 @@ from ariane import (
     flow,
     git,
     logs,
+    next_start,
     process,
     report,
     risk,
@@ -30,6 +31,7 @@ from ariane.github import GitHubTracker
 from ariane.opencode import OpenCodeRuntime
 from ariane.pi import PiRuntime
 from ariane.runtime import AgentRuntime, RoutedRuntime
+from ariane.tracker import TrackerError
 
 EXIT_OK = flow.EXIT_OK
 EXIT_STOPPED = flow.EXIT_STOPPED
@@ -63,6 +65,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "judge":
         logs.configure(level, logs.log_path(root, f"judge-{args.issue}"))
         return _say_outcome(shadow.judge(root, args.issue, args.verdict, args.minutes, args.note))
+    if args.command == "next":
+        logs.configure(level, logs.log_path(root, "next"))
+        return _next(root, args.start)
     if reaping is not None and args.command in ("start", "update", "verify"):
         return _say(
             EXIT_USAGE,
@@ -127,6 +132,16 @@ def _parser() -> argparse.ArgumentParser:
         "status", parents=[common], help="show a ticket's state, read from its folder"
     )
     status.add_argument("issue", type=_issue_number, help="issue number")
+    nxt = sub.add_parser(
+        "next",
+        parents=[common],
+        help="propose the next ticket of the queue that can start next to the running ones",
+    )
+    nxt.add_argument(
+        "--start",
+        action="store_true",
+        help="start the proposal last printed, in the background, if it has not changed",
+    )
     rep = sub.add_parser(
         "report",
         parents=[common],
@@ -264,6 +279,41 @@ def _report_tracker(root: Path) -> GitHubTracker | None:
         api_url=cfg.tracker.api_url,
         ready_label=cfg.tracker.ready_label,
     )
+
+
+def _next(root: Path, starting: bool) -> int:
+    """`ariane next`, or `ariane next --start` (ADR 0060)."""
+    try:
+        cfg = config.load(root)
+    except config.ConfigError as exc:
+        return _say(EXIT_USAGE, f"Refused configuration: {exc}. Next: fix ariane.toml.")
+    token = _take_token(cfg.tracker.token_env)
+    if not token:
+        return _say(
+            EXIT_USAGE,
+            f"Did nothing: environment variable {cfg.tracker.token_env} is empty."
+            f" Next: set it to a token with access to {cfg.tracker.repository}.",
+        )
+    logs.add_secrets([token])
+    tracker = GitHubTracker(
+        repository=cfg.tracker.repository,
+        token=token,
+        api_url=cfg.tracker.api_url,
+        ready_label=cfg.tracker.ready_label,
+    )
+    environ = _environment_with(cfg.tracker.token_env, token)
+    try:
+        if not starting:
+            proposal = next_start.show(root, cfg, tracker)
+            print("\n".join(proposal.lines()))
+            code = EXIT_OK if proposal.number is not None else EXIT_STOPPED
+            return _say(code, proposal.last_line())
+        launch = functools.partial(next_start.spawn, root, environ=environ)
+        proposal, outcome = next_start.start(root, cfg, tracker, launch)
+    except (TrackerError, git.GitError, OSError) as exc:
+        return _say(EXIT_STOPPED, f"Did nothing: {exc}. Next: fix it, then run ariane next.")
+    print("\n".join(proposal.lines()))
+    return _say_outcome(outcome)
 
 
 def _start(

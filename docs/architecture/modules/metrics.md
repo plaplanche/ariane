@@ -81,6 +81,7 @@ flowchart LR
   metrics --> stop
   metrics --> ticket
   metrics --> tracker
+  next_ticket --> metrics
   report --> metrics
   restart --> metrics
   review_session --> metrics

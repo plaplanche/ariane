@@ -17,7 +17,7 @@ The description of `ariane.toml` as a JSON Schema, and the runtimes each role ma
 | `agent_problem(role, runtime, model, tools, api_key_env, max_tokens)` | function | The first runtime rule an `[agents.<role>]` table breaks, as `(key, message)`, or None: `api_key_env` only with `codex` or `pi` and with `max_tokens`; opencode and pi tools from their own list, a valid `model` and `max_tokens` set; a Claude Code or Codex reviewer's tools within `REVIEWER_TOOLS`; no `Skill`. `config.parse` raises it. |
 | `model_problem(runtime, model, api_key_env)` | function | For opencode and pi, `<provider>/<model>`; for pi with `api_key_env`, a provider in `PI_PROVIDER_KEYS`; None when the model is fine. |
 | `REVIEWER_TOOLS` | constant | The tools a Claude Code reviewer may be given: `Read`, `Glob`, `Grep` (ADR 0031). |
-| `SCHEMA` | constant | The JSON Schema of the file, with `checks[].not_run_locally` (ADR 0042), `checks[].paths`, `checks[].always`, `checks[].full_when`, `project.check_all_paths` and `[checks_policy]` (ADR 0056), `[review] sensitive_paths` (ADR 0057), written to `docs/reference/ariane.toml.schema.json` by `scripts/generate_docs.py`. |
+| `SCHEMA` | constant | The JSON Schema of the file, with `checks[].not_run_locally` (ADR 0042), `checks[].paths`, `checks[].always`, `checks[].full_when`, `project.check_all_paths` and `[checks_policy]` (ADR 0056), `[review] sensitive_paths` (ADR 0057), `tracker.next_label` and `[next]` (ADR 0060), written to `docs/reference/ariane.toml.schema.json` by `scripts/generate_docs.py`. |
 
 ## Behaviour and errors
 
@@ -30,6 +30,7 @@ The description of `ariane.toml` as a JSON Schema, and the runtimes each role ma
 - `checks[].paths` is an optional non-empty array of non-empty strings and `checks[].always` the constant `true`; a `not` clause refuses an item with both (ADR 0056). `project.check_all_paths` is an optional non-empty array of non-empty strings.
 - `review` is an optional object whose only key, `sensitive_paths`, is a non-empty array of non-empty strings (ADR 0057).
 - `checks[].full_when` is `"high"` (the default) or `"always"`. `checks_policy` is an optional object with no other key than `max_changed_lines` and `max_modules` (integers above 0, defaults 300 and 3) `module_roots` and `critical_paths` (non-empty arrays of non-empty strings) (ADR 0056), and `full_replay_sample` and `max_escape_rate` (numbers from 0 to 1, defaults 0.2 and 0.02; #186).
+- `tracker.next_label` is an optional non-empty string, default `ariane-next`; that it differs from `ready_label` is checked by `config.parse` only. `next` is an optional object with no other key than `look_ahead` (integer above 0, default 5) and `paths`, an object whose every value is a non-empty array of non-empty strings (ADR 0060).
 - `project.env` is an optional list of non-empty strings, default `[]` (ADR 0024).
 - `project.parallel_checks` is an optional integer above 0, default 1 (ADR 0052).
 - `project.cache` is an optional array of objects (`[[project.cache]]`, ADR 0054): required `path`, `key` (an argument list of files) and `setup` (an argument list), optional `keep` (integer above 0, default 5), no other key; that paths stay inside the tree and do not overlap is checked by `config.parse` only.

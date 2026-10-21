@@ -172,6 +172,7 @@ flowchart LR
   git --> pi
   git --> process
   git --> redact
+  next_ticket --> git
   replay --> git
   resolve --> git
   restart --> git

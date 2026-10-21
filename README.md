@@ -480,6 +480,52 @@ Another run's fetch of a base branch that advanced by a merge does not stop the 
 the base's tracking ref may fast-forward to the commit the remote's base points to, and the
 ticket keeps the base it started from; any other move of that ref stops it (ADR 0055).
 
+### Several tickets: `ariane next` proposes the next one
+
+To run tickets one after another, or side by side, label the issues `ariane-next`
+(`[tracker] next_label`) in the order you want them: that is the queue. A line `Needs #12` (or
+`Needs #12 and #14`) in an issue's body makes it wait until each issue named is closed as
+completed. `ariane next` looks at the first 5 issues of the queue (`[next] look_ahead`), the
+running tickets left out, and says for each whether it can start now and why not:
+
+```text
+Running: #12.
+- #13: waits on #12
+- #14: shares src/app/cli.py with running #12
+- #15: can start
+Next: #15 (no shared file with #12). Start it with ariane next --start.
+```
+
+An issue is expected to touch the file paths written in its body (`src/app/cli.py`, a folder
+`docs/adr/`), and for a module file (`docs/architecture/modules/cli.md`, or just `cli.md`) the
+module's source `src/<package>/cli.py` and its tests by name; `[next.paths]` adds globs per
+label. A running ticket touches what its branch changed plus its own expected files, read from
+its issue even once it left the queue. Two globs share a path when one path can match both
+(`docs/**` and `docs/architecture/**`). An issue already started (it has a branch `ariane/<n>`)
+is never proposed. No free run slot, a last run stopped on its agent's quota, or a running
+ticket whose files cannot be read yet (it is still preparing its branch) proposes nothing and
+says what to do.
+
+`ariane next` starts nothing. `ariane next --start` proposes again and, only if the proposal is
+the one last printed, removes and adds the issue's `ariane` label (as a maintainer would, so the
+issue gate accepts it) and runs `ariane start <n>` in the background, detached from the
+terminal. It waits until that ticket registers as running, so a second `--start`, or an
+`ariane start` by hand, never slips in between; then it prints the ticket number, where its
+journal will be, and its output file (`<repo>.ariane/logs/<n>.out`). A start consumes the
+confirmation: run `ariane next` again before the next `--start`. Every proposal and start, with
+the reasons for the other issues and who confirmed, is appended to `<repo>.ariane/next.md`; a
+start whose record could not be written is recorded by the next `ariane next`
+([ADR 0060](docs/adr/0060-next-ticket-proposal.md)).
+
+```toml
+[tracker]
+next_label = "ariane-next"
+
+[next]
+look_ahead = 5
+paths = { docs = ["docs/**"] }  # an issue labelled `docs` is expected to touch docs/
+```
+
 Only Ariane pushes, with the tracker token sent as an HTTP authorization header for that one push
 (the machine's credential helpers are off). Without a token, or if that push is refused for
 authentication, Ariane pushes once more without the header and journals which way it went.

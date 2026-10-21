@@ -51,7 +51,7 @@ def stub(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Stub, str]]:
             self.end_headers()
             self.wfile.write(data)
 
-        do_GET = do_POST = _reply
+        do_GET = do_POST = do_DELETE = _reply
 
         def log_message(self, format: str, *args: Any) -> None:
             pass

@@ -299,6 +299,12 @@ SCHEMA: dict[str, Any] = {
                         "Label a person with write access puts on an issue to let Ariane run it."
                     ),
                 },
+                "next_label": {
+                    **_STR,
+                    "default": "ariane-next",
+                    "description": "Label of the issues in the queue of `ariane next`, in the"
+                    " order it was added (ADR 0060); differs from ready_label.",
+                },
             },
         },
         "agents": {
@@ -406,6 +412,26 @@ SCHEMA: dict[str, Any] = {
                     "description": "Path globs the owner reviews too: a change touching one is"
                     " pointed out to the reviewer, and its pull request gets the label"
                     " `owner-review` and a line naming the sensitive paths changed.",
+                },
+            },
+        },
+        "next": {
+            "type": "object",
+            "additionalProperties": False,
+            "description": "How `ariane next` reads the queue (ADR 0060).",
+            "properties": {
+                "look_ahead": {
+                    **_COUNT,
+                    "default": 5,
+                    "description": "The first issues of the queue, running ones left out, that"
+                    " it looks at.",
+                },
+                "paths": {
+                    "type": "object",
+                    "additionalProperties": _GLOBS,
+                    "default": {},
+                    "description": "Per issue label, the path globs an issue carrying it is"
+                    " expected to touch, beyond the paths its body names.",
                 },
             },
         },

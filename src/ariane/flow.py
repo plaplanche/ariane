@@ -62,7 +62,7 @@ def start(
     restarting: bool = False,
 ) -> Outcome:
     try:
-        issue = tracker.read_issue(number)
+        issue = runs.read_issue(tracker, number)
     except TrackerError as exc:
         keep_refused(worktree_path(repo_root, number), number, exc)  # the gate's refusal: `spec`
         return Outcome(exc.exit_code, f"Did not start #{number}: {exc}. Next: {exc.next_action}.")

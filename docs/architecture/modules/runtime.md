@@ -89,6 +89,7 @@ flowchart LR
   codex --> runtime
   flow --> runtime
   metrics --> runtime
+  next_ticket --> runtime
   opencode --> runtime
   pi --> runtime
   resolve --> runtime

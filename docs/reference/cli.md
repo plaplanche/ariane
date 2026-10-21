@@ -5,16 +5,19 @@
 ## `ariane`
 
 ```text
-usage: ariane [-h] [--version] {start,update,status,report,verify,judge} ...
+usage: ariane [-h] [--version]
+              {start,update,status,next,report,verify,judge} ...
 
 Turn tickets into reviewed pull requests.
 
 positional arguments:
-  {start,update,status,report,verify,judge}
+  {start,update,status,next,report,verify,judge}
     start               run the ticket of an issue up to its pull request
     update              merge the base branch into a delivered ticket's
                         branch, replay, review, push on go
     status              show a ticket's state, read from its folder
+    next                propose the next ticket of the queue that can start
+                        next to the running ones
     report              show cost, agent time, human time, gates bypassed,
                         shadow results
     verify              check and review a local branch finished by hand, then
@@ -71,6 +74,19 @@ options:
   -h, --help         show this help message and exit
   --log-level LEVEL  technical log level: debug, info, warning or error
                      (default: ARIANE_LOG_LEVEL, else warning)
+```
+
+## `ariane next`
+
+```text
+usage: ariane next [-h] [--log-level LEVEL] [--start]
+
+options:
+  -h, --help         show this help message and exit
+  --log-level LEVEL  technical log level: debug, info, warning or error
+                     (default: ARIANE_LOG_LEVEL, else warning)
+  --start            start the proposal last printed, in the background, if it
+                     has not changed
 ```
 
 ## `ariane report`
