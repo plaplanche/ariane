@@ -137,6 +137,12 @@
           "minLength": 1,
           "default": "ariane",
           "description": "Label a person with write access puts on an issue to let Ariane run it."
+        },
+        "next_label": {
+          "type": "string",
+          "minLength": 1,
+          "default": "ariane-next",
+          "description": "Label of the issues in the queue of `ariane next`, in the order it was added (ADR 0059); differs from ready_label."
         }
       }
     },
@@ -502,6 +508,32 @@
             "minLength": 1
           },
           "description": "Path globs the owner reviews too: a change touching one is pointed out to the reviewer, and its pull request gets the label `owner-review` and a line naming the sensitive paths changed."
+        }
+      }
+    },
+    "next": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How `ariane next` reads the queue (ADR 0059).",
+      "properties": {
+        "look_ahead": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 5,
+          "description": "The first issues of the queue, running ones left out, that it looks at."
+        },
+        "paths": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "default": {},
+          "description": "Per issue label, the path globs an issue carrying it is expected to touch, beyond the paths its body names."
         }
       }
     },

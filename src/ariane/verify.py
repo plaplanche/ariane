@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from ariane import cache, checks, context, git, process, review, slots, stop, ticket
-from ariane.config import CheckConfig, Config, matching_paths
+from ariane.config import CheckConfig, Config
 from ariane.flow import (
     EXIT_INTERRUPTED,
     EXIT_OK,
@@ -19,6 +19,7 @@ from ariane.flow import (
     SETUP_TIMEOUT_S,
     Outcome,
 )
+from ariane.globs import matching_paths
 from ariane.metrics import METRICS, Metrics
 from ariane.redact import redact
 from ariane.replay import (

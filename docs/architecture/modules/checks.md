@@ -105,6 +105,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 ```mermaid
 flowchart LR
   checks --> config
+  checks --> globs
   checks --> process
   checks --> risk
   checks --> stop

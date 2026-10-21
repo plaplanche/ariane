@@ -85,6 +85,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 ```mermaid
 flowchart LR
   flow --> runs
+  next_ticket --> runs
   runs --> git
   runs --> process
   runs --> restart

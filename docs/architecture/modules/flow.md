@@ -144,6 +144,7 @@ flowchart LR
   flow --> ticket
   flow --> tracker
   full_replay -.-> flow
+  next_ticket --> flow
   replay -.-> flow
   shadow --> flow
   update --> flow

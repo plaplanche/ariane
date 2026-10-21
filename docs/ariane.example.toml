@@ -51,6 +51,8 @@ token_env = "GH_TOKEN"
 # Label a person with write access puts on an issue to let Ariane run it (default "ariane").
 # Ariane refuses an issue changed after the label: edit, comment or other label (ADR 0032).
 ready_label = "ariane"
+# Label of the queue `ariane next` reads, in the order it was added (default "ariane-next").
+next_label = "ariane-next"
 
 [agents.implementer]
 # Agent runtime that runs the implementer session.
@@ -170,3 +172,9 @@ map = [
 generated = [
   { name = "references", check = ["python", "scripts/generate_docs.py", "--check"] },
 ]
+
+# Optional: how `ariane next` reads the queue (ADR 0059). It looks at the first `look_ahead`
+# issues (default 5); each label of `paths` adds globs an issue carrying it is expected to touch.
+[next]
+look_ahead = 5
+paths = { docs = ["docs/**"] }

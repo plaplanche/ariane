@@ -12,7 +12,14 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ariane import logs
-from ariane.tracker import Issue, IssueRefused, PullRequest, PullRequestState, TrackerError
+from ariane.tracker import (
+    Issue,
+    IssueRefused,
+    PullRequest,
+    PullRequestState,
+    QueuedIssue,
+    TrackerError,
+)
 
 _TIMEOUT_S = 30
 _PAGE = 100
@@ -117,7 +124,8 @@ class GitHubTracker:
         found: list[dict[str, Any]] = []
         page = 1
         while True:
-            batch = self._request_any("GET", f"{path}?per_page={_PAGE}&page={page}")
+            joint = "&" if "?" in path else "?"
+            batch = self._request_any("GET", f"{path}{joint}per_page={_PAGE}&page={page}")
             if not isinstance(batch, list):
                 raise TrackerError(f"GitHub API GET {path}: unexpected response")
             found += [e for e in batch if isinstance(e, dict)]
@@ -197,6 +205,46 @@ class GitHubTracker:
         self._request_any(
             "POST", f"/repos/{self._repository}/issues/{number}/labels", {"labels": labels}
         )
+
+    def remove_label(self, number: int, label: str) -> None:
+        quoted = urllib.parse.quote(label, safe="")
+        try:
+            self._request_any(
+                "DELETE", f"/repos/{self._repository}/issues/{number}/labels/{quoted}"
+            )
+        except TrackerError as exc:
+            if "HTTP 404" not in str(exc):  # 404: the issue does not carry the label
+                raise
+
+    def queue(self, label: str) -> list[QueuedIssue]:
+        quoted = urllib.parse.quote(label, safe="")
+        listed = self._pages(f"/repos/{self._repository}/issues?state=open&labels={quoted}")
+        found = []
+        try:
+            for data in listed:
+                if "pull_request" in data:
+                    continue
+                number = int(data["number"])
+                times = [
+                    str(e["created_at"])
+                    for e in self._read_events(number)
+                    if e.get("event") == "labeled" and (e.get("label") or {}).get("name") == label
+                ]
+                body, url = str(data.get("body") or ""), str(data.get("html_url") or "")
+                issue = Issue(number, str(data["title"]), body, url)
+                names = [
+                    str(i.get("name")) for i in data.get("labels") or [] if isinstance(i, dict)
+                ]
+                # No event listed yet (they lag): the label is taken as added at the last change.
+                at = max(times, key=_moment) if times else str(data["updated_at"])
+                found.append(QueuedIssue(issue, at, tuple(names)))
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise TrackerError(f"GitHub API: unexpected issues labelled {label}: {exc!r}") from None
+        return sorted(found, key=lambda q: (_moment(q.labelled_at), q.issue.number))
+
+    def closed_as_completed(self, number: int) -> bool:
+        data = self._request("GET", f"/repos/{self._repository}/issues/{number}")
+        return data.get("state") == "closed" and data.get("state_reason") == "completed"
 
     def comment(self, number: int, body: str) -> None:
         # A pull request's conversation comments are its issue's.

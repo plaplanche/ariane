@@ -56,6 +56,7 @@ flowchart LR
   flow --> stop
   full_replay --> stop
   metrics --> stop
+  next_ticket --> stop
   replay --> stop
   resolve --> stop
   restart --> stop

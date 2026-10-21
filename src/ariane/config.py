@@ -5,7 +5,6 @@ from __future__ import annotations
 import ipaddress
 import math
 import os
-import re
 import tomllib
 import urllib.parse
 from collections.abc import Mapping, Sequence
@@ -24,6 +23,7 @@ from ariane.config_schema import (
     agent_problem,
     model_problem,
 )
+from ariane.globs import glob_regex
 from ariane.risk import FULL_WHEN, ChecksPolicy, PolicyError
 from ariane.risk import parse as parse_policy
 
@@ -46,6 +46,7 @@ class TrackerConfig:
     token_env: str
     api_url: str
     ready_label: str = "ariane"
+    next_label: str = "ariane-next"  # the queue of `ariane next` (ADR 0059)
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,14 @@ class AgentConfig:
     api_key_env: str | None = None  # codex, pi: variable holding an API key, else CLI's login
     idle_minutes: float | None = None  # no event for this long stops the session; None: no limit
     small: SmallReview | None = None  # reviewer only: settings for a small change (ADR 0046)
+
+
+@dataclass(frozen=True)
+class NextConfig:
+    """`[next]`: how far `ariane next` looks, and the globs per issue label (ADR 0059)."""
+
+    look_ahead: int = 5
+    paths: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -106,7 +115,7 @@ class DocMapEntry:
 
     def documents_for(self, path: str) -> tuple[str, ...]:
         """The documents covering `path`, `{stem}` expanded; none if the glob does not match."""
-        if not _glob_regex(self.source).fullmatch(path):
+        if not glob_regex(self.source).fullmatch(path):
             return ()
         stem = path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
         return tuple(d.replace("{stem}", stem) for d in self.docs)
@@ -151,31 +160,6 @@ class Documentation:
 NO_DOCUMENTATION = Documentation()
 
 
-def matching_paths(globs: Sequence[str], paths: Sequence[str]) -> list[str]:
-    """The `paths` that match at least one of the `globs`."""
-    regexes = [_glob_regex(g) for g in globs]
-    return [p for p in paths if any(r.fullmatch(p) for r in regexes)]
-
-
-def _glob_regex(glob: str) -> re.Pattern[str]:
-    """`*` and `?` stay within a path segment, `**` crosses segments, `**/` is any folders."""
-    out = []
-    i = 0
-    while i < len(glob):
-        if glob.startswith("**/", i):
-            out.append("(?:.*/)?")
-            i += 3
-            continue
-        if glob.startswith("**", i):
-            out.append(".*")
-            i += 2
-            continue
-        c = glob[i]
-        out.append("[^/]*" if c == "*" else "[^/]" if c == "?" else re.escape(c))
-        i += 1
-    return re.compile("".join(out), re.DOTALL)  # a line break in a file name is matched too
-
-
 DEFAULT_DEFINITION_OF_DONE = (
     DoneItem(text="Every blocking check passes."),
     DoneItem(text="The change is covered by tests that fail without it."),
@@ -199,6 +183,7 @@ class Config:
     check_all_paths: tuple[str, ...] = ()  # globs whose change selects every check
     checks_policy: ChecksPolicy | None = None  # `[checks_policy]`; None: every round is high
     sensitive_paths: tuple[str, ...] = ()  # `[review]`: globs labelled for the owner (ADR 0057)
+    next: NextConfig = NextConfig()  # `[next]`: the queue of `ariane next` (ADR 0059)
 
 
 def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:
@@ -226,14 +211,15 @@ def load(repo_root: Path, environ: Mapping[str, str] | None = None) -> Config:
 
 def parse(data: dict[str, Any]) -> Config:
     tables = {"project", "tracker", "agents", "checks", "definition_of_done", "documentation"}
-    _only(data, "", {*tables, "checks_policy", "review"})
+    _only(data, "", {*tables, "checks_policy", "review", "next"})
     review = _table(data, "review") if "review" in data else {}
     _only(review, "review", {"sensitive_paths"})
     project = _table(data, "project")
     keys = {"base_branch", "setup", "env", "parallel_checks", "cache", "check_all_paths"}
     _only(project, "project", keys)
     tracker = _table(data, "tracker")
-    _only(tracker, "tracker", {"kind", "repository", "token_env", "api_url", "ready_label"})
+    labels = {"ready_label", "next_label"}
+    _only(tracker, "tracker", {"kind", "repository", "token_env", "api_url", *labels})
     agents = _table(data, "agents")
     _only(agents, "agents", {"implementer", "reviewer"})
     implementer = _agent(agents, "implementer")
@@ -269,8 +255,9 @@ def parse(data: dict[str, Any]) -> Config:
         )
 
     ready_label = _str(tracker, "ready_label", "tracker.", "ariane")
-    if not ready_label.strip():
-        raise ConfigError(f"{CONFIG_FILE}: tracker.ready_label: must not be empty")
+    next_label = _str(tracker, "next_label", "tracker.", "ariane-next")
+    if next_label == ready_label:
+        raise ConfigError(f"{CONFIG_FILE}: tracker.next_label: must differ from ready_label")
 
     setup = None
     if "setup" in project:
@@ -287,6 +274,7 @@ def parse(data: dict[str, Any]) -> Config:
             token_env=_str(tracker, "token_env", "tracker."),
             api_url=api_url,
             ready_label=ready_label,
+            next_label=next_label,
         ),
         implementer=implementer,
         reviewer=reviewer,
@@ -299,6 +287,19 @@ def parse(data: dict[str, Any]) -> Config:
         check_all_paths=_globs(project, "project", "check_all_paths"),
         checks_policy=_checks_policy(data),
         sensitive_paths=_globs(review, "review", "sensitive_paths"),
+        next=_next(data),
+    )
+
+
+def _next(data: dict[str, Any]) -> NextConfig:
+    if "next" not in data:
+        return NextConfig()
+    table = _table(data, "next")
+    _only(table, "next", {"look_ahead", "paths"})
+    paths = _table(table, "paths", "next.") if "paths" in table else {}
+    return NextConfig(
+        look_ahead=_count(table, "look_ahead", "next") or NextConfig.look_ahead,
+        paths=tuple((label, _globs(paths, "next.paths", label)) for label in paths),
     )
 
 

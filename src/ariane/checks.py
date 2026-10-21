@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from ariane import process
-from ariane.config import CONFIG_FILE, CheckConfig, matching_paths
+from ariane.config import CONFIG_FILE, CheckConfig
+from ariane.globs import matching_paths
 from ariane.risk import FULL_SUITE_VARIABLE, HIGH, LOW, UNMEASURED, ChecksPolicy, Tier
 from ariane.stop import GUARD, Stop
 from ariane.ticket import fenced

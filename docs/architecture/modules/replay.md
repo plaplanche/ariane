@@ -98,6 +98,7 @@ flowchart LR
   replay --> delivery
   replay -.-> flow
   replay --> git
+  replay --> globs
   replay --> process
   replay --> restart
   replay --> review

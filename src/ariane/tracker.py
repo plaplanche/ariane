@@ -29,6 +29,16 @@ class Issue:
 
 
 @dataclass(frozen=True)
+class QueuedIssue:
+    """An open issue of the queue of `ariane next` (ADR 0059): when the queue label was last
+    added to it (ISO 8601), and every label it carries."""
+
+    issue: Issue
+    labelled_at: str
+    labels: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PullRequest:
     number: int
     url: str
@@ -56,7 +66,20 @@ class Tracker(Protocol):
         ...
 
     def add_labels(self, number: int, labels: list[str]) -> None:
-        """Add `labels` to pull request `number`, creating any the repository lacks."""
+        """Add `labels` to issue or pull request `number`, creating any the repository lacks."""
+        ...
+
+    def remove_label(self, number: int, label: str) -> None:
+        """Remove `label` from issue `number`; a label it does not carry is no error."""
+        ...
+
+    def queue(self, label: str) -> list[QueuedIssue]:
+        """The open issues (never pull requests) carrying `label`, in the order it was added,
+        their bodies read without the issue gate: `ariane next` only reads them (ADR 0059)."""
+        ...
+
+    def closed_as_completed(self, number: int) -> bool:
+        """Whether issue `number` is closed as completed (not open, not closed as not planned)."""
         ...
 
     def comment(self, number: int, body: str) -> None:
@@ -99,6 +122,9 @@ class InMemoryTracker:
     comments: dict[int, list[str]] = field(default_factory=dict)
     refuse_comments: bool = False
     changes_requested_on: dict[int, list[str]] = field(default_factory=dict)  # number: times
+    labelled_at: dict[tuple[int, str], str] = field(default_factory=dict)  # (number, label): time
+    closed: dict[int, str] = field(default_factory=dict)  # number: state reason ("completed")
+    removed_labels: list[tuple[int, str]] = field(default_factory=list)
 
     def add_issue(self, number: int, title: str, body: str) -> Issue:
         issue = Issue(number, title, body, f"memory://issues/{number}")
@@ -126,6 +152,25 @@ class InMemoryTracker:
         if self.refuse_labels:
             raise TrackerError("labels are refused")
         self.labels.setdefault(number, []).extend(labels)
+
+    def remove_label(self, number: int, label: str) -> None:
+        if self.refuse_labels:
+            raise TrackerError("labels are refused")
+        self.removed_labels.append((number, label))
+        self.labels[number] = [name for name in self.labels.get(number, []) if name != label]
+
+    def queue(self, label: str) -> list[QueuedIssue]:
+        if self.unreachable:
+            raise TrackerError("the tracker is unreachable")
+        found = [
+            QueuedIssue(issue, self.labelled_at.get((n, label), ""), tuple(self.labels[n]))
+            for n, issue in self.issues.items()
+            if n not in self.closed and label in self.labels.get(n, [])
+        ]
+        return sorted(found, key=lambda q: (q.labelled_at, q.issue.number))
+
+    def closed_as_completed(self, number: int) -> bool:
+        return self.closed.get(number) == "completed"
 
     def comment(self, number: int, body: str) -> None:
         if self.refuse_comments:

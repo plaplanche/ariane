@@ -11,6 +11,7 @@ type checking only. Each module has a file in
 flowchart TD
   __main__ --> cli
   checks --> config
+  checks --> globs
   checks --> process
   checks --> risk
   checks --> stop
@@ -25,6 +26,7 @@ flowchart TD
   cli --> git
   cli --> github
   cli --> logs
+  cli --> next_ticket
   cli --> opencode
   cli --> pi
   cli --> process
@@ -33,12 +35,14 @@ flowchart TD
   cli --> runtime
   cli --> shadow
   cli --> ticket
+  cli --> tracker
   cli --> update
   cli --> verify
   codex --> process
   codex --> runtime
   config --> cache
   config --> config_schema
+  config --> globs
   config --> risk
   context --> config
   context --> git
@@ -97,6 +101,19 @@ flowchart TD
   metrics --> stop
   metrics --> ticket
   metrics --> tracker
+  next_ticket --> config
+  next_ticket --> flow
+  next_ticket --> git
+  next_ticket --> globs
+  next_ticket --> logs
+  next_ticket --> metrics
+  next_ticket --> process
+  next_ticket --> runs
+  next_ticket --> runtime
+  next_ticket --> slots
+  next_ticket --> stop
+  next_ticket --> ticket
+  next_ticket --> tracker
   opencode --> attempts
   opencode --> process
   opencode --> runtime
@@ -111,6 +128,7 @@ flowchart TD
   replay --> delivery
   replay -.-> flow
   replay --> git
+  replay --> globs
   replay --> process
   replay --> restart
   replay --> review
@@ -204,6 +222,7 @@ flowchart TD
   verify --> context
   verify --> flow
   verify --> git
+  verify --> globs
   verify --> metrics
   verify --> process
   verify --> redact
@@ -451,6 +470,36 @@ sequenceDiagram
   X-->>P: escape and category lines
   P-->>CLI: the report
   CLI-->>U: the table
+```
+
+## `ariane next [--start]`
+
+```mermaid
+sequenceDiagram
+  actor U as Owner
+  participant CLI as cli
+  participant X as next_ticket
+  participant T as tracker (github)
+  participant N as runs
+  participant S as slots
+  participant G as git
+  U->>CLI: ariane next
+  CLI->>X: show
+  X->>T: queue(next_label): open issues in label order
+  X->>N: running tickets; ended.jsonl for the last run
+  X->>G: each running branch's changes since its base
+  X->>S: take and release a slot (is one free?)
+  X->>T: closed_as_completed for each Needs #N
+  X->>X: reasons per issue, first one without: the proposal; append to next.md
+  X-->>CLI: Proposal
+  CLI-->>U: one line per issue, then Next: #N (no shared file with #M)
+  U->>CLI: ariane next --start
+  CLI->>X: start
+  X->>X: propose again; refuse unless the phrase equals the last one in next.md
+  X->>T: remove_label, add_labels (ready label)
+  X->>X: spawn ariane start N detached, output in logs/N.out; append the start to next.md
+  X-->>CLI: Outcome
+  CLI-->>U: started #N, its journal and its output
 ```
 
 ## `ariane judge`

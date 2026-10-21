@@ -95,6 +95,7 @@ flowchart LR
   git --> logs
   github --> logs
   logs --> redact
+  next_ticket --> logs
   process --> logs
   ticket --> logs
   update --> logs
