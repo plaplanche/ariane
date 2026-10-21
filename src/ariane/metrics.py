@@ -64,6 +64,7 @@ class Metrics:
         self.category = ""  # why it did not end delivered green (`stop.CATEGORIES`, ADR 0058)
         self.restarted_from: dict[str, str | float] | None = None  # the run this one started over
         self.updates = 0  # the `ariane update` runs that merged the base branch (ADR 0033)
+        self.recurring_findings = 0  # the last review's recurring blocking findings (ADR 0059)
         self._marked: dict[str, Any] | None = None  # the session `finish` marked `pushed`
         self.replays: list[dict[str, Any]] = []  # per replayed round: its selection, its time
         self.full_replay: dict[str, Any] | None = None  # None: no full replay was considered
@@ -90,6 +91,7 @@ class Metrics:
                 "first_pass_verdict": str(data.get("first_pass_verdict", NOT_REVIEWED)),
                 "restarted_from": data.get("restarted_from"),
                 "updates": int(data.get("updates", 0)),
+                "recurring_findings": int(data.get("recurring_findings", 0)),
                 "replays": list(data.get("replays", [])),
                 "full_replay": data.get("full_replay"),
             }
@@ -144,6 +146,10 @@ class Metrics:
             reviewers[-1] |= {"verdict": "go" if go else "no-go", "findings": findings, "at": at}
         if self.first_pass_verdict == NOT_REVIEWED:
             self.first_pass_verdict = "go" if go else "no-go"
+
+    def recurring(self, count: int) -> None:
+        """The recurring blocking findings of the last review round (ADR 0059)."""
+        self.recurring_findings = count
 
     def fix_round(self, round_: int) -> None:
         self.rounds = round_
@@ -246,6 +252,7 @@ class Metrics:
             "first_pass_verdict": self.first_pass_verdict,
             "outcome": self.outcome,
             "updates": self.updates,
+            "recurring_findings": self.recurring_findings,
             "replays": self.replays,
         }
         if self.category:

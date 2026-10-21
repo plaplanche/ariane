@@ -17,27 +17,27 @@ The adversarial review (C10) and the definition-of-done answers (C26): the revie
 | `residual_items(text)` | function | The text of each item of an ADR that starts with `RESIDUAL_MARKER`, continuation lines joined. |
 | `Finding` | dataclass | A finding: `severity`, `file`, `line`, `title`, `detail`. |
 | `DoneResult` | dataclass | The answer to one definition-of-done sentence: `item`, `met`, `evidence`. |
-| `Review` | dataclass | The reviewer's answer: `verdict`, `findings`, `definition_of_done`, `learnings`. |
-| `Settled` | dataclass | A review after Ariane's rules: `verdict`, `findings`, `items`; `go` says whether it passes. |
-| `validate(data)` | function | The problems of an answer against the schema; empty when valid. |
+| `Review` | dataclass | The reviewer's answer: `verdict`, `findings`, `definition_of_done`, `learnings`, `earlier` (one `review_history.EarlierAnswer` per earlier blocking finding, ADR 0059). |
+| `Settled` | dataclass | A review after Ariane's rules: `verdict`, `findings`, `items`, `circled` (its recurring findings, `review_history.Circled`, or `None`, ADR 0059); `go` says whether it passes. |
+| `validate(data, earlier=())` | function | The problems of an answer against the schema, with its `earlier` array checked against the `earlier` identifiers (`review_history.validate`); empty when valid. |
 | `parse(data)` | function | Turns a valid answer into a `Review`. |
 | `settle(review, items, results)` | function | Applies Ariane's rules to a review and the check results. |
 | `not_green(settled, results)` | function | The stop category of a delivery (C19, ADR 0058): `checks` when blocking checks are still red, else `review` unless the review is `go`; empty when green. Used by `flow`, `shadow`. |
-| `prompt(issue, diff, results, check_configs, items, ...)` | function | The reviewer's instructions with the untrusted data; with `changed`, a block naming the changed files whose tests no replay ran (`not_run_locally`, ADR 0042); with `name_status`, the full list of changed files; with `small_lines`, the narrower review of a small change (ADR 0046); with `residuals` and `sensitive`, the accepted residuals of the base commit and the changed sensitive paths (ADR 0057). |
+| `prompt(issue, diff, results, check_configs, items, ...)` | function | The reviewer's instructions with the untrusted data; with `changed`, a block naming the changed files whose tests no replay ran (`not_run_locally`, ADR 0042); with `name_status`, the full list of changed files; with `small_lines`, the narrower review of a small change (ADR 0046); with `residuals` and `sensitive`, the accepted residuals of the base commit and the changed sensitive paths (ADR 0057); with `earlier`, the earlier rounds' blocking findings to answer (ADR 0059). |
 | `small_note(lines)` | function | The sentence a small change's prompt adds (ADR 0046). |
 | `truncated_paths(diff, limit=MAX_DIFF_CHARS)` | function | The files whose hunks are missing or incomplete when the diff is cut at `limit` characters; empty when it is not cut. |
 | `findings_table(settled)` | function | The findings as a Markdown table. |
 | `record(settled, commit, model, round_)` | function | The text of `work/<n>/review-<round>.md`. |
-| `fix_feedback(settled, failed)` | function | The findings and failed blocking checks given to a fix session. |
 | `pull_request_section(settled, review_url, review_path)` | function | The review section of the pull request body. |
 
 ## Behaviour and errors
 
-- `SCHEMA`, `validate`, `parse`: the answer's description (also passed to the runtime as `--json-schema`; the Claude Code runtime drops its `$schema`), its validator and its typed form.
+- `SCHEMA`, `validate`, `parse`: the answer's description (also passed to the runtime as `--json-schema`; the Claude Code runtime drops its `$schema`), its validator and its typed form. The optional `earlier` array (`review_history.SCHEMA`) answers each earlier round's blocking finding `fixed`, `still open` or `replaced`; it is required from round 1, one entry per listed finding, and an entry missing, unknown or with an unknown answer makes the answer invalid; a `still open` entry names in `current` the blocking findings that report it now, so it cannot pass as `go` (ADR 0059).
+- History (ADR 0059): from round 1 on, `prompt` adds `review_history.prompt_block(earlier)` before the project instructions: the earlier blocking findings with their identifiers in an escaped `kind="earlier-findings"` block, and how to answer them.
 - `prompt`: the review instructions, the issue, the diff and the base branch's `CLAUDE.md` under "Project instructions (from the base branch)" (all untrusted data), the checks' summary and the sentence items; when checks were skipped (no changed file matches their `paths`, ADR 0056), a line after the checks table names them as not run; given the round's `tier`, a line "Risk tier of this round: <tier>: <reasons>." follows (ADR 0056).
 - No silent truncation (ADR 0031): the prompt always holds `name_status`, the untruncated `git diff --name-status` of the whole range, in its own untrusted block (`kind="changed-files"`), before the diff. A diff over `MAX_DIFF_CHARS` is cut there and ends with "(diff truncated at 200,000 characters)"; the prompt then names the files whose hunks are missing or incomplete (`truncated_paths`, read from the `rename to`, `copy to`, `+++ b/` or `--- a/` line of each file's part, else from its `diff --git` header) in a `kind="paths"` block and tells the reviewer to read them in the tree.
 - `settle`: `go` with a blocking finding is `no-go`; a sentence item missing or `met: false` is a blocking finding; check items come from the replay's results.
-- `record`: the text of `work/<n>/review-<round>.md`. `fix_feedback`: the findings (and failed blocking checks) given to a fix session. `pull_request_section`: the verdict, the item results and the findings table (3,000 characters at most, else a summary and a link).
+- `record`: the text of `work/<n>/review-<round>.md`, ending, from round 1, with the answer for each earlier finding and the recurring chains (`review_history.record_lines`). What a fix session is told is `review_history.feedback`. `pull_request_section`: the verdict, the item results and the findings table (3,000 characters at most, else a summary and a link).
 
 When the issue has an `Out of scope` section (`ticket.section`), the prompt shows it again as its own escaped untrusted block (`kind="out-of-scope"`) and the rules say that a finding about that work is never blocking: minor, with "out of scope" in its title, or left out. This is a framed opinion; `settle` is unchanged.
 
@@ -64,7 +64,7 @@ flowchart TD
   E --> F{go with a blocking finding, or an item not met?}
   F -- yes --> G[Settled no-go]
   F -- no --> H[Settled as answered]
-  G --> I[record, fix_feedback, pull_request_section, findings_table]
+  G --> I[record, pull_request_section, findings_table]
   H --> I
 ```
 
@@ -122,10 +122,12 @@ flowchart LR
   review --> config
   review --> context
   review --> git
+  review --> review_history
   review --> risk
   review --> stop
   review --> ticket
   review --> tracker
+  review_history -.-> review
   review_session --> review
   shadow --> review
   update --> review
@@ -139,4 +141,4 @@ See the generated [JSON Schema of the answer](../../reference/review-answer.sche
 
 ## Serves
 
-C10, C19, C26; ADR 0015, ADR 0016, ADR 0025, ADR 0027, ADR 0056, ADR 0058. See [the component view](../3-components.md).
+C10, C19, C26; ADR 0015, ADR 0016, ADR 0025, ADR 0027, ADR 0056, ADR 0058, ADR 0059. See [the component view](../3-components.md).

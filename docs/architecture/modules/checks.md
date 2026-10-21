@@ -116,6 +116,7 @@ flowchart LR
   replay --> checks
   resolve --> checks
   review --> checks
+  review_history -.-> checks
   review_session --> checks
   shadow --> checks
   update --> checks

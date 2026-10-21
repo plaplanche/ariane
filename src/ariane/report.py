@@ -161,6 +161,9 @@ def _read(path: Path) -> dict[str, Any]:
             raise TypeError(f"{key} is not a string")
     if "category" in data and not isinstance(data["category"], str):
         raise TypeError("category is not a string")
+    recurring = data.get("recurring_findings", 0)
+    if isinstance(recurring, bool) or not isinstance(recurring, int):
+        raise TypeError("recurring_findings is not an integer")
     for session in data["sessions"]:
         if not isinstance(session, dict):
             raise TypeError("a session is not an object")
@@ -226,6 +229,11 @@ def _row(data: dict[str, Any]) -> str:
         f"#{data['ticket']}{branch} {data['mode']} {data['outcome']}: cost {cost_text},"
         f" agent time {_time(_duration(data))}, {data['rounds']} rounds,"
         f" first pass {data['first_pass_verdict']}"
+        + (
+            f", recurring_findings {data['recurring_findings']}"
+            if "recurring_findings" in data
+            else ""
+        )
     )
 
 

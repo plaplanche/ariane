@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ariane import checks, git, process, review, ticket
+from ariane import checks, git, process, review, review_history, ticket
 from ariane.redact import redact
 from ariane.risk import Tier
 from ariane.stop import GUARD, INFRA
@@ -68,6 +68,10 @@ class Delivery:
             "Delivering",
             f"Pushing {self.branch} and opening the pull request.",
         )
+        if self.draft and (circled := self._circled) is not None:
+            files = ", ".join(f"`{f}`" for f in circled.files)
+            chain = "\n".join(f"- {c}" for c in circled.chain)
+            self.folder.log("ticket.review.circled", f"Review circled on {files}", chain)
         if self.draft:
             self.folder.set_status(
                 "needs a human",
@@ -191,6 +195,11 @@ class Delivery:
             )
 
     @property
+    def _circled(self) -> review_history.Circled | None:
+        """The last review's recurring findings, if any (ADR 0059)."""
+        return self.settled.circled if self.settled is not None else None
+
+    @property
     def draft(self) -> bool:
         """A draft pull request carries a review that is still `no-go` after the fix rounds."""
         return self.settled is not None and not self.settled.go
@@ -258,6 +267,8 @@ class Delivery:
                 f" characters: the hunks of {len(self.truncated)} file(s) were missing and the"
                 " reviewer was told to read them in the tree (listed in the journal).\n"
             )
+        if self.draft and self._circled is not None:
+            section = review_history.circled_note(self._circled) + section
         if self.draft:
             section = (
                 "**Needs a human**: the review is still no-go after the fix rounds. Finish by"

@@ -184,13 +184,17 @@ example before `ariane verify --issue N`) ([ADR 0032](docs/adr/0032-issue-gate.m
 (`<repo>.ariane/worktrees/12`), runs the setup command, one implementer session and every check. If a blocking check fails
 before any review, it stops there and pushes nothing. Otherwise a read-only reviewer on a
 different model reviews the delivered commit; on a no-go, up to two fix rounds follow, each with a fresh
-implementer session, a replay and a review (a fix round that changes nothing ends the rounds, with a draft pull request). Then it pushes the branch, opens the pull request (a
+implementer session, a replay and a review (a fix round that changes nothing ends the rounds, with a draft pull request).
+A fix session and the next reviewer see the earlier rounds' blocking findings; the reviewer says, for
+each, whether it is fixed, still open or replaced by a finding its fix caused. When the last review still
+has such a recurring finding, the draft pull request says that the rounds circled on the same design
+question and lists the chain of findings, and `ariane report` shows `recurring_findings`. Then it pushes the branch, opens the pull request (a
 draft that needs a human if the review is still no-go) and publishes each check's result as a
 commit status (`ariane/<check name>`) on its head commit. The ticket's records are in `work/12/`; the
 last of them (the status `delivered` with the pull request, and the journal's push and pull request
 entries) is committed on the local branch only, after the push, so the ticket's working tree is
 clean and the next push of the branch carries it. They include `work/12/metrics.json`: cost, tokens, durations,
-fix rounds, first-pass verdict and outcome of the ticket, rewritten after each step.
+fix rounds, first-pass verdict, recurring findings and outcome of the ticket, rewritten after each step.
 Each agent session stops at its limits, set per role in `[agents.<role>]`: its cost
 (`max_budget_usd`), its tokens (`max_tokens`), its total time (`timeout_minutes`) and its idle time
 (`idle_minutes`, 10 by default): a session that sends no event for that long is stopped as a

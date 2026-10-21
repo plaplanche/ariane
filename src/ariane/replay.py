@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ariane import cache, checks, context, git, process, review, slots, ticket
+from ariane import cache, checks, context, git, process, review, review_history, slots, ticket
 from ariane.config import CheckConfig
 from ariane.delivery import FAILURES
 from ariane.globs import matching_paths
@@ -480,6 +480,7 @@ def review_round(
             tier=run.tier,
             residuals=run.residuals,
             sensitive=sensitive(run, checked),
+            earlier=review_history.earlier(run.reviews),
         )
         try:
             answer = sessions.run(
@@ -501,6 +502,9 @@ def review_round(
                 category=exc.category,
             ) from None
         settled = review.settle(answer, run.config.definition_of_done, results)
+        settled = review_history.settled_round(run.reviews, round_, settled)
+        run.reviews.append(review_history.Round(round_, settled))
+        run.metrics.recurring(settled.circled.count if settled.circled else 0)
         run.metrics.reviewed(settled.go, len(settled.findings))
         model = sessions.reviewer.model
         run.folder.write(ticket.review_file(round_), review.record(settled, checked, model, round_))

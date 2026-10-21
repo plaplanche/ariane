@@ -36,7 +36,7 @@
 - Environments (C21, ADR 0029, ADR 0024): every environment is the allow list of `context.untrusted_environment` with the `[project] env` entries; the implementer and fix sessions add the implementer runtime's login variables, the reviewer those of the reviewer's model, and a small reviewer round those of the small model (`review_session.agent_logins`, ADR 0046); the setup and the checks get none. Every one of them, and the commits' hooks, gets the run's slot as `ARIANE_SLOT` (`slot=`, ADR 0050), except the setup and check of a parallel replay worker, which get that worker's slot (`setup(cwd, command, guard, env)`, ADR 0052). When a declared name looks like a secret, the journal says so once, after `ticket.started`, as `ticket.env.declared_secret` (names only).
 - Documentation upkeep (C25): after the agent's work is committed, mapped documents of changed files that the ticket did not change are journaled (`ticket.docs.not_updated`) and given to the reviewer; the `generated` documentation commands run in the clean replay as blocking checks `docs: <name>`, in `checks.md` and the statuses.
 - Each reviewer session journals `ticket.review.stopped` ("Reviewer session <n> stopped: <reason>") with its cost and tokens, in the implementer's format, including an invalid answer's.
-- Fix rounds (C10, ADR 0027): after a `no-go`, or blocking checks failing after a fix round, a fresh implementer session gets the findings (an escaped untrusted block) and fixes them in the ticket's working tree; Ariane commits, replays the checks in a clean tree and reviews again (`review-1.md`, `review-2.md`). A fix round that leaves the head where it was (`ticket.fix.unchanged`, the session's summary in the journal) skips the replay and the review and ends the rounds: the same draft pull request, with the stop line "fix round N changed nothing". After the second fix round a review still `no-go` is delivered as a draft pull request with status `needs a human`. The journal records each round's sessions (`ticket.fix.round`, `ticket.session.*`, `ticket.review.*`) and verdict.
+- Fix rounds (C10, ADR 0027): after a `no-go`, or blocking checks failing after a fix round, a fresh implementer session gets the findings (an escaped untrusted block: `review_history.feedback` over `reviews`, the reviewed rounds of the run, so the earlier rounds' blocking findings come before the last review's, ADR 0059) and fixes them in the ticket's working tree; Ariane commits, replays the checks in a clean tree and reviews again (`review-1.md`, `review-2.md`). A fix round that leaves the head where it was (`ticket.fix.unchanged`, the session's summary in the journal) skips the replay and the review and ends the rounds: the same draft pull request, with the stop line "fix round N changed nothing". After the second fix round a review still `no-go` is delivered as a draft pull request with status `needs a human`. The journal records each round's sessions (`ticket.fix.round`, `ticket.session.*`, `ticket.review.*`) and verdict.
 - The journal names the runtime of the session's role (`runtime.for_role`).
 - Update sessions (ADR 0033): `updating`, empty for `start`, is the base an `ariane update` run merges; `_implement(task=…)` is the update's session ("Update session started"), and every implementer prompt of that run says it is an update (`context.implementer_prompt(update=…, task=…)`). `_fix` and `_commit_agent_work` serve the update's fix round too ([update](update.md), [resolve](resolve.md)).
 - An implementer session that did not finish stops the ticket with "the implementer session stopped: <reason>" and its work kept on the branch; a `timeout` adds its summary in parentheses (`SessionResult.stop_text`), which says whether the total or the idle limit was reached and, for the idle limit, the last event (C5, ADR 0045).
@@ -136,6 +136,7 @@ flowchart LR
   flow --> replay
   flow --> restart
   flow --> review
+  flow --> review_history
   flow --> review_session
   flow --> risk
   flow --> runs
@@ -156,4 +157,4 @@ flowchart LR
 
 ## Serves
 
-C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026, ADR 0027, ADR 0034, ADR 0036, ADR 0047, ADR 0053, ADR 0054, ADR 0058, C19, C23. See [the component view](../3-components.md).
+C1, C5, C9, C10, C11, C25; ADR 0006, ADR 0017, ADR 0018, ADR 0019, ADR 0016, ADR 0025, ADR 0026, ADR 0027, ADR 0034, ADR 0036, ADR 0047, ADR 0053, ADR 0054, ADR 0058, ADR 0059, C19, C23. See [the component view](../3-components.md).

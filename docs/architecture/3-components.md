@@ -52,6 +52,7 @@ flowchart TD
   delivery --> process
   delivery --> redact
   delivery --> review
+  delivery --> review_history
   delivery --> risk
   delivery --> stop
   delivery --> ticket
@@ -69,6 +70,7 @@ flowchart TD
   flow --> replay
   flow --> restart
   flow --> review
+  flow --> review_history
   flow --> review_session
   flow --> risk
   flow --> runs
@@ -139,6 +141,7 @@ flowchart TD
   replay --> process
   replay --> restart
   replay --> review
+  replay --> review_history
   replay --> review_session
   replay --> risk
   replay --> slots
@@ -166,17 +169,22 @@ flowchart TD
   review --> config
   review --> context
   review --> git
+  review --> review_history
   review --> risk
   review --> stop
   review --> ticket
   review --> tracker
   review_escapes --> stop
   review_escapes --> tracker
+  review_history -.-> checks
+  review_history --> context
+  review_history -.-> review
   review_session --> checks
   review_session --> config
   review_session --> git
   review_session --> metrics
   review_session --> review
+  review_session --> review_history
   review_session --> risk
   review_session --> runtime
   review_session --> stop
@@ -218,6 +226,7 @@ flowchart TD
   update --> resolve
   update --> restart
   update --> review
+  update --> review_history
   update --> runs
   update --> runtime
   update --> slots
@@ -304,12 +313,12 @@ sequenceDiagram
   S-->>P: review-0.md; go continues
   P->>G: verify git, the tree and the remote did not change
   loop at most two fix rounds, while the review is no-go
-    F->>R: run a fresh implementer session with the findings
+    F->>R: run a fresh implementer session with the earlier rounds' blocking findings and the last review's (ADR 0059)
     F->>M: write metrics.json
     F->>G: guard checks, commit
-    F->>P: clean replay, checks, review (review-1.md, review-2.md)
+    F->>P: clean replay, checks, review (review-1.md, review-2.md); the reviewer answers each earlier finding
   end
-  F->>D: deliver
+  F->>D: deliver (a draft whose last review has recurring findings says the rounds circled)
   D->>G: one push
   D->>T: open the pull request (a draft, needs a human, if still no-go)
   D->>T: publish statuses

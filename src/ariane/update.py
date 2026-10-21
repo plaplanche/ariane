@@ -27,6 +27,7 @@ from ariane.flow import (
 from ariane.metrics import METRICS, keep_refused
 from ariane.resolve import Unresolved
 from ariane.restart import lock_path, locked
+from ariane.review_history import feedback
 from ariane.runtime import AgentRuntime
 from ariane.slots import held as held_slot
 from ariane.stop import CHECKS, GUARD, REVIEW, Stop, category_of, describe
@@ -432,7 +433,7 @@ class _UpdateRun(_TicketRun):
                 result = resolve.session(self, task, guard, None)
                 message = f"#{self.number}: fix after merging {self.config.base_branch}"
                 self._commit_agent_work(base, result, message)
-            elif not self._fix(rounds, base, guard, refs, review.fix_feedback(settled, failed)):
+            elif not self._fix(rounds, base, guard, refs, feedback(self.reviews, settled, failed)):
                 raise Stop(
                     f"fix round {rounds} of the update changed nothing",
                     f"read work/{self.number}/journal.md in {self.worktree}; {self._kept()}",
