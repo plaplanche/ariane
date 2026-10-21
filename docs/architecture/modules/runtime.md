@@ -91,6 +91,7 @@ flowchart LR
   metrics --> runtime
   opencode --> runtime
   pi --> runtime
+  resolve --> runtime
   review_session --> runtime
   runtime --> attempts
   runtime --> config

@@ -310,7 +310,7 @@ def summary_table(results: Sequence[CheckResult]) -> str:
     return "\n".join(lines)
 
 
-def _shown_output(r: CheckResult) -> str:
+def shown_output(r: CheckResult) -> str:
     """A passing check keeps its last lines only; a failing check keeps everything."""
     lines = r.output.splitlines()
     if not r.passed or len(lines) <= PASSING_OUTPUT_LINES:
@@ -369,7 +369,7 @@ def report(
             f"- Result: {verdict} ({r.detail}, {r.duration_s:.1f} s)",
             *_not_run_lines(r, changed),
             "",
-            fenced(_shown_output(r)) + "\n",
+            fenced(shown_output(r)) + "\n",
         ]
     parts.append(summary_line(results))
     return "\n".join(parts) + "\n"

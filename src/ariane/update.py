@@ -10,13 +10,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ariane import checks, context, git, logs, process, replay, review, runs, ticket
+from ariane import checks, context, git, logs, process, replay, resolve, review, runs, ticket
 from ariane.config import Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.flow import (
     EXIT_INTERRUPTED,
     EXIT_OK,
     EXIT_STOPPED,
+    MAX_FIX_ROUNDS,
     REMOTE,
     Outcome,
     _TicketRun,
@@ -24,18 +25,15 @@ from ariane.flow import (
     worktree_path,
 )
 from ariane.metrics import METRICS, keep_refused
+from ariane.resolve import Unresolved
 from ariane.restart import lock_path, locked
 from ariane.runtime import AgentRuntime
 from ariane.slots import held as held_slot
-from ariane.stop import CHECKS, GUARD, MERGE, REVIEW, Stop, category_of, describe
+from ariane.stop import CHECKS, GUARD, REVIEW, Stop, category_of, describe
 from ariane.tracker import Tracker, TrackerError
 
 NEEDS_A_HUMAN = "needs a human"
 _REVIEW = re.compile(r"review-(\d+)\.md")
-
-
-class Unresolved(Stop):
-    """A failed merge that `git merge --abort` did not undo: the state is left for a human."""
 
 
 class Refused(Exception):
@@ -99,6 +97,8 @@ def update(
                 issue, config, tracker, runtime, environ, worktree, branch, heads.url, slot
             )
             run.heads = heads
+            run.floor = heads.local
+            run.updating = f"{REMOTE}/{config.base_branch}"
             # The worktree holds the delivered ticket, not the base: residuals from the base only.
             run.residuals = review.accepted_residuals(repo_root, heads.base)
             run.base_instructions = instructions
@@ -236,6 +236,7 @@ class _UpdateRun(_TicketRun):
 
     restartable = False
     heads: Heads
+    floor: str  # where the guard checks the history from: the start head, then the merge
 
     @property
     def incoming_from(self) -> str:
@@ -244,25 +245,28 @@ class _UpdateRun(_TicketRun):
         return self.heads.local
 
     merge_began = False
+    resolving = False  # an update session took the conflicts: the folder was written already
 
     def execute_update(self) -> Outcome:
         try:
             self.processes_before = set(process.descendants(exited=True))
             self.guard_since = runs.now()
             guard = self.state().snapshot
-            merged = self._merge(guard)
-            return self._replay_review_push(merged, guard)
+            merged, resolved = self._merge(guard)
+            return self._replay_review_push(merged, guard, resolved)
         except Unresolved as exc:
             return self._left_unresolved(exc)
         except (Stop, KeyboardInterrupt, *FAILURES) as exc:
-            if self.merge_began and self._merge_pending():  # Ctrl-C or an error mid-merge
+            if self.merge_began and self._merge_pending():  # Ctrl-C, a stop or an error mid-merge
                 base = f"{REMOTE}/{self.config.base_branch}"
+                why = exc.reason if isinstance(exc, Stop) else "it was interrupted"
                 return self._left_unresolved(
                     Unresolved(
-                        f"merging {base} was interrupted and is neither finished nor undone",
+                        f"merging {base} is neither finished nor undone: {why}",
                         f"finish or undo the merge by hand in {self.worktree} (`git status`);"
-                        " Ariane wrote and pushed nothing",
-                        str(exc),
+                        " Ariane committed and pushed nothing",
+                        exc.detail if isinstance(exc, Stop) else str(exc),
+                        category=category_of(exc),
                     )
                 )
             return self._stopped(exc)
@@ -293,11 +297,17 @@ class _UpdateRun(_TicketRun):
         return super()._stopped(exc)
 
     def _left_unresolved(self, exc: Unresolved) -> Outcome:
-        """`git merge --abort` did not restore the tree: nothing is written or committed (a
-        record commit would reset the unresolved merge and hide it), the state is kept."""
+        """A merge neither finished nor undone: nothing is committed (a record commit would reset
+        the unresolved merge and hide it), the state is kept. Once an update session ran, its
+        journal entries and the stop (status, metrics) are written in the tree, uncommitted."""
         logs.emit("run.stopped", f"ticket #{self.number}: {exc.reason}")
         process.kill_survivors(self.processes_before)
         process.take_killed()
+        if self.resolving:  # the session's journal entries are in the tree: the stop goes too
+            with contextlib.suppress(*FAILURES):
+                self.folder.log("ticket.stopped", f"Stopped: {exc.reason}", exc.detail)
+                self.metrics.finish(NEEDS_A_HUMAN, category_of(exc), self.pushed)
+                self.folder.set_status(NEEDS_A_HUMAN, exc.reason, exc.next_action)
         return Outcome(
             EXIT_STOPPED,
             f"Stopped ticket #{self.number} ({NEEDS_A_HUMAN}): {exc.reason}. Next:"
@@ -313,20 +323,23 @@ class _UpdateRun(_TicketRun):
         refs_before: dict[str, str],
         expected_head: str | None = None,
     ) -> None:
-        """The guard of `flow`, the history kept from the head the update started at."""
-        super().verify(after, self.heads.local, guard, refs_before, expected_head)
+        """The guard of `flow`, the history kept from `floor`: the head the update started at,
+        then the merge commit once it exists."""
+        super().verify(after, self.floor, guard, refs_before, expected_head)
 
-    def _merge(self, guard: dict[str, str]) -> str:
+    def _merge(self, guard: dict[str, str]) -> tuple[str, bool]:
         """`git merge --no-ff --no-edit <remote>/<base>` with the untrusted environment; no hook
         runs (every git command Ariane runs has `core.hooksPath` set to the null device); a
-        conflict is aborted and stops the ticket, naming the paths."""
+        conflict goes to one implementer session (`_resolve`), any other failure is aborted and
+        stops the ticket. The merge commit, and whether a session resolved it."""
         base = f"{REMOTE}/{self.config.base_branch}"
         env = {**self.untrusted_env, **git._identity(os.environ), "LC_ALL": "C"}
         self.merge_began = True
         self.metrics.updates += 1
         done = git.git(["merge", "--no-ff", "--no-edit", base], self.worktree, env=env, check=False)
-        if not done.ok:
-            conflicts = self._abort(base, done.output, env)  # before any record is written
+        conflicts = [] if done.ok else resolve.unmerged(self.worktree)
+        if not done.ok and not conflicts:
+            self._abort(base, done.output, env)  # before any record is written
         self.folder.log(
             "ticket.update.started",
             "Update started",
@@ -334,17 +347,11 @@ class _UpdateRun(_TicketRun):
             f" `{self.heads.local}`, `{self.branch}` on {REMOTE} at `{self.heads.remote}`), in"
             f" `{self.worktree}`, slot {self.slot} (`{context.SLOT_VARIABLE}`).",
         )
-        if not done.ok:
+        if conflicts:
             self.verify("the merge", "", guard, self.heads.refs, expected_head=self.heads.local)
-            if conflicts:
-                raise Stop(
-                    f"merging {base} conflicts in {', '.join(conflicts)}",
-                    f"merge {base} into {self.branch} by hand in {self.worktree}, then run"
-                    f" `ariane verify {self.branch}` and push it",
-                    "\n".join(f"- `{p}`" for p in conflicts),
-                    status=NEEDS_A_HUMAN,
-                    category=MERGE,
-                )
+            resolve.resolve_conflicts(self, base, conflicts, guard, env)
+        elif not done.ok:
+            self.verify("the merge", "", guard, self.heads.refs, expected_head=self.heads.local)
             raise Stop(
                 f"git merge of {base} failed",
                 "read the error, then retry",
@@ -361,15 +368,14 @@ class _UpdateRun(_TicketRun):
                 status=NEEDS_A_HUMAN,
                 category=GUARD,
             )
+        self.floor = merged
         self.metrics.step("base merged")
         self.folder.log("ticket.update.merged", "Base branch merged", f"Merge commit `{merged}`.")
-        return merged
+        return merged, bool(conflicts)
 
-    def _abort(self, base: str, output: str, env: dict[str, str]) -> list[str]:
-        """The conflicting paths of a failed merge, read before `git merge --abort`; raises
-        `Unresolved` unless the abort restored the head, the tree and the index."""
-        listing = git.out(["diff", "--name-only", "--diff-filter=U"], self.worktree)
-        conflicts = [p for p in listing.splitlines() if p]
+    def _abort(self, base: str, output: str, env: dict[str, str]) -> None:
+        """`git merge --abort` of a merge that failed without conflicts; raises `Unresolved`
+        unless the abort restored the head, the tree and the index."""
         aborted = git.git(["merge", "--abort"], self.worktree, env=env, check=False)
         pending = git.git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], self.worktree, check=False)
         left = git.status(self.worktree)
@@ -379,16 +385,19 @@ class _UpdateRun(_TicketRun):
             and not left
             and git.head(self.worktree) == self.heads.local
         ):
-            return conflicts
-        named = f" (conflicts in {', '.join(conflicts)})" if conflicts else ""
+            return
         raise Unresolved(
-            f"merging {base} failed{named} and `git merge --abort` did not restore {self.branch}",
+            f"merging {base} failed and `git merge --abort` did not restore {self.branch}",
             f"finish or undo the merge by hand in {self.worktree} (`git status`); Ariane wrote"
             " and pushed nothing",
             ticket.fenced(output + aborted.output + left),
         )
 
-    def _replay_review_push(self, merged: str, guard: dict[str, str]) -> Outcome:
+    def _replay_review_push(self, merged: str, guard: dict[str, str], resolved: bool) -> Outcome:
+        """Replay and review the merge commit. Red blocking checks after a clean merge go to one
+        update session; after a session, red checks or a `no-go` go to a fix round as in `start`
+        (C10), the update session counting as the first of the `MAX_FIX_ROUNDS`. A clean merge's
+        `no-go`, or red or `no-go` with the rounds spent, stops `needs a human`, nothing pushed."""
         base, refs = self.heads.base, self.heads.refs
         self.changed = [
             p
@@ -396,36 +405,85 @@ class _UpdateRun(_TicketRun):
             if p and not p.startswith(ticket.WORK_DIR + "/")
         ]
         self._flag_untouched_docs(self.changed)
-        self.folder.set_status("updating", f"checks replayed on merge commit {merged}", "wait")
-        results = replay.replay(self, merged, base, guard, refs)
-        self.folder.write(ticket.CHECKS, checks.report(results, merged, self.changed))
-        self.folder.log(
-            "ticket.checks.replayed",
-            "Checks replayed by Ariane",
-            checks.summary_table(results) + "\n\n" + checks.summary_line(results),
-        )
-        self.metrics.step("checks replayed")
-        keep = f"the merge is kept on the local branch {self.branch}; Ariane pushed nothing"
-        if failed := checks.blocking_failures(results):
-            raise Stop(
+        rounds, checked, k = int(resolved), merged, -1  # the update session is round 1
+        while True:
+            self.folder.set_status("updating", f"checks replayed on commit {checked}", "wait")
+            results = replay.replay(self, checked, base, guard, refs)
+            report = checks.report(results, checked, self.changed, self.tier)
+            self.folder.write(ticket.CHECKS, report)
+            self.folder.log(
+                "ticket.checks.replayed",
+                "Checks replayed by Ariane",
+                checks.summary_table(results) + "\n\n" + checks.summary_line(results),
+            )
+            self.metrics.step("checks replayed")
+            failed = checks.blocking_failures(results)
+            settled = None
+            if not failed:
+                k = next_review(self.folder.names())
+                settled = replay.review_round(self, checked, base, guard, refs, results, k)
+                if settled.go:
+                    return self._push(merged, checked, k, results, guard)
+            if rounds == MAX_FIX_ROUNDS or (settled is not None and not rounds):
+                raise self._still(failed, settled, k)
+            rounds += 1
+            if rounds == 1:
+                task = resolve.checks_task(f"{REMOTE}/{self.config.base_branch}", failed)
+                result = resolve.session(self, task, guard, None)
+                message = f"#{self.number}: fix after merging {self.config.base_branch}"
+                self._commit_agent_work(base, result, message)
+            elif not self._fix(rounds, base, guard, refs, review.fix_feedback(settled, failed)):
+                raise Stop(
+                    f"fix round {rounds} of the update changed nothing",
+                    f"read work/{self.number}/journal.md in {self.worktree}; {self._kept()}",
+                    status=NEEDS_A_HUMAN,
+                    category=CHECKS if failed else REVIEW,
+                )
+            if git.head(self.worktree) == checked:
+                names = ", ".join(r.name for r in failed)
+                raise Stop(
+                    f"blocking checks failed after the merge: {names}, and the update session"
+                    " changed nothing",
+                    f"read work/{self.number}/checks.md in {self.worktree}; {self._kept()}",
+                    status=NEEDS_A_HUMAN,
+                    category=CHECKS,
+                )
+            checked = git.head(self.worktree)
+
+    def _kept(self) -> str:
+        return f"the merge is kept on the local branch {self.branch}; Ariane pushed nothing"
+
+    def _still(
+        self, failed: list[checks.CheckResult], settled: review.Settled | None, k: int
+    ) -> Stop:
+        """The stop of an update still red or `no-go`: `needs a human`, nothing pushed."""
+        if failed or settled is None:
+            return Stop(
                 f"blocking checks failed after the merge: {', '.join(r.name for r in failed)}",
-                f"read work/{self.number}/checks.md in {self.worktree}; {keep}",
+                f"read work/{self.number}/checks.md in {self.worktree}; {self._kept()}",
                 status=NEEDS_A_HUMAN,
                 category=CHECKS,
             )
-        k = next_review(self.folder.names())
-        settled = replay.review_round(self, merged, base, guard, refs, results, k)
-        if not settled.go:
-            raise Stop(
-                f"the review of the update is {settled.verdict}",
-                f"read work/{self.number}/{ticket.review_file(k)} in {self.worktree}; {keep}",
-                status=NEEDS_A_HUMAN,
-                category=REVIEW,
-            )
+        return Stop(
+            f"the review of the update is {settled.verdict}",
+            f"read work/{self.number}/{ticket.review_file(k)} in {self.worktree}; {self._kept()}",
+            status=NEEDS_A_HUMAN,
+            category=REVIEW,
+        )
+
+    def _push(
+        self,
+        merged: str,
+        checked: str,
+        k: int,
+        results: list[checks.CheckResult],
+        guard: dict[str, str],
+    ) -> Outcome:
+        """Go with green blocking checks: the push of #145, of the commit `checked`."""
         self.metrics.delivered_red(0)
         self.metrics.finish("delivered")
         try:
-            pushed = self._delivery(merged, k, guard).push_update(results, self.heads.remote)
+            pushed = self._delivery(checked, k, guard).push_update(results, self.heads.remote)
         except PullRequestRefused as exc:
             raise Stop(
                 exc.reason, exc.next_action, status=NEEDS_A_HUMAN, category=exc.category

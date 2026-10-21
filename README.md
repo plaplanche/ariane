@@ -303,10 +303,14 @@ It refuses, before changing anything, a ticket whose pull request is merged, clo
 whose working tree is missing, dirty or on another branch, whose `work/<n>/` holds a folder or a
 link (the update would remove it), whose base branch changed `work/<n>/`, or whose local branch has commits the
 remote branch lacks beyond Ariane's own records in `work/<n>/`. When the base branch is merged
-already it says so and writes nothing. A conflict (the merge is aborted, the paths named; if the abort fails, the
-merge is left as is for you and nothing is written), a red
-blocking check or a `no-go` stops with status `needs a human` and pushes nothing; the review's record
-continues the ticket's numbering (`review-<k>.md`) and `metrics.json` counts the `updates`.
+already it says so and writes nothing. A merge conflict, or a blocking check the merge broke, goes
+to one implementer session whose task it is (the conflicting paths, or the failing checks' output);
+Ariane commits the merge (both parents kept) or the fix as `#<n>: fix after merging <base>`, then
+replays and reviews; a red check or a `no-go` then gets one fix round, as in `ariane start`. A
+session that leaves a path unmerged or a conflict marker line (in a file or staged) stops the
+update with the merge left in progress for you, nothing committed. Still red or `no-go` after that round, or a `no-go` on a
+clean merge, stops with status `needs a human` and pushes nothing; the review's record continues
+the ticket's numbering (`review-<k>.md`) and `metrics.json` counts the `updates`.
 
 PowerShell:
 

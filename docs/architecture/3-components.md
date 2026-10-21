@@ -126,6 +126,12 @@ flowchart TD
   report --> shadow
   report --> ticket
   report --> tracker
+  resolve --> checks
+  resolve --> git
+  resolve --> runtime
+  resolve --> stop
+  resolve --> ticket
+  resolve -.-> update
   restart --> git
   restart --> metrics
   restart --> slots
@@ -183,6 +189,7 @@ flowchart TD
   update --> metrics
   update --> process
   update --> replay
+  update --> resolve
   update --> restart
   update --> review
   update --> runs
@@ -342,6 +349,7 @@ sequenceDiagram
   actor U as User
   participant CLI as cli
   participant D as update
+  participant R as resolve
   participant T as tracker (github)
   participant G as git
   participant P as replay
@@ -359,14 +367,29 @@ sequenceDiagram
     D->>M: read metrics.json back
     D->>G: git merge --no-ff --no-edit origin/base (untrusted environment)
     alt conflict
-      D->>G: the conflicting paths, git merge --abort, check it restored the head and the tree
-      D-->>CLI: Outcome: needs a human, the conflicting paths (not restored: nothing written)
-    else merged
-      D->>P: replay the checks at the merge commit
-      D->>P: review round k (review-k.md, k one more than the highest)
-      D->>L: push_update: records committed, remote branch unmoved, fast-forward push, statuses
-      D-->>CLI: Outcome
+      D->>R: resolve_conflicts: one implementer session, its task the conflicting paths
+      R->>G: no unmerged path, no conflict marker line in a file or staged blob, git commit --no-edit (two parents)
+      Note over D,R: left unresolved: needs a human, merge state kept, nothing committed
+    else failed without a conflict
+      D->>G: git merge --abort, check it restored the head and the tree
+      D-->>CLI: Outcome: needs a human
     end
+    loop at most the update session and one fix round (C10)
+      D->>P: replay the checks at the head
+      opt red after a clean merge, no session yet
+        D->>R: session: the failing checks' output; commit "fix after merging base"
+      end
+      D->>P: review round k when green (review-k.md, k one more than the highest)
+      opt red or no-go after a session
+        D->>D: fix round 2 (findings and failing checks as data)
+      end
+    end
+    alt go, green
+      D->>L: push_update: records committed, remote branch unmoved, fast-forward push, statuses
+    else still red or no-go
+      D->>K: record the stop: needs a human, nothing pushed
+    end
+    D-->>CLI: Outcome
   end
   CLI-->>U: one line
 ```

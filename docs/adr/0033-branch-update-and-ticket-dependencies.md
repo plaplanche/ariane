@@ -91,3 +91,42 @@ until an implementer session takes them (#146).
 - **Stops.** A stop after the merge keeps the merge commit on the local branch, records the stop
   in `work/<n>/` and pushes nothing; a later `ariane update` then refuses the diverged branch until
   it is pushed by hand after `ariane verify` (or #146 takes it).
+
+## Amendment (2026-10-21): the update's implementer session (#146)
+A conflict, or blocking checks red after a clean merge, now go to one implementer session instead
+of stopping, as §1 decided.
+- **Conflict.** The merge is left in progress (no abort). The session's task, in an untrusted block
+  `kind="update"`: "Merge `<remote>/<base>` into this branch: resolve the conflicts below, keeping
+  both sides' intent; mark each path resolved with `git add`; do not commit", then the conflicting
+  paths. The `git add` clause is added to the decided text so that the check below has a meaning:
+  a path not marked resolved is still unmerged. The guard expects the head where the update
+  started (the session must not commit). Then Ariane refuses to continue when `git ls-files -u`
+  lists a path, or a conflicting path's file or staged blob holds a line starting with
+  `<<<<<<< ` or `>>>>>>> ` (the conflict-marker check; `=======` alone is too common in text to
+  count; the staged blob is what the commit takes, so a working copy hidden from `git add`, such
+  as one marked `--skip-worktree`, cannot pass it), or the session
+  staged entries under `work/`; and stops as a guard violation when the merge is no longer in
+  progress at the fetched base. Otherwise it stages everything outside `work/`, runs the
+  unmerged and marker checks again on the index, and runs `git commit --no-edit`: the merge commit keeps both parents, which are checked as for a clean
+  merge.
+- **A conflict left unresolved** stops `needs a human` with the merge state kept and nothing
+  committed or pushed, as an abort that did not restore the tree: a record commit's `git reset`
+  would drop it. Since the session already journaled in the working tree, the stop, the status and
+  `metrics.json` (category `merge`) are written there too, uncommitted; before any session, a merge
+  left half done still writes nothing.
+- **Red check after a clean merge.** The session's task is "These checks fail after merging
+  `<remote>/<base>`: fix them", then each failing blocking check's name, result and output as
+  `checks.md` shows it (a failing check's output whole). Ariane commits its work as
+  `#<n>: fix after merging <base>`; a session that leaves the head where it was stops
+  `needs a human`.
+- **Rounds.** The update session counts as the first of C10's two fix rounds: after it, red
+  blocking checks or a `no-go` go to one fix round exactly as in `start` (fix round 2, findings and
+  failing checks as data), then the replay and the review once more. An update therefore runs at
+  most two implementer sessions. Go and green: pushed as in #145. Otherwise `needs a human`,
+  nothing pushed, the merge kept on the local branch. A clean merge with green checks still gets
+  one review and no fix round: a `no-go` there stops, as #145 built it.
+- **Context.** Every implementer prompt of an update says it is an update of a delivered ticket
+  merging `<remote>/<base>`, not a fresh ticket; the recorded context says so too and points to the
+  journal entry `ticket.update.implementer`, which holds the task given.
+- **Placement.** The session, the resolution checks and the merge commit are the module
+  `ariane.resolve`, apart from `ariane.update`, which keeps the merge, the rounds and the push.

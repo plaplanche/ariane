@@ -105,6 +105,7 @@ def _interrupted_before_start(number: int) -> Outcome:
 class _TicketRun:
     remote = REMOTE
     restartable = True  # a stop names `--restart` unless the branch was pushed (ADR 0047)
+    updating = ""  # the base an update merges: the prompts say so (ADR 0033)
 
     def __init__(
         self,
@@ -258,17 +259,17 @@ class _TicketRun:
             )
         return None
 
-    def _implement(self, fix_round: int = 0, findings: str = "") -> SessionResult:
-        """The implementer session, or the fresh session of fix round `fix_round` (C10)."""
+    def _implement(self, fix_round: int = 0, findings: str = "", task: str = "") -> SessionResult:
+        """The implementer session, a fix round's (C10), or an update's for `task` (ADR 0033)."""
         agent = self.config.implementer
         done = self.config.definition_of_done
         docs = self.config.documentation
         args = (self.issue, self.branch, self.config.checks, done, docs)
-        prompt = context.implementer_prompt(*args, fix_round=fix_round, findings=findings)
-        recorded = context.implementer_prompt(
-            *args, fix_round=fix_round, findings=findings, recorded=True, read_at=ticket.now()
-        )
-        name = f"Fix session {fix_round}" if fix_round else "Implementer session"
+        made = functools.partial(context.implementer_prompt, *args, update=self.updating, task=task)
+        prompt = made(fix_round=fix_round, findings=findings)
+        recorded = made(fix_round=fix_round, findings=findings, recorded=True, read_at=ticket.now())
+        name = f"Fix session {fix_round}" if fix_round else "Update session" if task else ""
+        name = name or "Implementer session"
         tokens_cap = "none" if agent.max_tokens is None else f"{agent.max_tokens} tokens"
         env = self.agent_envs["implementer"]
         session = session_for(agent, "implementer", cwd=self.worktree, prompt=prompt, env=env)

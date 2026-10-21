@@ -216,29 +216,6 @@ def test_c11_update_refuses_extra_commits_that_change_then_revert_code(
     assert head(project) == local and pushes == [] and runtime.sessions == []
 
 
-def test_c11_update_conflict_is_aborted_and_needs_a_human(
-    project: Project, tracker: InMemoryTracker, pushes: list[str]
-) -> None:
-    runtime = delivered(project, tracker, pushes)
-    move_base(project, {"app.txt": "version 3\n"})
-    local = head(project)
-    outcome = run_update(project, tracker, runtime)
-    assert outcome.exit_code == 1, outcome.line
-    assert "conflicts in app.txt" in outcome.line and "ariane verify ariane/7" in outcome.line
-    tree = worktree(project)
-    assert not git.git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], tree, check=False).ok
-    assert (tree / "app.txt").read_text(encoding="utf-8").startswith("version 2")
-    assert git.is_ancestor(tree, local, head(project))
-    assert git.changed_between(tree, local, head(project)) == [
-        "work/7/journal.md",
-        "work/7/metrics.json",
-        "work/7/status.md",
-    ]
-    status = (tree / "work/7/status.md").read_text(encoding="utf-8")
-    assert "Last action: needs a human" in status
-    assert pushes == [] and runtime.sessions == [] and not git.status(tree)
-
-
 def test_c11_update_no_go_review_pushes_nothing_and_keeps_the_merge(
     project: Project, tracker: InMemoryTracker, pushes: list[str]
 ) -> None:
@@ -334,42 +311,40 @@ def test_c11_update_remote_branch_moved_after_the_last_guard_pushes_nothing(
 
 
 @pytest.mark.parametrize("abort", ["fails", "leaves a file"])
-def test_c11_update_conflict_not_undone_by_the_abort_keeps_it_and_writes_nothing(
+def test_c11_update_failed_merge_not_undone_by_the_abort_keeps_it_and_writes_nothing(
     project: Project,
     tracker: InMemoryTracker,
     pushes: list[str],
     monkeypatch: pytest.MonkeyPatch,
     abort: str,
 ) -> None:
+    """A merge that fails without conflicts is aborted; an abort that does not restore the tree
+    leaves it for a human, nothing written (a conflict goes to the update session, #146)."""
     runtime = delivered(project, tracker, pushes)
-    move_base(project, {"app.txt": "version 3\n"})
+    move_base(project, {"other.txt": "x\n"})
     tree = worktree(project)
     local = head(project)
     records = {n: (tree / "work/7" / n).read_text("utf-8") for n in ("journal.md", "status.md")}
     real = git.git
 
     def aborting(args: list[str], cwd: Path, **kwargs: Any) -> process.Completed:
+        if args[:2] == ["merge", "--no-ff"]:
+            return process.Completed(("git", *args), 128, "", "fatal: merge failed", False, 0.0)
         if args != ["merge", "--abort"]:
             return real(args, cwd, **kwargs)
         if abort == "fails":
             return process.Completed(("git", *args), 128, "", "error: abort refused", False, 0.0)
-        done = real(args, cwd, **kwargs)
         (cwd / "left.txt").write_text("left by a hook\n", encoding="utf-8")
-        return done
+        return process.Completed(("git", *args), 0, "", "", False, 0.0)
 
     monkeypatch.setattr(git, "git", aborting)
     outcome = run_update(project, tracker, runtime)
     assert outcome.exit_code == 1, outcome.line
     assert "`git merge --abort` did not restore ariane/7" in outcome.line
-    assert "needs a human" in outcome.line and "conflicts in app.txt" in outcome.line
+    assert "needs a human" in outcome.line
     assert head(project) == local and pushes == [] and runtime.sessions == []
     assert {n: (tree / "work/7" / n).read_text("utf-8") for n in records} == records
-    if abort == "fails":  # the unresolved merge is kept, not reset by a record commit
-        assert git.git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], tree, check=False).ok
-        assert "<<<<<<<" in (tree / "app.txt").read_text(encoding="utf-8")
-        assert "app.txt" in git.out(["diff", "--name-only", "--diff-filter=U"], tree)
-    else:
-        assert (tree / "left.txt").is_file()
+    assert (tree / "left.txt").is_file() == (abort == "leaves a file")
 
 
 def test_c11_update_refused_delivery_is_recorded_as_a_stop(
@@ -465,7 +440,7 @@ def test_c11_update_up_to_date_is_decided_before_any_fetch(
     assert metadata()[1:] == before[1:]
 
 
-@pytest.mark.parametrize("how", ["ctrl-c after a conflicting merge", "the abort raises"])
+@pytest.mark.parametrize("how", ["ctrl-c after a conflicting merge", "the session raises"])
 def test_c11_update_a_merge_left_half_done_writes_no_record(
     project: Project,
     tracker: InMemoryTracker,
@@ -473,9 +448,15 @@ def test_c11_update_a_merge_left_half_done_writes_no_record(
     monkeypatch: pytest.MonkeyPatch,
     how: str,
 ) -> None:
-    """Ctrl-C or an error once git wrote the merge state: nothing is written or committed (a
-    record commit's reset would drop the unresolved merge), the merge state is kept."""
-    runtime = delivered(project, tracker, pushes)
+    """Ctrl-C or an error once git wrote the merge state: nothing is committed (a record
+    commit's reset would drop the unresolved merge), the merge state is kept; before any update
+    session, nothing is written either."""
+    delivered(project, tracker, pushes)
+
+    def raising(session: Session) -> None:
+        raise OSError("the session could not start")
+
+    runtime = FakeRuntime(action=raising)
     move_base(project, {"app.txt": "version 3\n"})
     tree = worktree(project)
     local = head(project)
@@ -483,8 +464,6 @@ def test_c11_update_a_merge_left_half_done_writes_no_record(
     real = git.git
 
     def interrupting(args: list[str], cwd: Path, **kwargs: Any) -> process.Completed:
-        if how == "the abort raises" and args == ["merge", "--abort"]:
-            raise OSError("the abort could not start")
         done = real(args, cwd, **kwargs)
         if how.startswith("ctrl-c") and args[:2] == ["merge", "--no-ff"]:
             raise KeyboardInterrupt
@@ -494,8 +473,13 @@ def test_c11_update_a_merge_left_half_done_writes_no_record(
     outcome = run_update(project, tracker, runtime)
     assert outcome.exit_code == 1, outcome.line
     assert "needs a human" in outcome.line and "neither finished nor undone" in outcome.line
-    assert head(project) == local and pushes == [] and runtime.sessions == []
-    assert {n: (tree / "work/7" / n).read_text("utf-8") for n in records} == records
+    assert head(project) == local and pushes == []
+    now = {n: (tree / "work/7" / n).read_text("utf-8") for n in records}
+    if how.startswith("ctrl-c"):
+        assert now == records and runtime.sessions == []
+    else:  # the session's entries and the stop are in the tree, uncommitted
+        assert "Update session's task" in now["journal.md"] and "Stopped" in now["journal.md"]
+        assert "Last action: needs a human" in now["status.md"]
     monkeypatch.setattr(git, "git", real)
     assert git.git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], tree, check=False).ok
     assert "app.txt" in git.out(["diff", "--name-only", "--diff-filter=U"], tree)
