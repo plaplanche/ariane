@@ -17,7 +17,7 @@ from ariane.delivery import FAILURES
 from ariane.restart import command
 from ariane.review_session import ReviewFailed, ReviewSession
 from ariane.risk import FULL_REPLAY, Tier
-from ariane.stop import Stop
+from ariane.stop import GUARD, Stop
 
 if TYPE_CHECKING:
     from ariane.flow import _TicketRun
@@ -74,6 +74,7 @@ def replay_each(
             f"a changed file's name holds a line break: {checks.CHANGED_FILES} cannot list it",
             "rename it on the branch, then retry",
             "\n".join(f"- {path!r}" for path in broken),
+            category=GUARD,
         )
     chosen = (
         all_checks
@@ -257,12 +258,15 @@ def replay(
                 error.next_action,
                 error.detail,
                 status=error.status,
+                category=error.category,
             )
         return cache.lines(used)
 
     def verify_tree(tree: Path) -> None:
         if git.detached_head(tree) != checked:
-            raise Stop("the checks moved the replay working tree's head", "inspect it")
+            raise Stop(
+                "the checks moved the replay working tree's head", "inspect it", category=GUARD
+            )
         # The remote is listed after each check: a later check could undo what one pushed.
         run.verify(after, start_commit, guard, refs_before, expected_head=head)
 
@@ -393,12 +397,15 @@ def set_up_tree(
 
     def validate() -> None:
         if head and git.detached_head(tree) != head:
-            raise Stop("a cache setup moved the replay working tree's head", "inspect it")
+            raise Stop(
+                "a cache setup moved the replay working tree's head", "inspect it", category=GUARD
+            )
         if changed := tracked_changes(tree):
             raise Stop(
                 "a cache setup changed files that git tracks",
                 "inspect the replay working tree",
                 "\n".join(f"- `{path}`" for path in changed),
+                category=GUARD,
             )
         leftovers = git.untracked(tree)
         if leftovers:
@@ -485,9 +492,15 @@ def review_round(
                 name_status,
             )
         except ReviewFailed as exc:
-            raise Stop(exc.reason, exc.next_action, exc.detail, status="needs a human") from None
+            raise Stop(
+                exc.reason,
+                exc.next_action,
+                exc.detail,
+                status="needs a human",
+                category=exc.category,
+            ) from None
         settled = review.settle(answer, run.config.definition_of_done, results)
-        run.metrics.reviewed(settled.go)
+        run.metrics.reviewed(settled.go, len(settled.findings))
         model = sessions.reviewer.model
         run.folder.write(ticket.review_file(round_), review.record(settled, checked, model, round_))
         verdict = f"Review {round_}: {settled.verdict}"
@@ -529,12 +542,15 @@ def record_truncation(folder: ticket.TicketFolder, diff: str) -> list[str]:
 def _verify_replay(replay: Path, checked: str, tree_before: str) -> None:
     """The reviewer reads only: the replay tree has the same head and no edited file."""
     if git.detached_head(replay) != checked:
-        raise Stop("the reviewer moved the replay working tree's head", "inspect it")
+        raise Stop(
+            "the reviewer moved the replay working tree's head", "inspect it", category=GUARD
+        )
     if git.status(replay) != tree_before:
         raise Stop(
             "the reviewer changed files in the working tree",
             "inspect the review session; Ariane pushed nothing",
             status="needs a human",
+            category=GUARD,
         )
 
 

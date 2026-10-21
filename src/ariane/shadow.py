@@ -131,7 +131,7 @@ class ShadowRun(_TicketRun):
         draft = settled is not None and not settled.go
         outcome = "needs a human" if draft else "delivered"
         verdict = settled.verdict if settled is not None else "none"
-        self.metrics.finish(outcome)
+        self.metrics.finish(outcome, review.not_green(settled, results))
         self.folder.log(
             "ticket.shadow.done",
             "Shadow ticket done",

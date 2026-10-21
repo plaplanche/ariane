@@ -72,6 +72,10 @@ Lot 1 ran three times on A0, A1 and A3 to measure variance; lot 2 ran once on ea
 
 Each is an Ariane issue.
 
+## Measures Ariane now records
+
+The handovers and red CIs above were counted by hand. `ariane report` now measures two of them itself (C10, C19, ADR 0058): the review escapes, a `go` followed on the same pull request by a red CI on the reviewed head (once CI results are recorded), a human "changes requested" review or a close without merge, with the escape rate per implementer model, reviewer model and reviewer runtime (shown from 5 tickets, side by side when two pairs have data); and the stopped tickets per category (`spec`, `guard`, `budget`, `runtime`, `checks`, `review`, `merge`, `ci`, `infra`). A later run of the benchmark can read the reviewer comparison of A1 and A2 from there.
+
 ## Next
 
 Fix the defects that cost the most time (CI feedback, isolated and parallel replay, review sized to the ticket, scope-aware review), run lot 2 again on Ariane alone to measure them, then a lot run by two people in parallel on the same repository, where Ariane is expected to pay off.

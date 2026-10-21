@@ -110,16 +110,19 @@ class GitHubTracker:
                 self._sleep(delay)
 
     def _read_events(self, number: int) -> list[dict[str, Any]]:
-        path = f"/repos/{self._repository}/issues/{number}/events"
-        events: list[dict[str, Any]] = []
+        return self._pages(f"/repos/{self._repository}/issues/{number}/events")
+
+    def _pages(self, path: str) -> list[dict[str, Any]]:
+        """Every object of the listing at `path`, page after page."""
+        found: list[dict[str, Any]] = []
         page = 1
         while True:
             batch = self._request_any("GET", f"{path}?per_page={_PAGE}&page={page}")
             if not isinstance(batch, list):
                 raise TrackerError(f"GitHub API GET {path}: unexpected response")
-            events += [e for e in batch if isinstance(e, dict)]
+            found += [e for e in batch if isinstance(e, dict)]
             if len(batch) < _PAGE:
-                return events
+                return found
             page += 1
 
     def _judge(self, number: int, data: dict[str, Any], label: str, events: list[Any]) -> None:
@@ -232,9 +235,20 @@ class GitHubTracker:
                 opened=str(data["created_at"]),
                 ended=str(merged or data.get("closed_at") or ""),
                 merged=bool(merged),
+                number=int(data.get("number") or 0),
             )
-        except (KeyError, TypeError, AttributeError) as exc:
+        except (KeyError, TypeError, AttributeError, ValueError) as exc:
             raise TrackerError(f"GitHub API: unexpected pull request: {exc!r}") from None
+
+    def changes_requested_at(self, number: int) -> list[str]:
+        reviews = self._pages(f"/repos/{self._repository}/pulls/{number}/reviews")
+        return [
+            str(r.get("submitted_at") or "")  # ISO 8601 UTC: ordered as text
+            for r in reviews
+            if r.get("state") == "CHANGES_REQUESTED"
+            and isinstance(r.get("user"), dict)
+            and r["user"].get("type") == "User"  # a bot account's type is "Bot"
+        ]
 
     def _request(self, method: str, path: str, payload: Any = None) -> dict[str, Any]:
         result = self._request_any(method, path, payload)

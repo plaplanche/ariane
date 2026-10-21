@@ -13,13 +13,13 @@ from ariane import checks, context, git, logs, process, replay, review, review_s
 from ariane.config import CheckConfig, Config
 from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.full_replay import after_delivery
-from ariane.metrics import METRICS, Metrics
+from ariane.metrics import METRICS, Metrics, keep_refused, stopped_metrics_path
 from ariane.redact import redact
 from ariane.restart import Restarted, kept_name, lock_path, locked, prepare, with_restart
 from ariane.risk import Tier
 from ariane.runtime import AgentRuntime, SessionResult, StopReason, for_role, session_for
 from ariane.slots import held as held_slot
-from ariane.stop import Stop, describe
+from ariane.stop import CHECKS, GUARD, SPEC, Stop, category_of, describe
 from ariane.tracker import Issue, Tracker, TrackerError
 
 REMOTE = "origin"
@@ -46,11 +46,6 @@ def worktree_path(repo_root: Path, number: int) -> Path:
     return repo_root.parent / f"{repo_root.name}.ariane" / "worktrees" / str(number)
 
 
-def stopped_metrics_path(worktree: Path, number: int) -> Path:
-    """`<repo>.ariane/stopped/<n>/metrics.json`: a stop before the ticket folder exists."""
-    return worktree.parent.parent / "stopped" / str(number) / METRICS
-
-
 def branch_name(number: int) -> str:
     return f"ariane/{number}"
 
@@ -68,8 +63,10 @@ def start(
     try:
         issue = tracker.read_issue(number)
     except TrackerError as exc:
+        keep_refused(worktree_path(repo_root, number), number, exc)  # the gate's refusal: `spec`
         return Outcome(exc.exit_code, f"Did not start #{number}: {exc}. Next: {exc.next_action}.")
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
+        keep_refused(worktree_path(repo_root, number), number, exc)  # an interrupt: `infra`
         return _interrupted_before_start(number)
     branch = branch_name(number)
     worktree = worktree_path(repo_root, number)
@@ -88,6 +85,7 @@ def start(
             run.restarted = restarted
             run.witnessed = witnessed
         except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
+            keep_refused(worktree, number, exc)  # lock, slot, registry or preparation: `infra`
             reason, next_action = describe(exc)
             left = worktree.exists() or git.local_branch_exists(repo_root, branch)
             if left and not isinstance(exc, Stop):  # a preparation interrupted after creating them
@@ -133,7 +131,7 @@ class _TicketRun:
         self.base_instructions = ""
         self.residuals = review.residuals_in(worktree)  # the tree is the base commit (ADR 0057)
         self.restarted: Restarted | None = None
-        self.pushed = False  # the branch is on the remote: it is never restarted (ADR 0047)
+        self.pushed = False  # this run pushed the branch: it is never restarted (ADR 0047)
         self.not_updated: list[str] = []
         self.changed: list[str] = []
         self.truncated: list[str] = []  # the files whose hunks the last reviewed diff lacked
@@ -225,12 +223,7 @@ class _TicketRun:
         if not killed:
             return None
         self.metrics.surviving_processes(len(killed))
-        listing = "\n".join(f"- {name} (pid {pid})" for pid, name in sorted(killed.items()))
-        return Stop(
-            f"{after} left {len(killed)} process(es) running after it ended; Ariane killed them",
-            "find what started them in the background; Ariane pushed nothing",
-            listing,
-        )
+        return runs.survivors_stop(after, killed)
 
     def setup(
         self, cwd: Path, command: tuple[str, ...] | None, guard: dict[str, str], env: _Env = None
@@ -325,12 +318,13 @@ class _TicketRun:
                 if expected_head is not None and now.head != expected_head:
                     raise Stop(f"{after} moved the ticket branch", keep)
                 stopped = self._unchanged(after, guard, now.snapshot)
-            if stopped is None:
-                stopped = self._remote_stop(after, refs_before)
+            if stopped is None and (changed := self._remote_changes(refs_before)):
+                stopped = runs.remote_stop(after, changed, QUIET)
             if stopped is not None:
                 raise stopped
-        except Stop:
+        except Stop as exc:
             self.metrics.guard_violation()
+            exc.category = GUARD  # every stop of the post-session check (ADR 0058)
             raise
         logs.emit("guard.verified", f"after {after}: branch, history, git and remote unchanged")
         self.folder.log(
@@ -338,10 +332,6 @@ class _TicketRun:
             f"Verified after {after}",
             "Same branch and history, git unchanged, remote unchanged.",
         )
-
-    def _remote_stop(self, after: str, refs_before: dict[str, str]) -> Stop | None:
-        changed = self._remote_changes(refs_before)
-        return runs.remote_stop(after, changed, QUIET) if changed else None
 
     def _unchanged(
         self, after: str, guard: dict[str, str], now: dict[str, str] | None = None
@@ -432,6 +422,7 @@ class _TicketRun:
             raise Stop(
                 f"the agent committed changes to ticket records ({', '.join(records)})",
                 "inspect the branch; Ariane pushed nothing",
+                category=GUARD,
             )
         changed = [
             p
@@ -449,9 +440,12 @@ class _TicketRun:
             raise Stop(
                 f"the implementer session stopped: {result.stop_text()}",
                 f"read work/{self.number}/journal.md; its work is kept on the branch",
+                category=result.stop_category(),
             )
         if not changed:
-            raise Stop("the agent changed no file", "clarify the issue, then start again")
+            raise Stop(
+                "the agent changed no file", "clarify the issue, then start again", category=SPEC
+            )
 
     def _flag_untouched_docs(self, changed: list[str]) -> None:
         """C25: journal the documents mapped to changed files that the ticket did not change."""
@@ -495,6 +489,7 @@ class _TicketRun:
                 raise Stop(
                     f"blocking checks failed: {names}",
                     f"read work/{self.number}/checks.md in {self.worktree}",
+                    category=CHECKS,
                 )
             if not failed:
                 reviewed = round_
@@ -544,11 +539,13 @@ class _TicketRun:
             replay.sensitive(self, checked),
         )
         self.metrics.delivered_red(len(checks.blocking_failures(results)))
-        self.metrics.finish("needs a human" if delivery.draft else "delivered")
+        self.metrics.finish(
+            "needs a human" if delivery.draft else "delivered", review.not_green(settled, results)
+        )
         try:
             done = delivery.deliver(results)
         except PullRequestRefused as exc:
-            raise Stop(exc.reason, exc.next_action) from None
+            raise Stop(exc.reason, exc.next_action, category=exc.category) from None
         after_delivery(self, checked, results, done)  # never changes what was delivered (#186)
         if done.draft:
             why = (
@@ -589,11 +586,12 @@ class _TicketRun:
             with contextlib.suppress(*_FAILURES):
                 self.folder.log("ticket.stopped", f"Stopped: {reason}", detail)
                 status = exc.status if isinstance(exc, Stop) else "stopped"
-                self.metrics.finish(status)
+                self.metrics.finish(status, category_of(exc), self.pushed)
                 self.folder.set_status(status, reason, next_action)
                 self._commit_record(f"#{self.number}: record the stop")
         else:  # stopped in the first setup: the metrics go outside the repository (ADR 0031)
-            self.metrics.keep_stopped(stopped_metrics_path(self.worktree, self.number))
+            path = stopped_metrics_path(self.worktree, self.number)
+            self.metrics.keep_stopped(path, category_of(exc))
         code = EXIT_INTERRUPTED if isinstance(exc, KeyboardInterrupt) else EXIT_STOPPED
         return Outcome(
             code, f"Stopped ticket #{self.number}: {reason}. Next: {next_action}.", detail

@@ -9,7 +9,7 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from ariane import cache, checks, context, git, process, review, slots, ticket
+from ariane import cache, checks, context, git, process, review, slots, stop, ticket
 from ariane.config import CheckConfig, Config, matching_paths
 from ariane.flow import (
     EXIT_INTERRUPTED,
@@ -32,7 +32,7 @@ from ariane.replay import (
 from ariane.review_session import ReviewFailed, ReviewSession, agent_logins, instruction_dirs
 from ariane.risk import Tier
 from ariane.runtime import AgentRuntime
-from ariane.stop import Stop
+from ariane.stop import CHECKS, GUARD, INFRA, Stop, category_of
 from ariane.tracker import Issue, Tracker, TrackerError
 
 VERIFY_DIR = f"{ticket.WORK_DIR}/verify"
@@ -42,11 +42,19 @@ FIX_NEXT = "fix the findings, then run verify again"
 
 
 class Refused(Exception):
-    """The branch cannot be verified; `reason` and `next_action` go to the user."""
+    """The branch cannot be verified; `reason` and `next_action` go to the user, the `category`
+    to the kept `metrics.json` (ADR 0058)."""
 
-    def __init__(self, reason: str, next_action: str, exit_code: int = EXIT_STOPPED) -> None:
+    def __init__(
+        self,
+        reason: str,
+        next_action: str,
+        exit_code: int = EXIT_STOPPED,
+        category: str = INFRA,
+    ) -> None:
         super().__init__(reason)
         self.exit_code = exit_code
+        self.category = category
         self.reason = reason
         self.next_action = next_action
 
@@ -204,22 +212,26 @@ class _Verification:
         replay = replay_path(self.repo_root, self.branch)
         records = Path(tempfile.mkdtemp(prefix="ariane-verify-"))
         committed = False
+        category = INFRA
         try:
             outcome = self._replay_and_review(replay, records)
             committed = True
             return outcome
+        except (Refused, Stop) as exc:
+            category = exc.category if isinstance(exc, Refused) else category_of(exc)
+            raise
         finally:
             # A stop or Ctrl-C may come before the survivors were counted: none outlives verify.
             process.kill_survivors(self.processes_before)
             self.metrics.surviving_processes(len(process.take_killed()))
             if not committed:
-                self._keep_stopped_metrics()
+                self._keep_stopped_metrics(category)
             shutil.rmtree(records, ignore_errors=True)
 
-    def _keep_stopped_metrics(self) -> None:
+    def _keep_stopped_metrics(self, category: str) -> None:
         """Nothing is committed on a refusal or Ctrl-C (a guard violation may have changed the
         hooks a commit runs): the metrics go outside the repository instead (ADR 0031)."""
-        self.metrics.keep_stopped(stopped_metrics_path(self.repo_root, self.branch))
+        self.metrics.keep_stopped(stopped_metrics_path(self.repo_root, self.branch), category)
 
     def _tree_for(self, replay: Path, k: int) -> Path:
         tree = replay.with_name(f"{replay.name}-{k}")
@@ -247,10 +259,14 @@ class _Verification:
         not ignore."""
         where = f" (in the working tree of check {check.name!r})"
         if git.detached_head(replay) != self.head:
-            raise Refused(f"a cache setup moved a head{where}", "inspect the replay tree")
+            raise Refused(
+                f"a cache setup moved a head{where}", "inspect the replay tree", category=GUARD
+            )
         if tracked_changes(replay):
             raise Refused(
-                f"a cache setup changed files that git tracks{where}", "inspect the replay tree"
+                f"a cache setup changed files that git tracks{where}",
+                "inspect the replay tree",
+                category=GUARD,
             )
         if git.untracked(replay):
             raise Refused(
@@ -373,9 +389,11 @@ class _Verification:
                 changes.name_status,
             )
         except ReviewFailed as exc:
-            raise Refused(exc.reason, "read the error, then run verify again") from None
+            raise Refused(
+                exc.reason, "read the error, then run verify again", category=exc.category
+            ) from None
         settled = review.settle(answer, self.config.definition_of_done, results)
-        self.metrics.reviewed(settled.go)
+        self.metrics.reviewed(settled.go, len(settled.findings))
         model = sessions.reviewer.model
         texts = {
             REVIEW: review.record(settled, self.head, model)
@@ -385,7 +403,10 @@ class _Verification:
             ticket.CHECKS: checks.report(results, self.head, changed, self.tier),
         }
         green = settled.go and not checks.blocking_failures(results)
-        self.metrics.finish("delivered" if green else "stopped")
+        failed = checks.blocking_failures(results)
+        self.metrics.finish(
+            "delivered" if green else "stopped", CHECKS if failed else "" if green else stop.REVIEW
+        )
         texts[METRICS] = self.metrics.render()
         self._before_commit()
         self._commit(texts, checks.summary_line(results))
@@ -405,12 +426,16 @@ class _Verification:
         self._guard_unchanged(after)
         moved = git.out(["rev-parse", f"refs/heads/{self.branch}"], self.repo_root) != self.head
         if git.detached_head(replay) != self.head or moved:
-            raise Refused(f"{after} moved a head", "inspect the branch and the replay tree")
+            raise Refused(
+                f"{after} moved a head", "inspect the branch and the replay tree", category=GUARD
+            )
         status = git.status(replay)
         if listing:  # the changed files' listing, left in the tree removed after the check
             status = checks.without_listing(status, ticket.relative_folder(self.issue.number))
         if status != tree_before:
-            raise Refused(f"{after} changed files in the replay tree", "inspect the session")
+            raise Refused(
+                f"{after} changed files in the replay tree", "inspect the session", category=GUARD
+            )
         if self.url:
             changed = git.remote_changes(
                 self.repo_root,
@@ -424,6 +449,7 @@ class _Verification:
                 raise Refused(
                     f"the remote changed during {after} ({', '.join(changed)})",
                     "check it was not the agent, then run verify again",
+                    category=GUARD,
                 )
 
     def _guard_unchanged(self, after: str) -> None:
@@ -436,6 +462,7 @@ class _Verification:
             raise Refused(
                 f"{after} changed instruction files the reviewer can load ({'; '.join(written)})",
                 "inspect and remove them (they are outside the repository)",
+                category=GUARD,
             )
         if changes:
             self.metrics.guard_violation()
@@ -443,6 +470,7 @@ class _Verification:
                 f"{after} changed git configuration, hooks or local branches"
                 f" ({'; '.join(changes)})",
                 "inspect .git/config, .git/hooks and the branches",
+                category=GUARD,
             )
 
     def _survivors(self, after: str) -> None:
@@ -456,6 +484,7 @@ class _Verification:
                 f"{after} left {len(killed)} process(es) running after it ended; Ariane killed"
                 " them",
                 "find what started them in the background",
+                category=GUARD,
             )
 
     def _before_commit(self) -> None:

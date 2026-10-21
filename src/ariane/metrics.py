@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -15,9 +16,31 @@ from typing import Any
 from ariane import ticket
 from ariane.attempts import Attempts
 from ariane.runtime import AgentRuntime, Session, SessionResult
+from ariane.stop import SPEC, category_of
+from ariane.tracker import IssueRefused
 
 METRICS = "metrics.json"
 NOT_REVIEWED = "not reviewed"
+
+
+def stopped_metrics_path(worktree: Path, number: int) -> Path:
+    """`<repo>.ariane/stopped/<n>/metrics.json`: a stop before the ticket folder exists."""
+    return worktree.parent.parent / "stopped" / str(number) / METRICS
+
+
+def keep_refused(worktree: Path, number: int, exc: BaseException) -> None:
+    """A start that ended before its run began records its stop category (ADR 0058): `spec`
+    for the issue gate's refusal, else the stop's (`infra` for a lock, a slot, the registry, the
+    preparation or Ctrl-C). One new folder per attempt, `<repo>.ariane/stopped/<n>/refused/
+    <time>-<random>/metrics.json`, so neither a running ticket's metrics nor an earlier record
+    is overwritten; best effort, as `keep_stopped`."""
+    category = SPEC if isinstance(exc, IssueRefused) else category_of(exc)
+    refused = stopped_metrics_path(worktree, number).parent / "refused"
+    stamp = ticket.now().replace(" ", "T").replace(":", "")
+    with contextlib.suppress(OSError):
+        refused.mkdir(parents=True, exist_ok=True)
+        attempt = Path(tempfile.mkdtemp(prefix=f"{stamp}-", dir=refused))
+        Metrics(number, "delivered", lambda _: None).keep_stopped(attempt / METRICS, category)
 
 
 class Metrics:
@@ -38,8 +61,10 @@ class Metrics:
         self.blocking_red = 0
         self.first_pass_verdict = NOT_REVIEWED
         self.outcome = "running"
+        self.category = ""  # why it did not end delivered green (`stop.CATEGORIES`, ADR 0058)
         self.restarted_from: dict[str, str | float] | None = None  # the run this one started over
         self.updates = 0  # the `ariane update` runs that merged the base branch (ADR 0033)
+        self._marked: dict[str, Any] | None = None  # the session `finish` marked `pushed`
         self.replays: list[dict[str, Any]] = []  # per replayed round: its selection, its time
         self.full_replay: dict[str, Any] | None = None  # None: no full replay was considered
 
@@ -109,8 +134,14 @@ class Metrics:
         self.step(f"{session.role} session {len(self.sessions)} stopped")
         return result
 
-    def reviewed(self, go: bool) -> None:
-        """The first review's verdict is the first-pass verdict."""
+    def reviewed(self, go: bool, findings: int = 0) -> None:
+        """The first review's verdict is the first-pass verdict; the reviewer session that
+        answered (the last one) records its verdict, its number of findings and when it was
+        given: only what follows a `go` can make it an escape (ADR 0058)."""
+        reviewers = [s for s in self.sessions if s["role"] == "reviewer"]
+        if reviewers:
+            at = ticket.now().replace(" ", "T")
+            reviewers[-1] |= {"verdict": "go" if go else "no-go", "findings": findings, "at": at}
         if self.first_pass_verdict == NOT_REVIEWED:
             self.first_pass_verdict = "go" if go else "no-go"
 
@@ -168,16 +199,32 @@ class Metrics:
         } | ({"stopped": stopped} if stopped else {})
         self.step("full replay " + ("ran" if ran else "not sampled"))
 
-    def keep_stopped(self, path: Path) -> None:
-        """Write the metrics, outcome `stopped`, to `path` outside the repository, without the
-        usual writer (best effort: a failure to record must not hide the stop; ADR 0031)."""
+    def keep_stopped(self, path: Path, category: str) -> None:
+        """Write the metrics, outcome `stopped` and its `category`, to `path` outside the
+        repository, without the usual writer (best effort: a failure to record must not hide
+        the stop; ADR 0031). Nothing was pushed: a `pushed` mark of this run is taken back."""
+        if self._marked is not None:
+            self._marked.pop("pushed", None)
+            self._marked = None
         self.outcome = "stopped"
+        self.category = category
         with contextlib.suppress(OSError):
             path.parent.mkdir(parents=True, exist_ok=True)
             ticket.write_file(path, self.render())
 
-    def finish(self, outcome: str) -> None:
+    def finish(self, outcome: str, category: str = "", pushed: bool = False) -> None:
+        """The outcome; anything but delivered green names its `category` (ADR 0058). Delivered:
+        the last review's `go`, if it is one, is marked `pushed` (the push publishes this file);
+        a later stop of the same run before its push (`pushed` false) takes the mark back."""
+        reviews = [s for s in self.sessions if s["role"] == "reviewer" and "verdict" in s]
+        if outcome == "delivered" and reviews and reviews[-1]["verdict"] == "go":
+            reviews[-1]["pushed"] = True
+            self._marked = reviews[-1]
+        elif outcome != "delivered" and not pushed and self._marked is not None:
+            self._marked.pop("pushed", None)  # the push did not happen
+            self._marked = None
         self.outcome = outcome
+        self.category = category
         self.step(f"outcome: {outcome}")
 
     def render(self) -> str:
@@ -201,6 +248,8 @@ class Metrics:
             "updates": self.updates,
             "replays": self.replays,
         }
+        if self.category:
+            data["category"] = self.category
         if self.full_replay is not None:
             data["full_replay"] = self.full_replay
         if self.restarted_from is not None:

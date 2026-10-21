@@ -7,12 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ariane import measures, metrics, shadow, ticket
+from ariane import measures, metrics, review_escapes, shadow, ticket
 from ariane.risk import DEFAULT_MAX_ESCAPE_RATE
 from ariane.tracker import Tracker
 
 PARTLY = "partly not reported"
 COVERED = "covered by plan"
+OUTSIDE = "kept outside"  # a row's key: a stop kept outside the repository, its own record
 WORKTREES = "worktrees"  # `<repo>.ariane/worktrees/<n>`, as `flow.worktree_path`
 
 
@@ -28,17 +29,22 @@ def build(
     tracker: Tracker | None = None,
     max_escape_rate: float = DEFAULT_MAX_ESCAPE_RATE,
 ) -> Report:
-    """Read every metrics file under `root/work`, the ticket worktrees and the shadow clones,
+    """Read every metrics file under `root/work`, the ticket worktrees, the shadow clones and
+    the stops kept outside the repository (`<repo>.ariane/stopped/`, `<repo>.ariane/verify/`),
     keep tickets started on or after `since`. Without a `tracker` the waiting time reads "not
     available"; the selective checks warn above `max_escape_rate`."""
     work = root / ticket.WORK_DIR
     shadows = shadow.clone_path(root, 0).parent
     worktrees = shadows.parent / WORKTREES
+    kept_verify = shadows.parent / "verify"  # a verification that ended without committing
+    stopped = shadows.parent / "stopped"
     paths = (
         sorted(work.glob(f"*/{metrics.METRICS}"))
         + sorted(work.glob(f"verify/**/{metrics.METRICS}"))
         + sorted(_own_paths(worktrees))
         + sorted(_own_paths(shadows))
+        + sorted(stopped.glob(f"**/{metrics.METRICS}"))  # ADR 0031, ADR 0058
+        + sorted(kept_verify.glob(f"*/{metrics.METRICS}"))
     )
     if not paths:
         return Report(["No metrics file found. Next: run ariane start <issue>."], 0)
@@ -58,6 +64,10 @@ def build(
         verify_dir = work / "verify"
         if path.is_relative_to(verify_dir):
             data["branch"] = path.parent.relative_to(verify_dir).as_posix()
+        elif path.is_relative_to(kept_verify):
+            data["branch"] = path.parent.name  # the branch's slug, `ariane-7`
+        if path.is_relative_to(stopped) or path.is_relative_to(kept_verify):
+            data[OUTSIDE] = True  # its own attempt: never merged with a run of the same start
         if path.is_relative_to(shadows) and data["mode"] != "shadow":
             continue
         if path.is_relative_to(worktrees):
@@ -86,6 +96,8 @@ def build(
     rounds = sum(d["rounds"] for d in rows)
     lines.extend(_measure_lines(rows, recent, delivered, people, flagged))
     lines.extend(measures.selective_lines(rows, max_escape_rate))
+    lines.extend(review_escapes.lines(rows, tracker))
+    lines.extend(review_escapes.category_lines(rows))
     reviewed = [d for d in rows if d["first_pass_verdict"] != metrics.NOT_REVIEWED]
     go = sum(1 for d in reviewed if d["first_pass_verdict"] == "go")
     rate = f"{go}/{len(reviewed)}" + (f" ({100 * go // len(reviewed)}%)" if reviewed else "")
@@ -118,9 +130,14 @@ def _with_local(
 ) -> list[dict[str, Any]]:
     """A ticket worktree holds the latest record of its run (the full replay after delivery is
     only committed there, ADR 0056): it replaces the merged record of the same run, and a run
-    not merged yet is added."""
-    merged = {(d["ticket"], d["started"]) for d in rows if "branch" not in d}
-    kept = [local.get((d["ticket"], d["started"]), d) if "branch" not in d else d for d in rows]
+    not merged yet is added. A takeover's record and a stop kept outside the repository are
+    their own attempts, never replaced: a refused start can share a run's `started` second."""
+
+    def merged_run(d: dict[str, Any]) -> bool:  # not a takeover, nor a stop kept outside
+        return "branch" not in d and OUTSIDE not in d
+
+    merged = {(d["ticket"], d["started"]) for d in rows if merged_run(d)}
+    kept = [local.get((d["ticket"], d["started"]), d) if merged_run(d) else d for d in rows]
     return kept + [
         d
         for key, d in local.items()
@@ -142,6 +159,8 @@ def _read(path: Path) -> dict[str, Any]:
     for key in ("mode", "outcome", "first_pass_verdict"):
         if not isinstance(data[key], str):
             raise TypeError(f"{key} is not a string")
+    if "category" in data and not isinstance(data["category"], str):
+        raise TypeError("category is not a string")
     for session in data["sessions"]:
         if not isinstance(session, dict):
             raise TypeError("a session is not an object")

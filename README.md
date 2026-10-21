@@ -269,6 +269,14 @@ rounds' time against the full replays' time on the sampled tickets (the time sav
 replays run, the escapes and the escape rate (escapes / full replays), with a warning when the rate
 is above `[checks_policy] max_escape_rate` (default 0.02); turning selection off stays the owner's
 call.
+The review escapes count, per implementer model, reviewer model and reviewer runtime, the reviews,
+`go` verdicts, findings per review and escapes: a `go` followed on its pull request by a red CI on
+the reviewed head, a human "changes requested" review, or a close without merge (read from the
+tracker at report time; the CI part is skipped, and said so, until CI results are recorded). The
+escape rate (escapes / `go`) is shown from 5 tickets, side by side when two pairs have one. Every
+ticket that did not end delivered green records a stop category in `metrics.json` (`spec`, `guard`,
+`budget`, `runtime`, `checks`, `review`, `merge`, `ci`, `infra`), counted in total and per
+implementer model.
 The token needs permission to write commit statuses (for a fine-grained token, "Commit statuses:
 read and write"), on top of reading issues and writing pull requests.
 

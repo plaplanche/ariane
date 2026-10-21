@@ -23,11 +23,11 @@ from ariane.flow import (
     branch_name,
     worktree_path,
 )
-from ariane.metrics import METRICS
+from ariane.metrics import METRICS, keep_refused
 from ariane.restart import lock_path, locked
 from ariane.runtime import AgentRuntime
 from ariane.slots import held as held_slot
-from ariane.stop import Stop, describe
+from ariane.stop import CHECKS, GUARD, MERGE, REVIEW, Stop, category_of, describe
 from ariane.tracker import Tracker, TrackerError
 
 NEEDS_A_HUMAN = "needs a human"
@@ -73,8 +73,10 @@ def update(
     try:
         issue = tracker.read_issue(number)
     except TrackerError as exc:
+        keep_refused(worktree, number, exc)  # the gate's refusal `spec`, the tracker's `infra`
         return Outcome(exc.exit_code, f"Did not update #{number}: {exc}. Next: {exc.next_action}.")
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
+        keep_refused(worktree, number, exc)
         return _interrupted(number)
     with contextlib.ExitStack() as held:
         try:
@@ -109,6 +111,7 @@ def update(
             line = f"Did not update ticket #{number}: {exc.reason}. Next: {exc.next_action}."
             return Outcome(EXIT_STOPPED, line)
         except (Stop, KeyboardInterrupt, *FAILURES) as exc:
+            keep_refused(worktree, number, exc)  # lock, slot, registry, git, read back: `infra`
             reason, next_action = describe(exc)
             code = EXIT_INTERRUPTED if isinstance(exc, KeyboardInterrupt) else EXIT_STOPPED
             return Outcome(code, f"Did not update ticket #{number}: {reason}. Next: {next_action}.")
@@ -244,7 +247,6 @@ class _UpdateRun(_TicketRun):
 
     def execute_update(self) -> Outcome:
         try:
-            self.pushed = True
             self.processes_before = set(process.descendants(exited=True))
             self.guard_since = runs.now()
             guard = self.state().snapshot
@@ -287,7 +289,7 @@ class _UpdateRun(_TicketRun):
         if self.merge_began and plain and not isinstance(exc, KeyboardInterrupt):
             reason, next_action = describe(exc)
             detail = exc.detail if isinstance(exc, Stop) else str(exc)
-            exc = Stop(reason, next_action, detail, status=NEEDS_A_HUMAN)
+            exc = Stop(reason, next_action, detail, NEEDS_A_HUMAN, category_of(exc))
         return super()._stopped(exc)
 
     def _left_unresolved(self, exc: Unresolved) -> Outcome:
@@ -341,6 +343,7 @@ class _UpdateRun(_TicketRun):
                     f" `ariane verify {self.branch}` and push it",
                     "\n".join(f"- `{p}`" for p in conflicts),
                     status=NEEDS_A_HUMAN,
+                    category=MERGE,
                 )
             raise Stop(
                 f"git merge of {base} failed",
@@ -356,6 +359,7 @@ class _UpdateRun(_TicketRun):
                 f"the merge commit's parents are not {self.branch} and {base}",
                 "inspect the branch; Ariane pushed nothing",
                 status=NEEDS_A_HUMAN,
+                category=GUARD,
             )
         self.metrics.step("base merged")
         self.folder.log("ticket.update.merged", "Base branch merged", f"Merge commit `{merged}`.")
@@ -407,6 +411,7 @@ class _UpdateRun(_TicketRun):
                 f"blocking checks failed after the merge: {', '.join(r.name for r in failed)}",
                 f"read work/{self.number}/checks.md in {self.worktree}; {keep}",
                 status=NEEDS_A_HUMAN,
+                category=CHECKS,
             )
         k = next_review(self.folder.names())
         settled = replay.review_round(self, merged, base, guard, refs, results, k)
@@ -415,13 +420,16 @@ class _UpdateRun(_TicketRun):
                 f"the review of the update is {settled.verdict}",
                 f"read work/{self.number}/{ticket.review_file(k)} in {self.worktree}; {keep}",
                 status=NEEDS_A_HUMAN,
+                category=REVIEW,
             )
         self.metrics.delivered_red(0)
         self.metrics.finish("delivered")
         try:
             pushed = self._delivery(merged, k, guard).push_update(results, self.heads.remote)
         except PullRequestRefused as exc:
-            raise Stop(exc.reason, exc.next_action, status=NEEDS_A_HUMAN) from None
+            raise Stop(
+                exc.reason, exc.next_action, status=NEEDS_A_HUMAN, category=exc.category
+            ) from None
         return Outcome(
             EXIT_OK,
             f"Updated {self.branch} with {REMOTE}/{self.config.base_branch}: merge commit"
@@ -440,6 +448,7 @@ class _UpdateRun(_TicketRun):
                     f"see who pushed it; the merge is kept on the local branch {self.branch},"
                     " Ariane pushed nothing",
                     status=NEEDS_A_HUMAN,
+                    category=GUARD,
                 )
             self.verify("the delivery", "", guard, self.heads.refs)
 
