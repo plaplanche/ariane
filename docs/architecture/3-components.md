@@ -186,6 +186,7 @@ flowchart TD
   runs --> process
   runs --> restart
   runs --> stop
+  runs --> tracker
   runtime --> attempts
   runtime --> config
   runtime --> stop
@@ -512,8 +513,8 @@ sequenceDiagram
   H->>N: take the handoff lock
   H->>X: propose again; refuse unless the phrase equals the one last printed in next.md
   H->>H: write the reservation, record the start intent (the proposal is consumed)
-  H->>T: remove_label, add_labels (ready label)
-  H->>H: spawn ariane start N detached (ARIANE_NEXT_LAUNCH=N), output in logs/N.out
+  H->>T: remove_label, add_labels (ready label), peek_issue: unchanged since the analysis
+  H->>H: spawn ariane start N detached (ARIANE_NEXT_LAUNCH=N, its claim, the body digest), output in logs/N.out
   H->>N: registered_since: wait for N to register, end, or 60 s
   H->>X: record the start in next.md; remove the reservation
   H-->>CLI: Outcome

@@ -11,6 +11,7 @@ import os
 import sys
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,14 +49,21 @@ def registering(
 ) -> next_start.Launch:
     """A launch whose ticket registers as running, then ends, as `ariane start` does."""
 
-    def launch(number: int) -> Child:
+    def launch(number: int, handed: Mapping[str, str]) -> Child:
         launched.append(number)
-        monkeypatch.setenv(runs.HANDOFF_ENV, str(number))  # as `spawn` sets it
+        handing(monkeypatch, handed)
         with runs.registered(runs.folder(project.root), number, flow.branch_name(number)):
             pass
         return Child(4000 + number)
 
     return launch
+
+
+def handing(monkeypatch: pytest.MonkeyPatch, handed: Mapping[str, str]) -> None:
+    """Set the variables of the handoff here, as `spawn` sets them in its ticket."""
+    assert sorted(handed) == sorted([runs.HANDOFF_ENV, runs.CLAIM_ENV, runs.ISSUE_ENV])
+    for name, value in handed.items():
+        monkeypatch.setenv(name, value)
 
 
 def entries(project: Project) -> list[str]:
@@ -97,9 +105,9 @@ def test_c23_next_start_relabels_the_issue_and_starts_it(
     cfg = make_config()
     outcomes: list[flow.Outcome] = []
 
-    def launch(number: int) -> Child:
+    def launch(number: int, handed: Mapping[str, str]) -> Child:
         # The fake runtime: the ticket runs here, to its pull request, as `spawn` starts it.
-        monkeypatch.setenv(runs.HANDOFF_ENV, str(number))
+        handing(monkeypatch, handed)
         outcomes.append(
             flow.start(
                 number,
@@ -266,7 +274,9 @@ def test_c23_next_start_a_ticket_that_ends_before_registering_is_said(project: P
     tracker = InMemoryTracker()
     queued(tracker, 7, "", at(0), "ariane")
     next_start.show(project.root, make_config(), tracker)
-    _, outcome = next_start.start(project.root, make_config(), tracker, lambda n: Child(51, 1))
+    _, outcome = next_start.start(
+        project.root, make_config(), tracker, lambda n, handed: Child(51, 1)
+    )
     out = next_ticket.output_path(project.root, 7)
     assert outcome.line == (
         "Started #7 in the background (process 51), but it ended (exit code 1) before it"
@@ -294,7 +304,7 @@ def test_c23_next_start_a_failed_relabel_starts_nothing_and_can_be_confirmed_aga
 
 
 def test_c23_next_spawn_runs_ariane_start_detached_with_its_output_kept(project: Project) -> None:
-    child = next_start.spawn(project.root, 31, environ())
+    child = next_start.spawn(project.root, 31, {}, environ())
     if sys.platform != "win32":
         assert os.getsid(child.pid) == child.pid  # its own session: detached from the terminal
     out = next_ticket.output_path(project.root, 31)

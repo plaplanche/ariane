@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import contextlib
 import json
+import posixpath
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -29,8 +30,10 @@ SHOWN = 3  # the files named for two overlapping globs, beyond which they are co
 # `Needs #N`, `Needs #N and #M`, `Needs #N, #M`: at the start of a line, a list marker allowed.
 _NEEDS = re.compile(r"^\s*(?:[-*]\s+)?Needs\s+(#\d+(?:\s*(?:,|and|&)\s*#\d+)*)", re.MULTILINE)
 _NUMBER = re.compile(r"#(\d+)")
-# Before and after a word of the body (quotes, brackets, punctuation), never part of a path.
-_EDGES = re.compile(r"^[`'\"(\[{]+|[`'\"()\[\]{},;:!?.]+$")
+# What separates the words of the body (spaces, quotes, brackets: `[a.py](a.py)` names a.py).
+_WORDS = re.compile(r"[\s`'\"()\[\]{},;]+")
+_TRAILING = re.compile(r"[:!?.]+$")  # the punctuation after a word, never part of a path
+_REFERENCE = re.compile(r"(?::\d+)+$|#L\d+(?:-L?\d+)?$")  # `a.py:65`, `a.py#L3-L9`: a.py
 _PATH = re.compile(r"[\w.*/-]+")
 _FILE_NAME = re.compile(r"[\w-]+\.[A-Za-z]\w*")
 
@@ -57,6 +60,7 @@ class Proposal:
     blockers: tuple[str, ...]
     number: int | None
     next_action: str  # when nothing is proposed
+    analysed: QueuedIssue | None = field(default=None, compare=False)  # the proposed issue
 
     def summary(self) -> str:
         """The proposal in one phrase, compared by `--start` with the one last printed."""
@@ -94,8 +98,8 @@ def expected_paths(
     a module file), the source files and tests of each `docs/architecture/modules/<m>.md`, and
     the `[next] paths` globs of its labels."""
     found: list[str] = []
-    for word in body.split():
-        path = _path(_EDGES.sub("", word).removeprefix("./"), root)
+    for word in _WORDS.split(body):
+        path = _path(_normal(_TRAILING.sub("", _REFERENCE.sub("", _TRAILING.sub("", word)))), root)
         if path and path not in found:
             found.append(path)
     for path in list(found):
@@ -107,8 +111,19 @@ def expected_paths(
     return tuple(found)
 
 
+def _normal(word: str) -> str:
+    """`word` as git names the path (`a/./b.py`, `./a//b.py`: `a/b.py`; a folder keeps its
+    `/`), or "" for no relative path inside the repository (`/a`, `../a`, a URL)."""
+    if not word or "://" in word or not _PATH.fullmatch(word) or word.startswith("/"):
+        return ""
+    path = posixpath.normpath(word)
+    if path == "." or path == ".." or path.startswith("../"):
+        return ""
+    return path + "/" if word.endswith("/") else path
+
+
 def _path(word: str, root: Path) -> str:
-    if "://" in word or not _PATH.fullmatch(word) or word.startswith("/") or ".." in word:
+    if not word:
         return ""
     if "/" not in word:
         if not _FILE_NAME.fullmatch(word):
@@ -194,7 +209,8 @@ def propose(
             if candidates
             else f"label an issue `{config.tracker.next_label}`, then run ariane next"
         )
-    return Proposal(tuple(sorted(running)), tuple(candidates), blockers, number, action)
+    analysed = by_number[number] if number is not None else None
+    return Proposal(tuple(sorted(running)), tuple(candidates), blockers, number, action, analysed)
 
 
 def _reasons(

@@ -24,11 +24,13 @@ records it and the choices it left open.
 - **Dependencies.** A line of the body starting with `Needs #N` (a list marker allowed; several
   numbers separated by `,`, `and` or `&`) makes the issue wait until each named issue is closed
   with the reason `completed`: an open issue, or one closed as not planned, keeps it waiting.
-- **Expected files.** Each word of the body, quotes, brackets and trailing punctuation removed,
+- **Expected files.** Each word of the body (split at spaces, quotes, backticks, brackets and
+  parentheses, so a Markdown link's target counts), trailing punctuation and a line reference
+  (`a.py:65`, `a.py#L3-L9`) removed and normalized as git names a path (`a/./b.py` is `a/b.py`),
   is a path when it has a `/` and its last segment has an extension or a wildcard (so `owner/name`
   or `ariane/12` are not), a folder `a/b/` standing for the glob `a/b/**`; a word without `/` is
   a path only when it names a file at the repository root (`README.md`) or a module file
-  (`cli.md` is `docs/architecture/modules/cli.md`). URLs, absolute paths, `..` and words with
+  (`cli.md` is `docs/architecture/modules/cli.md`). URLs, absolute paths, paths leaving the repository and words with
   placeholders (`<module>`) are never paths. Each module file adds `src/<package>/<module>.py`
   and the tests whose file name holds the module's name as whole words (`test_cli.py` and
   `test_c23_cli_x.py` for `cli`, not `test_client.py`). `[next.paths]` adds globs per label
@@ -79,10 +81,20 @@ records it and the choices it left open.
   new proposal printed. After the launch the reservation names the ticket's process; it is
   removed once the `start` entry is written and the ticket registered or ended. A reservation
   still pending (its ticket not registered, its process alive or the reservation younger than
-  60 seconds) holds every issue back: `#N is starting (process P)`. A leftover one (a `--start`
+  60 seconds) holds every issue back: `#N is starting (process P)`. The launched ticket gets
+  the reservation's time (`ARIANE_NEXT_CLAIM`) and registers outside the handoff lock only while
+  that reservation is still there: if `--start` dies before the reservation names the child, a
+  later `ariane next` drops it after 60 seconds, and a child registering after that stops
+  rather than running next to a ticket proposed without it. A leftover one (a `--start`
   that crashed, or could not write its `start` entry) is recorded as `start reconciled` by the
   next `ariane next`, with whether the ticket registered. A failure after the launch says the
   ticket started (`Started #N ..., but ...`), never that nothing was done.
+- **The analysed revision.** The relabel would bless any edit made before it, so after the
+  relabel `--start` reads the issue again: if its body or labels differ from the analysed ones,
+  it removes the ready label and starts nothing, and the confirmation is consumed. The launched
+  ticket also gets the digest of the analysed body (`ARIANE_NEXT_ISSUE`) and refuses an issue
+  whose body differs; an edit after the relabel postdates the label, which the issue gate
+  refuses.
 - **Record.** Each proposal, start intent, start, refused start and reconciled start is
   appended to `<repo>.ariane/next.md`: its time, the running tickets, the reason of every issue
   looked at, the proposal, and for a start who confirmed it (the local user name), the started

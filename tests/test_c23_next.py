@@ -137,6 +137,39 @@ def test_c23_next_a_shared_file_with_a_running_ticket_is_named_and_not_proposed(
     assert "- #13: shares app.txt with running #12" in proposal.lines()
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Edit [src/pkg/cli.py](src/pkg/cli.py).",
+        "Edit [the command line](src/pkg/cli.py).",
+        "Edit `src/pkg/cli.py:65`.",
+        "Edit src/pkg/cli.py#L3-L9 and src/pkg/cli.py:12:4.",
+        "Edit `src/pkg/./cli.py`.",
+        "Edit ./src//pkg/../pkg/cli.py.",
+    ],
+)
+def test_c23_next_a_shared_file_named_in_any_notation_is_not_proposed(
+    project: Project, body: str
+) -> None:
+    module_files(project)
+    commit_on_branch(project.root, "ariane/12", "work", {"src/pkg/cli.py": "v2\n"}, parent="main")
+    tracker = InMemoryTracker()
+    queued(tracker, 12, "", at(0))
+    queued(tracker, 13, body, at(1))
+    assert "src/pkg/cli.py" in next_ticket.expected_paths(
+        body, (), project.root, config.NextConfig()
+    )
+    with runs.registered(runs.folder(project.root), 12, "ariane/12"):
+        proposal = next_ticket.propose(project.root, make_config(), tracker)
+    assert reasons(proposal, 13) == ("shares src/pkg/cli.py with running #12",)
+    assert proposal.number is None
+
+
+def test_c23_next_paths_outside_the_repository_are_left_out(project: Project) -> None:
+    body = "See ../other/a.py, /etc/a.conf, a/../../b.py and https://example.invalid/c.py:3."
+    assert next_ticket.expected_paths(body, (), project.root, config.NextConfig()) == ()
+
+
 def test_c23_next_overlapping_globs_share_their_known_files_or_the_globs(project: Project) -> None:
     assert next_ticket.shared(["docs/**"], ["docs/architecture/**"]) == [
         "docs/** and docs/architecture/**"

@@ -29,10 +29,11 @@ from ariane.next_ticket import (
     reservations,
     reservations_folder,
 )
-from ariane.tracker import Tracker, TrackerError
+from ariane.tracker import QueuedIssue, Tracker, TrackerError
 
 REGISTER_SECONDS = 60.0  # how long `--start` waits for its ticket to register as running
 POLL_SECONDS = 0.2
+CHANGED = "start refused, the issue changed"  # not a printed proposal: `--start` needs a new one
 
 
 class Launched(Protocol):
@@ -43,7 +44,8 @@ class Launched(Protocol):
     def poll(self) -> int | None: ...
 
 
-Launch = Callable[[int], Launched]  # starts `ariane start <n>` in the background
+# Starts `ariane start <n>` in the background, with the variables of its handoff set.
+Launch = Callable[[int, Mapping[str, str]], Launched]
 
 
 def handoff(root: Path) -> contextlib.AbstractContextManager[None]:
@@ -131,10 +133,26 @@ def _launch(
         intent.path(root).unlink(missing_ok=True)
         raise
     label = config.tracker.ready_label
+    analysed = proposal.analysed
+    handed = {
+        runs.HANDOFF_ENV: str(number),
+        runs.CLAIM_ENV: intent.at,
+        runs.ISSUE_ENV: runs.digest(analysed.issue.body if analysed else ""),
+    }
     try:
         tracker.remove_label(number, label)
         tracker.add_labels(number, [label])
-        child = launch(number)
+        changed = _changed(tracker, analysed, label)
+        if changed:
+            tracker.remove_label(number, label)  # the fresh label blesses no unanalysed edit
+            record(root, CHANGED, proposal, [f"The issue changed: {changed}"])  # consumed
+            intent.path(root).unlink(missing_ok=True)
+            return flow.Outcome(
+                flow.EXIT_STOPPED,
+                f"Did not start #{number}: {changed} since ariane next analysed it; its"
+                f" `{label}` label was removed. Next: read the issue, then run ariane next.",
+            )
+        child = launch(number, handed)
     except (TrackerError, OSError) as exc:
         what = "launch" if isinstance(exc, OSError) else f"relabel (`{label}`)"
         record(root, "start refused", proposal, [f"The {what} failed: {exc}"])
@@ -189,6 +207,20 @@ def _launch(
     )
 
 
+def _changed(tracker: Tracker, analysed: QueuedIssue | None, label: str) -> str:
+    """What changed in the issue since `analysed`, read again after the relabel (its body, its
+    labels other than `label`), or "": an edit made before the fresh label is seen here, one
+    made after it is refused by the issue gate (ADR 0059)."""
+    if analysed is None:
+        return "it was not analysed"
+    now = tracker.peek_issue(analysed.issue.number)
+    if now.issue.body != analysed.issue.body:
+        return "its body changed"
+    if set(now.labels) - {label} != set(analysed.labels) - {label}:
+        return "its labels changed"
+    return ""
+
+
 def _registered(root: Path, number: int, since: str, child: Launched) -> tuple[bool, int | None]:
     """Wait until ticket `number` registered as running since `since` (live, or already
     ended), its process ended, or `REGISTER_SECONDS` passed: whether it registered, and the
@@ -221,14 +253,17 @@ def _user() -> str:
         return "unknown"
 
 
-def spawn(root: Path, number: int, environ: Mapping[str, str]) -> subprocess.Popen[bytes]:
+def spawn(
+    root: Path, number: int, handed: Mapping[str, str], environ: Mapping[str, str]
+) -> subprocess.Popen[bytes]:
     """Run `ariane start <number>` detached from the terminal (its own session or process
-    group, no input), its output appended to `output_path`, `runs.HANDOFF_ENV` set so that it
-    registers inside the handoff lock."""
+    group, no input), its output appended to `output_path`, with the variables `handed` of its
+    handoff (`runs.HANDOFF_ENV` and the others) so that it registers inside the handoff lock,
+    under its reservation, and runs only the issue `ariane next` analysed."""
     out = output_path(root, number)
     out.parent.mkdir(parents=True, exist_ok=True)
     argv = [sys.executable, "-m", "ariane", "start", str(number)]
-    env = {**environ, runs.HANDOFF_ENV: str(number)}
+    env = {**environ, **handed}
     with out.open("ab") as file:
         if sys.platform == "win32":
             flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
