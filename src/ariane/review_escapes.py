@@ -62,17 +62,16 @@ def _ci_red(data: dict[str, Any]) -> bool | None:
 
 
 def pushed_gos(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """The reviewer sessions whose `go` was pushed: every `go` of a record, as each led to a push
-    (the delivery, then each `ariane update`), but the last one when the record did not end
-    delivered green (its push did not happen). None for a shadow ticket."""
+    """The reviewer sessions whose `go` was pushed (the delivery's, then each `ariane update`'s),
+    as `Metrics.finish` marks them; a record from before the mark (no reviewer `at`): its last
+    review when it is a `go` and the record ended delivered green. None for a shadow ticket."""
     if data["mode"] == "shadow":
         return []
     reviews = [s for s in data["sessions"] if s.get("role") == "reviewer" and "verdict" in s]
+    if any(s.get("at") for s in reviews):
+        return [s for s in reviews if s["verdict"] == "go" and s.get("pushed") is True]
     green = data["outcome"] == "delivered" and not data.get("category")
-    gos = [s for s in reviews if s["verdict"] == "go"]
-    if gos and not green and reviews[-1] is gos[-1]:
-        gos = gos[:-1]
-    return gos
+    return reviews[-1:] if green and reviews and reviews[-1]["verdict"] == "go" else []
 
 
 def escaped(data: dict[str, Any], tracker: Tracker) -> list[bool] | None:

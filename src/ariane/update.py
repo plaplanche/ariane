@@ -244,7 +244,6 @@ class _UpdateRun(_TicketRun):
 
     def execute_update(self) -> Outcome:
         try:
-            self.pushed = True
             self.processes_before = set(process.descendants(exited=True))
             self.guard_since = runs.now()
             guard = self.state().snapshot

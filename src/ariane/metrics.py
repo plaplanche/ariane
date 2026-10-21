@@ -64,6 +64,7 @@ class Metrics:
         self.category = ""  # why it did not end delivered green (`stop.CATEGORIES`, ADR 0058)
         self.restarted_from: dict[str, str | float] | None = None  # the run this one started over
         self.updates = 0  # the `ariane update` runs that merged the base branch (ADR 0033)
+        self._marked: dict[str, Any] | None = None  # the session `finish` marked `pushed`
         self.replays: list[dict[str, Any]] = []  # per replayed round: its selection, its time
         self.full_replay: dict[str, Any] | None = None  # None: no full replay was considered
 
@@ -208,8 +209,17 @@ class Metrics:
             path.parent.mkdir(parents=True, exist_ok=True)
             ticket.write_file(path, self.render())
 
-    def finish(self, outcome: str, category: str = "") -> None:
-        """The outcome; anything but delivered green names its `category` (ADR 0058)."""
+    def finish(self, outcome: str, category: str = "", pushed: bool = False) -> None:
+        """The outcome; anything but delivered green names its `category` (ADR 0058). Delivered:
+        the last review's `go`, if it is one, is marked `pushed` (the push publishes this file);
+        a later stop of the same run before its push (`pushed` false) takes the mark back."""
+        reviews = [s for s in self.sessions if s["role"] == "reviewer" and "verdict" in s]
+        if outcome == "delivered" and reviews and reviews[-1]["verdict"] == "go":
+            reviews[-1]["pushed"] = True
+            self._marked = reviews[-1]
+        elif outcome != "delivered" and not pushed and self._marked is not None:
+            self._marked.pop("pushed", None)  # the push did not happen
+            self._marked = None
         self.outcome = outcome
         self.category = category
         self.step(f"outcome: {outcome}")

@@ -37,3 +37,5 @@ def test_c19_review_escapes_each_stop_path_of_update_records_its_category(
     assert outcome.exit_code == 1, outcome.line
     data = json.loads((worktree(project) / "work/7/metrics.json").read_text(encoding="utf-8"))
     assert (data["outcome"], data["category"]) == ("needs a human", category)
+    gos = [s for s in data["sessions"] if s["role"] == "reviewer" and s.get("verdict") == "go"]
+    assert gos[0]["pushed"] is True  # the delivery's go stays pushed, whatever the update did

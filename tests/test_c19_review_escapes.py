@@ -10,10 +10,10 @@ from typing import Any
 import pytest
 from test_fix_rounds import NO_GO
 
-from ariane import flow, report
+from ariane import flow, git, report
 from ariane.runtime import Session, StopReason
 from ariane.stop import Stop
-from ariane.tracker import InMemoryTracker, IssueRefused, PullRequestState
+from ariane.tracker import InMemoryTracker, IssueRefused, PullRequestState, TrackerError
 
 from conftest import PY, FakeRuntime, Project, make_config, sh
 from test_flow import start, worktree
@@ -32,6 +32,7 @@ def put(root: Path, number: int, **kw: Any) -> None:
         "findings": kw.pop("findings", 0),
         "at": kw.pop("at", None),  # None: a record from before the verdict's time
     }
+    review["pushed"] = kw.pop("pushed", review["verdict"] == "go")
     data = {
         "ticket": number,
         "mode": "delivered",
@@ -166,8 +167,8 @@ def test_c19_review_escapes_only_what_follows_the_go_counts(root: Path) -> None:
     assert ", 1 escapes, " in escapes_line(lines(root, tracker))
 
 
-def updated(root: Path, number: int, gos: list[tuple[str, str]], **kw: Any) -> None:
-    """A delivered ticket then updated: one `go` per (reviewer, time), in order."""
+def updated(root: Path, number: int, gos: list[tuple[str, str, bool]], **kw: Any) -> None:
+    """A delivered ticket then updated: one `go` per (reviewer, time, pushed), in order."""
     put(root, number, **kw)
     path = root / f"work/{number}/metrics.json"
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -179,8 +180,9 @@ def updated(root: Path, number: int, gos: list[tuple[str, str]], **kw: Any) -> N
             "verdict": "go",
             "findings": 0,
             "at": t,
+            "pushed": p,
         }
-        for r, t in gos
+        for r, t, p in gos
     ]
     path.write_text(json.dumps(data), encoding="utf-8")
 
@@ -188,16 +190,22 @@ def updated(root: Path, number: int, gos: list[tuple[str, str]], **kw: Any) -> N
 def test_c19_review_escapes_an_update_keeps_the_escape_of_the_go_before_it(root: Path) -> None:
     tracker = InMemoryTracker()
     # Delivered on rev-a's go, changes requested, then updated on rev-b's go: rev-a's escape.
-    updated(root, 1, [("rev-a", "2026-10-05T10:00:00Z"), ("rev-b", "2026-10-07T10:00:00Z")])
+    gos = [("rev-a", "2026-10-05T10:00:00Z", True), ("rev-b", "2026-10-07T10:00:00Z", True)]
+    updated(root, 1, gos)
     tracker.pull_states["ariane/1"] = pull(101, "2026-10-08T00:00:00Z", merged=True)
     tracker.changes_requested_on[101] = ["2026-10-06T09:00:00Z"]
     # The update stopped after its go (its push refused): only the delivery's go counts.
-    gos = [("rev-a", "2026-10-05T10:00:00Z"), ("rev-b", "2026-10-07T10:00:00Z")]
+    gos = [("rev-a", "2026-10-05T10:00:00Z", True), ("rev-b", "2026-10-07T10:00:00Z", False)]
     updated(root, 2, gos, outcome="needs a human", category="guard")
     tracker.pull_states["ariane/2"] = pull(102)
     tracker.changes_requested_on[102] = ["2026-10-07T12:00:00Z"]  # after the unpushed go
+    # The update stopped on a conflict, before its review: the delivery's go still counts.
+    gos = [("rev-a", "2026-10-05T10:00:00Z", True)]
+    updated(root, 3, gos, outcome="needs a human", category="merge")
+    tracker.pull_states["ariane/3"] = pull(103)
+    tracker.changes_requested_on[103] = ["2026-10-06T12:00:00Z"]
     out = lines(root, tracker)
-    assert "2 go, 0.0 findings per review, 2 escapes" in escapes_line(out, "rev-a")
+    assert "3 go, 0.0 findings per review, 3 escapes" in escapes_line(out, "rev-a")
     rev_b = escapes_line(out, "rev-b")  # two verdicts, one pushed: one ticket behind its rate
     assert "2 go, 0.0 findings per review, 0 escapes, escape rate not shown (1 tickets" in rev_b
 
@@ -294,7 +302,31 @@ def test_c19_review_escapes_a_green_delivery_records_no_category_and_its_verdict
     data = metrics(project)
     assert "category" not in data
     reviewer = data["sessions"][-1]
-    assert (reviewer["verdict"], reviewer["findings"]) == ("go", 0)
+    assert (reviewer["verdict"], reviewer["findings"], reviewer["pushed"]) == ("go", 0, True)
+
+
+def test_c19_review_escapes_a_go_whose_push_failed_is_not_marked_pushed(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refused(*args: Any, **kwargs: Any) -> Any:
+        raise git.GitError("git push failed: the remote refused")
+
+    monkeypatch.setattr(git, "push", refused)
+    assert start(project, tracker, FakeRuntime()).exit_code == 1
+    reviewer = [s for s in metrics(project)["sessions"] if s["role"] == "reviewer"][-1]
+    assert reviewer["verdict"] == "go" and "pushed" not in reviewer
+
+
+def test_c19_review_escapes_a_failure_after_the_push_keeps_the_go_pushed(
+    project: Project, tracker: InMemoryTracker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refused(**kwargs: Any) -> Any:
+        raise TrackerError("the pull request was refused")
+
+    monkeypatch.setattr(tracker, "open_pull_request", refused)
+    assert start(project, tracker, FakeRuntime()).exit_code == 1  # pushed, then refused
+    reviewer = [s for s in metrics(project)["sessions"] if s["role"] == "reviewer"][-1]
+    assert reviewer["verdict"] == "go" and reviewer["pushed"] is True
 
 
 @pytest.mark.parametrize(

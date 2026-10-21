@@ -131,7 +131,7 @@ class _TicketRun:
         self.base_instructions = ""
         self.residuals = review.residuals_in(worktree)  # the tree is the base commit (ADR 0057)
         self.restarted: Restarted | None = None
-        self.pushed = False  # the branch is on the remote: it is never restarted (ADR 0047)
+        self.pushed = False  # this run pushed the branch: it is never restarted (ADR 0047)
         self.not_updated: list[str] = []
         self.changed: list[str] = []
         self.truncated: list[str] = []  # the files whose hunks the last reviewed diff lacked
@@ -586,7 +586,7 @@ class _TicketRun:
             with contextlib.suppress(*_FAILURES):
                 self.folder.log("ticket.stopped", f"Stopped: {reason}", detail)
                 status = exc.status if isinstance(exc, Stop) else "stopped"
-                self.metrics.finish(status, category_of(exc))
+                self.metrics.finish(status, category_of(exc), self.pushed)
                 self.folder.set_status(status, reason, next_action)
                 self._commit_record(f"#{self.number}: record the stop")
         else:  # stopped in the first setup: the metrics go outside the repository (ADR 0031)
