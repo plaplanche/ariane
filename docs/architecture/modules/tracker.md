@@ -11,15 +11,15 @@ The tracker interface (C1, C10): the only way Ariane talks to GitHub, another fo
 | `Issue` | dataclass | An issue: `number`, `title`, `body`, `url`. |
 | `PullRequest` | dataclass | A pull request: `number`, `url`. |
 | `PullRequestState` | dataclass | When a pull request opened and ended (merged or closed): `opened`, `ended` (empty while open), `merged`, `number` (0 when not known). |
-| `Tracker` | protocol | `read_issue`, `open_pull_request`, `add_labels`, `comment`, `file_url`, `pull_request_state`, `changes_requested`, `set_commit_status`. |
+| `Tracker` | protocol | `read_issue`, `open_pull_request`, `add_labels`, `comment`, `file_url`, `pull_request_state`, `changes_requested_at`, `set_commit_status`. |
 | `InMemoryTracker` | dataclass | The tracker double used by tests; it records pull requests (with their draft flag) and statuses. |
 
 ## Behaviour and errors
 
 - `open_pull_request(..., draft=False)`: a draft pull request is not ready to merge (C10).
 - `pull_request_state(branch)`: when the latest pull request from a branch opened and ended, and its number, for the report (C19, ADR 0038), or None.
-- `changes_requested(number, since="")`: whether a human, not a bot account, left a "changes requested" review on pull request `number`, submitted at `since` (ISO 8601 UTC) or later; one of the facts after a `go` that make a review escape in the report (C10, C19, ADR 0058). Nothing is posted.
-- `InMemoryTracker` takes `issues`, `pull_states`, `refuse_statuses`, `refuse_labels`, `refuse_comments`, `changes_requested_on` (pull request number: the time of its "changes requested" review) and `unreachable`; `comment` records the comments per pull request in `comments`, or raises `TrackerError` when `refuse_comments`; `add_labels` records the labels per pull request in `labels`, or raises `TrackerError` when `refuse_labels`; `read_issue` raises `TrackerError` for an unknown issue, for a pull request number, or when `unreachable`; `set_commit_status` raises it when `refuse_statuses`, and `pull_request_state` and `changes_requested` when `unreachable`. It reads and writes no file.
+- `changes_requested_at(number)`: when a human, not a bot account, left a "changes requested" review on pull request `number`, as submission times (ISO 8601 UTC); one of the facts after a `go` that make a review escape in the report (C10, C19, ADR 0058). Nothing is posted.
+- `InMemoryTracker` takes `issues`, `pull_states`, `refuse_statuses`, `refuse_labels`, `refuse_comments`, `changes_requested_on` (pull request number: the times of its "changes requested" reviews) and `unreachable`; `comment` records the comments per pull request in `comments`, or raises `TrackerError` when `refuse_comments`; `add_labels` records the labels per pull request in `labels`, or raises `TrackerError` when `refuse_labels`; `read_issue` raises `TrackerError` for an unknown issue, for a pull request number, or when `unreachable`; `set_commit_status` raises it when `refuse_statuses`, and `pull_request_state` and `changes_requested_at` when `unreachable`. It reads and writes no file.
 - `IssueRefused` is a `TrackerError`, so a caller that handles tracker failures also handles a refused issue.
 
 ## Workflow
@@ -30,7 +30,7 @@ flowchart TD
   A --> C[open_pull_request head, base, title, body, draft]
   A --> D[file_url branch, path]
   A --> E[pull_request_state branch]
-  A --> K[changes_requested n]
+  A --> K[changes_requested_at n]
   A --> F[set_commit_status sha, context, state, description, target_url]
   B --> G{trusted and reachable?}
   G -- refused --> X[raise IssueRefused]
@@ -53,7 +53,7 @@ class Tracker {
   comment(number, body) None
   file_url(branch, path) str
   pull_request_state(branch) PullRequestState
-  changes_requested(number, since) bool
+  changes_requested_at(number) list
   set_commit_status(sha, context, state, description, target_url) None
 }
 class InMemoryTracker {

@@ -61,31 +61,41 @@ def _ci_red(data: dict[str, Any]) -> bool | None:
     return bool(found) if isinstance(found, list | int) and not isinstance(found, bool) else None
 
 
-def escaped(data: dict[str, Any], tracker: Tracker) -> bool | None:
-    """Whether the `go` that delivered `data` was wrong: a red CI on the reviewed head, or after
-    the `go`, a human "changes requested" review or the pull request closed without merge. None
-    when there is no pull request to tell; `TrackerError` when the tracker fails. The pull
-    request is the branch's latest (one per ticket branch, ADR 0058)."""
+def pushed_gos(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """The reviewer sessions whose `go` was pushed: every `go` of a record, as each led to a push
+    (the delivery, then each `ariane update`), but the last one when the record did not end
+    delivered green (its push did not happen). None for a shadow ticket."""
+    if data["mode"] == "shadow":
+        return []
+    reviews = [s for s in data["sessions"] if s.get("role") == "reviewer" and "verdict" in s]
+    green = data["outcome"] == "delivered" and not data.get("category")
+    gos = [s for s in reviews if s["verdict"] == "go"]
+    if gos and not green and reviews[-1] is gos[-1]:
+        gos = gos[:-1]
+    return gos
+
+
+def escaped(data: dict[str, Any], tracker: Tracker) -> list[bool] | None:
+    """For each pushed `go` of `data`, in order, whether it was wrong: a human "changes
+    requested" review or the pull request closed without merge after it and before the next
+    `go`, or for the last one after it or a red CI on the reviewed head. None when there is no
+    pull request to tell; `TrackerError` when the tracker fails. The pull request is the
+    branch's latest (one per ticket branch, ADR 0058)."""
+    gos = pushed_gos(data)
     branch = data.get("branch") or f"ariane/{data['ticket']}"
     state = tracker.pull_request_state(branch)
-    if state is None:
+    if state is None or not gos:
         return None
-    reviews = [s for s in data["sessions"] if s.get("role") == "reviewer" and "verdict" in s]
-    since = str(reviews[-1].get("at") or data["started"])  # a record from before `at`: its start
-    if _ci_red(data) or (state.ended >= since and not state.merged):
-        return True
-    return bool(state.number) and tracker.changes_requested(state.number, since)
-
-
-def _delivered_go(data: dict[str, Any], reviews: list[dict[str, Any]]) -> bool:
-    """The record ended delivered green on a `go` (its last review) and has a pull request."""
-    return (
-        data["mode"] != "shadow"
-        and data["outcome"] == "delivered"
-        and not data.get("category")
-        and bool(reviews)
-        and reviews[-1].get("verdict") == "go"
-    )
+    events = tracker.changes_requested_at(state.number) if state.number else []
+    if state.ended and not state.merged:
+        events = [*events, state.ended]
+    at = [str(s.get("at") or data["started"]) for s in gos]  # from before `at`: the start
+    found = []
+    for i, since in enumerate(at):
+        until = at[i + 1] if i + 1 < len(at) else None
+        found.append(any(since <= t and (until is None or t < until) for t in events))
+    found[-1] = found[-1] or bool(_ci_red(data))
+    return found
 
 
 def lines(rows: list[dict[str, Any]], tracker: Tracker | None) -> list[str]:
@@ -104,17 +114,16 @@ def lines(rows: list[dict[str, Any]], tracker: Tracker | None) -> list[str]:
             found = session.get("findings")
             group.findings += found if isinstance(found, int) and not isinstance(found, bool) else 0
             group.seen.add(data["ticket"])
-        if tracker is None or not _delivered_go(data, reviews):
+        if tracker is None or not pushed_gos(data):
             continue
-        last = reviews[-1]
         try:
-            result = escaped(data, tracker)
+            results = escaped(data, tracker)
         except (TrackerError, ValueError, OSError):
             tracker = None  # the tracker failed once: do not wait for it again per ticket
             continue
         ci_read = ci_read or _ci_red(data) is not None
-        if result is not None:
-            group = groups[(implementer, str(last.get("model")), str(last.get("runtime")))]
+        for go, result in zip(pushed_gos(data), results or [], strict=False):
+            group = groups[(implementer, str(go.get("model")), str(go.get("runtime")))]
             ticket = int(data["ticket"])  # a ticket's records count once: escaped if any is
             group.outcomes[ticket] = group.outcomes.get(ticket, False) or result
     if not groups:

@@ -545,7 +545,7 @@ class _TicketRun:
         try:
             done = delivery.deliver(results)
         except PullRequestRefused as exc:
-            raise Stop(exc.reason, exc.next_action) from None
+            raise Stop(exc.reason, exc.next_action, category=exc.category) from None
         after_delivery(self, checked, results, done)  # never changes what was delivered (#186)
         if done.draft:
             why = (

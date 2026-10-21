@@ -52,6 +52,7 @@ Arrows go from the importing module to the imported module; a dashed arrow is an
 ```mermaid
 flowchart LR
   checks --> stop
+  delivery --> stop
   flow --> stop
   full_replay --> stop
   metrics --> stop

@@ -9,6 +9,7 @@ from pathlib import Path
 from ariane import checks, git, process, review, ticket
 from ariane.redact import redact
 from ariane.risk import Tier
+from ariane.stop import GUARD, INFRA
 from ariane.tracker import Issue, Tracker, TrackerError
 
 _STATUS_DESCRIPTION_MAX = 140
@@ -18,12 +19,14 @@ FAILURES = (git.GitError, TrackerError, OSError, process.CommandNotFoundError)
 
 
 class PullRequestRefused(Exception):
-    """The branch is pushed but the tracker refused the pull request."""
+    """The delivery is refused: the tracker refused the pull request (`infra`), or a guard
+    refused the push (`guard`, ADR 0058)."""
 
-    def __init__(self, reason: str, next_action: str) -> None:
+    def __init__(self, reason: str, next_action: str, category: str = INFRA) -> None:
         super().__init__(reason)
         self.reason = reason
         self.next_action = next_action
+        self.category = category
 
 
 @dataclass(frozen=True)
@@ -184,6 +187,7 @@ class Delivery:
                 "git configuration rewrites URLs, which could reroute the push"
                 f" ({'; '.join(rewrites)})",
                 "remove the url.*.insteadOf keys; Ariane pushed nothing",
+                GUARD,
             )
 
     @property
@@ -203,6 +207,7 @@ class Delivery:
                 f"the head to push differs from the replayed commit outside {own}"
                 f" ({', '.join(outside)})",
                 "inspect the branch; Ariane pushed nothing",
+                GUARD,
             )
 
     def _publish_statuses(self, results: list[checks.CheckResult], sha: str) -> None:

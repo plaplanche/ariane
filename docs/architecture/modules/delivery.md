@@ -8,7 +8,7 @@ Delivers a ticket: one push, the pull request (a draft that can carry failing bl
 | --- | --- | --- |
 | `OWNER_REVIEW_LABEL` | constant | `owner-review`, the label of a pull request whose change touches `[review] sensitive_paths` (ADR 0057). |
 | `FAILURES` | constant | The exception types a delivery step can raise (git, tracker, OS, missing command). |
-| `PullRequestRefused` | exception | The tracker refused the pull request; carries `reason` and `next_action`. |
+| `PullRequestRefused` | exception | The delivery is refused; carries `reason`, `next_action` and `category` (ADR 0058): `infra` when the tracker refused the pull request, `guard` when the last guard refused the push (a URL rewrite, a head that differs from the replayed commit outside the ticket folder). |
 | `Delivered` | dataclass | The result: `pull_url`, `draft`, `pushed` (the commit pushed, which carries the statuses) and `pull_number`, for the full replay after delivery ([full_replay](full_replay.md)). |
 | `Delivery` | dataclass | Performs the delivery of one ticket; `deliver(results)` pushes, opens the pull request and publishes the statuses; `push_update(results, expected)` is the second push of `ariane update` (ADR 0033). |
 
@@ -23,7 +23,7 @@ Delivers a ticket: one push, the pull request (a draft that can carry failing bl
 - Pushed (ADR 0047): right after the push, `deliver` calls the run's `on_pushed` callable (default: nothing); the run then no longer names `ariane start <n> --restart` in a stop, since a pushed ticket is never restarted.
 - Record (C1, C23, ADR 0027): the status committed before the push is `pushing` (`needs a human` for a draft) and never claims a push or a pull request. After the pull request is opened and the statuses published, the status becomes `delivered` with the pull request's number and URL (`needs a human`, "draft pull request #<p> opened" for a draft) and `work/<n>/` is committed as `#<n>: record the pull request` on the local branch only: the pushed commit, which carries the statuses, does not move, and the ticket's working tree is clean.
 - Update push (C11, ADR 0033): `push_update(results, expected)` sets the status `pushing`, commits `work/<n>/` as `#<n>: record the update`, requires the head to differ from the merge commit (`checked`) only in the ticket folder, calls the last guard (where `ariane update` also refuses a remote branch that moved since it began), pushes the head with `git.push` leased on `expected`, the remote head the update began from (a fast-forward of the pull request's branch, refused by the remote if that branch moved meanwhile; no pull request is opened), journals `ticket.update.pushed`, publishes one status per check on the pushed head, then commits the status `delivered` as `#<n>: record the update's push` on the local branch only. Returns the pushed commit.
-- `PullRequestRefused`: raised when the tracker refuses the pull request.
+- `PullRequestRefused`: raised when the tracker refuses the pull request (category `infra`), or when a guard refuses the push (category `guard`); `flow` and `update` stop with its category.
 
 ## Workflow
 
@@ -96,6 +96,7 @@ flowchart LR
   delivery --> redact
   delivery --> review
   delivery --> risk
+  delivery --> stop
   delivery --> ticket
   delivery --> tracker
   flow --> delivery

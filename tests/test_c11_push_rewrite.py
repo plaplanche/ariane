@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,7 @@ from ariane import delivery, git
 from ariane.tracker import InMemoryTracker
 
 from conftest import FakeRuntime, Project, sh
-from test_flow import start
+from test_flow import start, worktree
 
 HTTPS = "https://github.com/acme/repo.git"
 
@@ -78,6 +79,8 @@ def test_c11_push_rewrite_matching_pushinsteadof_stops_the_delivery(
     assert outcome.exit_code == 1
     assert "rewrites URLs" in outcome.line
     assert pushes == []
+    recorded = json.loads((worktree(project) / "work/7/metrics.json").read_text(encoding="utf-8"))
+    assert recorded["category"] == "guard"  # a guard's refusal, not the tracker's (ADR 0058)
 
 
 def test_c11_push_rewrite_matching_insteadof_stops_the_delivery(

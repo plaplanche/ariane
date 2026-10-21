@@ -49,6 +49,7 @@ flowchart TD
   delivery --> redact
   delivery --> review
   delivery --> risk
+  delivery --> stop
   delivery --> ticket
   delivery --> tracker
   flow --> checks

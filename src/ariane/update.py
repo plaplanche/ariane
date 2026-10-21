@@ -425,7 +425,9 @@ class _UpdateRun(_TicketRun):
         try:
             pushed = self._delivery(merged, k, guard).push_update(results, self.heads.remote)
         except PullRequestRefused as exc:
-            raise Stop(exc.reason, exc.next_action, status=NEEDS_A_HUMAN) from None
+            raise Stop(
+                exc.reason, exc.next_action, status=NEEDS_A_HUMAN, category=exc.category
+            ) from None
         return Outcome(
             EXIT_OK,
             f"Updated {self.branch} with {REMOTE}/{self.config.base_branch}: merge commit"

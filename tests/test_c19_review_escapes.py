@@ -73,7 +73,7 @@ def test_c19_review_escapes_each_wrong_go_counts_once_a_merge_does_not(root: Pat
     tracker.pull_states["ariane/1"] = pull(101, "2026-10-02T00:00:00Z", merged=True)
     put(root, 2)  # a human asked for changes
     tracker.pull_states["ariane/2"] = pull(102, "2026-10-02T00:00:00Z", merged=True)
-    tracker.changes_requested_on[102] = "2026-10-02T00:00:00Z"
+    tracker.changes_requested_on[102] = ["2026-10-02T00:00:00Z"]
     put(root, 3)  # closed without merge
     tracker.pull_states["ariane/3"] = pull(103, "2026-10-02T00:00:00Z")
     put(root, 4, ci_failures=[])  # green CI, merged
@@ -156,14 +156,50 @@ def test_c19_review_escapes_only_what_follows_the_go_counts(root: Path) -> None:
     go = "2026-10-05T12:00:00Z"
     put(root, 1, at=go)  # changes requested before the go, fixed, then the go: no escape
     tracker.pull_states["ariane/1"] = pull(101, "2026-10-06T00:00:00Z", merged=True)
-    tracker.changes_requested_on[101] = "2026-10-04T08:00:00Z"
+    tracker.changes_requested_on[101] = ["2026-10-04T08:00:00Z"]
     put(root, 2, at=go)  # changes requested after the go: an escape
     tracker.pull_states["ariane/2"] = pull(102, "2026-10-06T00:00:00Z", merged=True)
-    tracker.changes_requested_on[102] = "2026-10-05T13:00:00Z"
+    tracker.changes_requested_on[102] = ["2026-10-05T13:00:00Z"]
     put(root, 3, at=go)  # closed without merge before the go: not this go's escape
     tracker.pull_states["ariane/3"] = pull(103, "2026-10-05T11:00:00Z")
     assert "2 escapes" not in escapes_line(lines(root, tracker))
     assert ", 1 escapes, " in escapes_line(lines(root, tracker))
+
+
+def updated(root: Path, number: int, gos: list[tuple[str, str]], **kw: Any) -> None:
+    """A delivered ticket then updated: one `go` per (reviewer, time), in order."""
+    put(root, number, **kw)
+    path = root / f"work/{number}/metrics.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["sessions"] = [data["sessions"][0]] + [
+        {
+            "role": "reviewer",
+            "model": r,
+            "runtime": "codex",
+            "verdict": "go",
+            "findings": 0,
+            "at": t,
+        }
+        for r, t in gos
+    ]
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_c19_review_escapes_an_update_keeps_the_escape_of_the_go_before_it(root: Path) -> None:
+    tracker = InMemoryTracker()
+    # Delivered on rev-a's go, changes requested, then updated on rev-b's go: rev-a's escape.
+    updated(root, 1, [("rev-a", "2026-10-05T10:00:00Z"), ("rev-b", "2026-10-07T10:00:00Z")])
+    tracker.pull_states["ariane/1"] = pull(101, "2026-10-08T00:00:00Z", merged=True)
+    tracker.changes_requested_on[101] = ["2026-10-06T09:00:00Z"]
+    # The update stopped after its go (its push refused): only the delivery's go counts.
+    gos = [("rev-a", "2026-10-05T10:00:00Z"), ("rev-b", "2026-10-07T10:00:00Z")]
+    updated(root, 2, gos, outcome="needs a human", category="guard")
+    tracker.pull_states["ariane/2"] = pull(102)
+    tracker.changes_requested_on[102] = ["2026-10-07T12:00:00Z"]  # after the unpushed go
+    out = lines(root, tracker)
+    assert "2 go, 0.0 findings per review, 2 escapes" in escapes_line(out, "rev-a")
+    rev_b = escapes_line(out, "rev-b")  # two verdicts, one pushed: one ticket behind its rate
+    assert "2 go, 0.0 findings per review, 0 escapes, escape rate not shown (1 tickets" in rev_b
 
 
 def test_c19_review_escapes_a_ticket_counts_once_toward_the_threshold(root: Path) -> None:

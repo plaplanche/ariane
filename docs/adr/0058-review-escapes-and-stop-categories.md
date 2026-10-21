@@ -45,7 +45,12 @@ per ticket. Choosing a reviewer model or a risk tier without those numbers is gu
   for blocking checks red after the merge, `review` for its `no-go`, `guard` for its remote branch
   moved or a merge commit with unexpected parents, `infra` for the rest; an update refused before
   any change (no pull request, a dirty tree, nothing to merge) leaves the ticket as delivered and
-  is not a stop. `ci` is reserved for the CI rounds, which do not exist yet. A delivered green ticket has no `category` key. `Stop` carries its category
+  is not a stop. `ci` is reserved for the CI rounds, which do not exist yet. **Accepted
+  residual:** an update whose `git merge --abort` fails, or that is interrupted with a merge left
+  half done, writes no record by design (a record commit would reset the unresolved merge, ADR
+  0033), so it records no category either; it is rare and stops with "needs a human" in the
+  terminal. The tracker's refusal of the pull request is `infra`, a guard's refusal of the push
+  `guard`. A delivered green ticket has no `category` key. `Stop` carries its category
   (`infra` by default), so each raiser names its own; `ReviewFailed` and `verify.Refused` carry one
   too. `ariane report` counts the tickets per category, then per implementer model; a record from
   before categories is `not recorded`. A start that ends before its run exists (the issue gate,
@@ -57,14 +62,18 @@ per ticket. Choosing a reviewer model or a risk tier without those numbers is gu
   each as its own attempt: never merged with a run of the same ticket and start second.
 - **Order and identity.** Only what follows the `go` makes it an escape: the reviewer session
   that answered records `at`, its time, and a "changes requested" review or a close without merge
-  counts when it is at that time or later (a record from before `at` uses its `started`). The
+  counts when it is at that time or later (a record from before `at` uses its `started`). An
+  `ariane update` continues the delivery's `metrics.json` (ADR 0033), so a record can hold several
+  pushed `go`: each is evaluated, an event going to the last pushed `go` before it, each `go` to
+  its own model pair; a red CI on the reviewed head goes to the last one. A `go` whose push did
+  not happen (the record's last review, the record not delivered green) is not counted. The
   pull request is the branch's latest: Ariane opens one per ticket branch. The 5-ticket threshold
   counts distinct ticket numbers: several records of one ticket (hand takeovers) count once, as
   escaped if any of them escaped.
 - **The tracker is read at report time.** What happened after a `go` (the owner's review, the
   merge or the close) happens after Ariane's run ended, often days later; Ariane did not see it and
   does not store it. The report asks the tracker each time (`Tracker.pull_request_state`, with the
-  pull request's number, and `Tracker.changes_requested`), like the waiting time (ADR 0038), and
+  pull request's number, and `Tracker.changes_requested_at`), like the waiting time (ADR 0038), and
   posts nothing.
 
 ## Consequences
