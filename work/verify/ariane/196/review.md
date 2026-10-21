@@ -1,26 +1,18 @@
 # Review 0
 
-- Reviewed commit: `12ce7eb6d964e6e2df32b1692d8ba423d13bfc63`
+- Reviewed commit: `a1e1c05abeb61ac44a3e4dbf43c01a29ae729c8a`
 - Reviewer model: gpt-6-astra
 - Verdict: **no-go** (the reviewer answered no-go)
 
 ## Findings
 
-- **blocking** (`src/ariane/review_escapes.py:109`) An update erases escapes attributed to an earlier go
+- **blocking** (`src/ariane/review_escapes.py:73`) A failed update erases an already-pushed go from escape accounting
 
-  Metrics.resume preserves earlier reviewer sessions, but escape detection evaluates only the last review and its timestamp. Reproduced without filesystem writes: an initial go followed by human changes requested reports one escape; appending a later update go makes that escape disappear, including from the original model pair. A stopped update also excludes the earlier delivered go entirely through _delivered_go. These are supported start/update paths on the same PR. Evaluate each delivered go against subsequent events and preserve its model attribution before deduplicating tickets.
+  pushed_gos infers push history from the final outcome. After a successful delivery, an update can conflict or fail checks before adding another review. Its stop changes the outcome and category, but the last review is still the original, already-pushed go. This code removes it. An in-memory reproduction changed a reported human-review escape from 1 escape/1 ticket to 0 escapes/0 tickets merely by setting the update outcome to needs a human/category merge. Delivery ordering also disproves the inverse assumption: metrics are marked delivered, records committed, guards checked, the branch pushed, and only then the PR, statuses and local records are written; a failure after the push can produce a stopped outcome despite successful publication. Record publication identity per review instead of deriving it from the latest outcome. Add report assertions after updates that stop before review and after delivery failures following a push.
 
 - **blocking** (`src/ariane/update.py:293`) Unresolved merge stops never record a category
 
-  The sequence is: git merge writes the conflicted index and working tree; git merge --abort fails or leaves changes; _abort raises Unresolved; _left_unresolved emits run.stopped, kills survivors and returns without writing metrics. The previous delivered metrics remain, so report counts no merge stop. Interruptions with a pending merge take the same path. This violates the requirement that every update stop record its category. Preserve the unresolved tree and index, but save categorized metrics outside the repository. Existing abort-failure tests cover this path without asserting categorized metrics; the new update tests cover only successful aborts.
-
-- **blocking** (`src/ariane/flow.py:548`) Delivery guard refusals are categorized as infrastructure failures
-
-  Delivery._require_replayed rejects a head changed outside the ticket records, and Delivery._last_guard rejects push URL rewrites. Both raise PullRequestRefused, which this handler converts to Stop with the default infra category. update.py:428 does the same. Consequently tree and push guard failures are counted as infra rather than the required guard category. The sequence is delivery status/record writes and commit, guard refusal before push, then stop journal, metrics, status and record commit. Carry a category through PullRequestRefused so these guard failures remain distinguishable from tracker failures opening a PR.
-
-- **blocking** Definition of done not met: The change is covered by tests that fail without it.
-
-  New tests exercise escapes, grouping, thresholds and several stop categories, but miss earlier escapes surviving updates, unresolved merge categories and delivery guard categories. The supplied replay reports passing tests; filesystem-writing tests were not rerun under the read-only restriction. A read-only in-memory reproduction confirmed the escape regression.
+  The update writes merge state through git merge, attempts git merge --abort, and routes a failed abort or interrupted unresolved merge to _left_unresolved. That path emits a log, kills survivors and returns needs a human without writing metrics. The previous delivered metrics remain, so report omits this stop entirely. This violates the explicit requirement that every non-green outcome and each update stop path records its category. Preserving the unresolved index is necessary, but an external metrics record can preserve the stop without committing or resetting it. ADR 0058 calls this an accepted residual, but it is not among the owner's supplied accepted residuals. Existing abort-failure tests do not assert category recording.
 
 ## Definition of done
 
@@ -44,22 +36,22 @@
 
   Replayed by Ariane: exit 0.
 
-- **not met**: The change is covered by tests that fail without it.
+- met: The change is covered by tests that fail without it.
 
-  New tests exercise escapes, grouping, thresholds and several stop categories, but miss earlier escapes surviving updates, unresolved merge categories and delivery guard categories. The supplied replay reports passing tests; filesystem-writing tests were not rerun under the read-only restriction. A read-only in-memory reproduction confirmed the escape regression.
+  New tests assert escape counts, grouping, thresholds, category fields and tracker review reads that the base implementation lacks. More than five matching tests exist, and Ariane reports the suite passing. Coverage misses the blocking cases above; this review used a read-only in-memory reproduction rather than rerunning filesystem-writing tests.
 
 - met: The documentation the change affects is updated (C25).
 
-  README, benchmark, affected module documentation and architecture diagrams were updated. Independently ran scripts/generate_docs.py --check with bytecode writes disabled; it passed, including the unchanged generated CLI reference and log catalogue.
+  README, benchmark, affected module documentation and component diagrams are updated. Independently ran scripts/generate_docs.py --check successfully, confirming generated references and logs remain current.
 
 - met: Every choice the spec leaves open is recorded as an ADR in docs/adr/ (CLAUDE.md rule 2).
 
-  ADR 0058 records escape semantics, categories, grouping, thresholds, tracker reads, timestamps and refused-attempt storage. Its last-review-only decision nevertheless misses the supported update sequence described in the blocking finding.
+  ADR 0058 records escape definitions, grouping, thresholds, categories, tracker reads, timestamp attribution and external refusal records. Recording a proposed residual does not establish owner acceptance or override the ticket's requirements.
 
 ## Proposed learnings (not decided)
 
-- Proposed: test measurement history across updates; a later successful review must not erase an earlier observed escape.
-- Proposed: audit exception conversion and early-return paths when adding failure categories, including paths that must preserve an unresolved working tree.
+- Proposed: Record which review was actually published; a run's final outcome cannot reconstruct publication history.
+- Proposed: Test report results after orchestration failures, not only the category written by each failure path.
 
 ## Run
 
