@@ -22,7 +22,7 @@ def load_script() -> ModuleType:
 
 
 def test_ci_docs_only_docs_paths() -> None:
-    assert load_script().is_docs_only(["docs/adr/0005-ci-matrix.md", "docs/learnings/x.txt"])
+    assert load_script().is_docs_only(["docs/adr/README.md", "docs/learnings/x.txt"])
 
 
 def test_ci_docs_only_readme_and_claude() -> None:

@@ -1,7 +1,8 @@
 # 0005. Continuous integration matrix
 
 - Status: accepted; the `check-statuses.yml` paragraph amended by 0018; the matrix (six jobs)
-  and the six required checks superseded by 0048 (four jobs)
+  and the six required checks superseded by 0048 (four jobs); the documentation-only rule
+  amended by 0061 (an ADR file runs every check)
 - Date: 2026-10-06
 - Capabilities: platform requirement ("each tested in CI from slice 1")
 
