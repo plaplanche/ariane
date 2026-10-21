@@ -37,6 +37,7 @@ Entries of a ticket's journal.
 | `ticket.delivered` | info | The pull request was opened. |
 | `ticket.update.started` | info | `ariane update` merged, or tried to merge, the base branch into the ticket branch. |
 | `ticket.update.merged` | info | The base branch was merged: the merge commit. |
+| `ticket.update.implementer` | info | `ariane update` gave its implementer session a conflict or broken checks: the task. |
 | `ticket.update.pushed` | info | The updated ticket branch was pushed, a fast-forward. |
 | `ticket.checks.full_replay` | info | The full replay after delivery: not sampled, started, passed or stopped. |
 | `ticket.checks.escape` | warning | A check failed only in the full replay: it passed, skipped or partial, in the round. |

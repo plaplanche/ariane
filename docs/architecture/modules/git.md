@@ -173,6 +173,7 @@ flowchart LR
   git --> process
   git --> redact
   replay --> git
+  resolve --> git
   restart --> git
   review --> git
   review_session --> git

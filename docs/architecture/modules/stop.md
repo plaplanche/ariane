@@ -57,6 +57,7 @@ flowchart LR
   full_replay --> stop
   metrics --> stop
   replay --> stop
+  resolve --> stop
   restart --> stop
   review --> stop
   review_escapes --> stop

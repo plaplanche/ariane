@@ -128,6 +128,11 @@ FUNCTIONAL_TYPES = _declare(
             "`ariane update` merged, or tried to merge, the base branch into the ticket branch.",
         ),
         ("ticket.update.merged", "info", "The base branch was merged: the merge commit."),
+        (
+            "ticket.update.implementer",
+            "info",
+            "`ariane update` gave its implementer session a conflict or broken checks: the task.",
+        ),
         ("ticket.update.pushed", "info", "The updated ticket branch was pushed, a fast-forward."),
         (
             "ticket.checks.full_replay",

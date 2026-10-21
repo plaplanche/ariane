@@ -102,6 +102,7 @@ flowchart LR
   metrics --> ticket
   replay --> ticket
   report --> ticket
+  resolve --> ticket
   restart --> ticket
   review --> ticket
   review_session --> ticket

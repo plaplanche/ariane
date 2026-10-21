@@ -7,6 +7,7 @@ Runs the deterministic checks of `ariane.toml` itself and never believes an agen
 | Name | Kind | What it does |
 | --- | --- | --- |
 | `PASSING_OUTPUT_LINES` | constant | How many output lines a passing check keeps in the report. |
+| `shown_output(r)` | function | A check's output as the report shows it: a failing check's whole, a passing check's last `PASSING_OUTPUT_LINES` lines; also the output `ariane update` gives its implementer session for a check the merge broke (ADR 0033). |
 | `CHANGED_FILES_VARIABLE` | constant | `ARIANE_CHANGED_FILES`: the variable naming the list of changed files a check gets (ADR 0056). |
 | `CHANGED_FILES` | constant | `changed-files.txt`: that list's file name, in the replay tree's ticket folder. |
 | `SKIPPED` | constant | The reason recorded for a check not selected: no changed file matches `paths`. |
@@ -112,6 +113,7 @@ flowchart LR
   flow --> checks
   full_replay --> checks
   replay --> checks
+  resolve --> checks
   review --> checks
   review_session --> checks
   shadow --> checks
