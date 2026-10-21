@@ -41,6 +41,11 @@ command = ["uv", "run", "ruff", "format", "--check", "."]
 name = "types"
 command = ["uv", "run", "mypy"]
 
+# Windows-only type errors (missing `os` constants, platform narrowing) seen on Linux.
+[[checks]]
+name = "types (Windows)"
+command = ["uv", "run", "mypy", "--platform", "win32"]
+
 [[checks]]
 name = "tests"
 command = ["uv", "run", "pytest", "-q"]
@@ -78,6 +83,7 @@ items = [
   { check = "lint" },
   { check = "format" },
   { check = "types" },
+  { check = "types (Windows)" },
   { check = "tests" },
   { check = "file length" },
   { text = "The change is covered by tests that fail without it." },
