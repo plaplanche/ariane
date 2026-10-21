@@ -16,6 +16,7 @@ from ariane.full_replay import after_delivery
 from ariane.metrics import METRICS, Metrics, keep_refused, stopped_metrics_path
 from ariane.redact import redact
 from ariane.restart import Restarted, kept_name, lock_path, locked, prepare, with_restart
+from ariane.review_history import Round, feedback
 from ariane.risk import Tier
 from ariane.runtime import AgentRuntime, SessionResult, StopReason, for_role, session_for
 from ariane.slots import held as held_slot
@@ -136,6 +137,7 @@ class _TicketRun:
         self.not_updated: list[str] = []
         self.changed: list[str] = []
         self.truncated: list[str] = []  # the files whose hunks the last reviewed diff lacked
+        self.reviews: list[Round] = []  # the reviewed rounds, for the next ones (ADR 0059)
         self.changes: dict[str, git.Changes] = {}  # per replayed commit, from the start commit
         self.tier: Tier | None = None  # the last replayed round's risk tier (ADR 0056)
         self.check_failed = False  # a replayed round failed a check: later rounds are high
@@ -470,7 +472,7 @@ class _TicketRun:
         failed: list[checks.CheckResult] = []
         for round_ in range(MAX_FIX_ROUNDS + 1):
             if round_ and not self._fix(
-                round_, start_commit, guard, refs_before, review.fix_feedback(settled, failed)
+                round_, start_commit, guard, refs_before, feedback(self.reviews, settled, failed)
             ):
                 unchanged = round_
                 break
@@ -499,14 +501,8 @@ class _TicketRun:
                 )
             if settled is not None and settled.go and not failed:
                 break
-        return self._deliver(
-            checked,
-            settled,
-            reviewed,
-            results,
-            unchanged,
-            lambda: self.verify("the delivery", start_commit, guard, refs_before),
-        )
+        last = functools.partial(self.verify, "the delivery", start_commit, guard, refs_before)
+        return self._deliver(checked, settled, reviewed, results, unchanged, last)
 
     def _deliver(
         self,

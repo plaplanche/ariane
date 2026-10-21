@@ -7,8 +7,8 @@ The reviewer sessions of one review round (C10): a fresh read-only session on th
 | Name | Kind | What it does |
 | --- | --- | --- |
 | `ReviewFailed` | exception | No valid answer; carries `reason`, `next_action`, `detail` and `category` (the stop category, ADR 0058: `budget` for a cap or a time limit, else `runtime`). |
-| `read_answer(result)` | function | The validated answer of a session result, or the reason it is not one. |
-| `ReviewSession` | dataclass | What the reviewer sessions of a ticket share; `run` returns the validated `Review`; `changed_lines` is the size of the reviewed diff, `small` whether it is a small change and `reviewer` the settings its sessions use (ADR 0046); `tier` is the round's risk tier (ADR 0056); `residuals` (the base commit's accepted residuals) and `sensitive` (the changed files matching `[review] sensitive_paths`) go to the prompt (ADR 0057). |
+| `read_answer(result, earlier=())` | function | The validated answer of a session result, or the reason it is not one; `earlier` are the identifiers of the earlier findings it must answer (ADR 0059). |
+| `ReviewSession` | dataclass | What the reviewer sessions of a ticket share; `run` returns the validated `Review`; `changed_lines` is the size of the reviewed diff, `small` whether it is a small change and `reviewer` the settings its sessions use (ADR 0046); `tier` is the round's risk tier (ADR 0056); `residuals` (the base commit's accepted residuals) and `sensitive` (the changed files matching `[review] sensitive_paths`) go to the prompt (ADR 0057); `earlier`, the earlier rounds' blocking findings, goes to the prompt and to the answer's validation (ADR 0059). |
 | `agent_logins(runtime, implementer, reviewer)` | function | The login variables of each kind of agent session: `implementer`, `reviewer` and `reviewer.small` (the small reviewer's model, or the reviewer's when the small table sets none), each from `runtime.login_for` (ADR 0046, ADR 0024). |
 | `cap_text(agent)` | function | Words the caps that apply, for the journal. |
 | `instruction_dirs(tree)` | function | The folders whose instruction files, with their ancestors', a reviewer on `tree` can load: the system temporary folder and the tree's parent (ADR 0031). |
@@ -90,6 +90,7 @@ flowchart LR
   review_session --> git
   review_session --> metrics
   review_session --> review
+  review_session --> review_history
   review_session --> risk
   review_session --> runtime
   review_session --> stop

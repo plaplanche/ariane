@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -242,6 +243,23 @@ def go_answer(items: tuple[str, ...] | None = None) -> dict[str, Any]:
     }
 
 
+def earlier_ids(prompt: str) -> list[str]:
+    """The identifiers of the earlier blocking findings a reviewer prompt lists (ADR 0059)."""
+    block = prompt.partition('<untrusted-ticket kind="earlier-findings">')[2]
+    block = block.partition("</untrusted-ticket>")[0]
+    return re.findall(r"^- (\d+\.\d+): ", block, re.MULTILINE)
+
+
+def with_earlier(answer: Any, prompt: str) -> Any:
+    """A canned answer without `earlier` answers every listed earlier finding `fixed`."""
+    if not isinstance(answer, dict) or "earlier" in answer:
+        return answer
+    ids = earlier_ids(prompt)
+    return (
+        {**answer, "earlier": [{"finding": i, "answer": "fixed"} for i in ids]} if ids else answer
+    )
+
+
 @dataclass
 class FakeRuntime:
     """An agent runtime that applies `action` to the working tree instead of calling a model."""
@@ -267,7 +285,7 @@ class FakeRuntime:
         index = sum(1 for s in self.sessions if s.role == "reviewer") - 1
         if self.review_actions:
             self.review_actions[min(index, len(self.review_actions) - 1)](session)
-        answer = self.answers[min(index, len(self.answers) - 1)]
+        answer = with_earlier(self.answers[min(index, len(self.answers) - 1)], session.prompt)
         text = answer if isinstance(answer, str) else json.dumps(answer)
         structured = None if isinstance(answer, str) else answer
         return SessionResult(

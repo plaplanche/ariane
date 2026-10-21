@@ -15,7 +15,7 @@ Delivers a ticket: one push, the pull request (a draft that can carry failing bl
 ## Behaviour and errors
 
 - `Delivery`: performs the delivery.
-- `Delivered`: the pull request (and whether it is a draft) and the statuses published. When the last review is still `no-go` after the fix rounds the pull request is a draft whose body says "Needs a human", and the ticket status is `needs a human` with next action "finish by hand, then run `ariane verify`". The pull request body carries the review's verdict and definition-of-done results. When the reviewed diff was cut (`truncated`, the files whose hunks it lacked), the review section says the diff given to the reviewer was truncated and how many files were missing (ADR 0031).
+- `Delivered`: the pull request (and whether it is a draft) and the statuses published. When the last review is still `no-go` after the fix rounds the pull request is a draft whose body says "Needs a human", and the ticket status is `needs a human` with next action "finish by hand, then run `ariane verify`". The pull request body carries the review's verdict and definition-of-done results. When the last review of a draft has recurring findings (`settled.circled`, ADR 0059), `deliver` journals `ticket.review.circled` ("Review circled on <files>", with the chains) and the body says, above the review table, that the rounds circled on the same design question and lists each chain (`review_history.circled_note`). When the reviewed diff was cut (`truncated`, the files whose hunks it lacked), the review section says the diff given to the reviewer was truncated and how many files were missing (ADR 0031).
 - Skipped checks (C9, ADR 0056): a check the change did not select (`CheckResult.skipped`) gets a `success` commit status described "skipped by Ariane: no changed file matches `paths`", so a required status does not block the pull request; the pull request body shows it as `skipped` in the checks table and lists the skipped checks after the summary line.
 - Risk tier (C9, ADR 0056): given the last round's `tier`, the pull request body states "Risk tier: <tier>: <reasons>." before the checks table.
 - Sensitive paths (C10, ADR 0057): given `sensitive`, the ticket's changed files that match `[review] sensitive_paths` (both sides of a rename, from `checks.changed_files` of the delivered round's name-status listing, as the review sees them), the pull request body says, right above the review section, "**Owner review** (`owner-review`): sensitive paths changed: `<path>`, ...", and right after the pull request opens it gets the label `owner-review` (`Tracker.add_labels`). A refused label is the journaled warning `ticket.warning.label_refused`, committed with the pull request's record; the delivery goes on. Without a sensitive path there is no label and no line. Nothing is merged or approved.
@@ -95,6 +95,7 @@ flowchart LR
   delivery --> process
   delivery --> redact
   delivery --> review
+  delivery --> review_history
   delivery --> risk
   delivery --> stop
   delivery --> ticket
@@ -108,4 +109,4 @@ flowchart LR
 
 ## Serves
 
-C9, C11, C21, C23; ADR 0017, ADR 0018, ADR 0027, ADR 0047, ADR 0056. See [the component view](../3-components.md).
+C9, C11, C21, C23; ADR 0017, ADR 0018, ADR 0027, ADR 0047, ADR 0056, ADR 0059. See [the component view](../3-components.md).

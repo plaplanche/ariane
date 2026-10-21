@@ -36,6 +36,7 @@ Declares every log type once (functional journal entries and technical records) 
 - Selective checks (C9, ADR 0056): `ticket.checks.skipped` names the checks a round did not run because no changed file matches their `paths`; `ticket.checks.risk_tier` gives the round's risk tier and its reasons. After delivery, `ticket.checks.full_replay` says whether the sampled full replay ran (not sampled, started, passed, stopped) and `ticket.checks.escape`, a warning, names the checks that failed only there; `ticket.warning.comment_refused` is a refused pull request comment (#186).
 - Dependency caches (C9, ADR 0054): `ticket.checks.cache` lists, per check, each `[[project.cache]]` folder copied from the store (hit) or built (stored, or why not); the ticket's own tree's caches and the store entries pruned at the start are in `ticket.setup`.
 - Environment (C21): `ticket.env.declared_secret` warns, names only, when variables named like secrets pass to agents and checks because `[project] env` declares them.
+- Review history (C10, ADR 0059): `ticket.review.circled`, a warning, is journaled when a draft is delivered whose last review has recurring blocking findings: "Review circled on <files>", with the chain of findings (round, finding) of each.
 
 ## Workflow
 

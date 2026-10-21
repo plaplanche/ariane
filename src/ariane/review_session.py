@@ -9,7 +9,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from ariane import checks, git, review, ticket
+from ariane import checks, git, review, review_history, ticket
 from ariane.config import AgentConfig, CheckConfig, DoneItem
 from ariane.metrics import Metrics
 from ariane.risk import Tier
@@ -62,15 +62,18 @@ def agent_logins(
     }
 
 
-def read_answer(result: SessionResult) -> tuple[review.Review | None, str]:
-    """The validated answer of a reviewer session, or the reason it is not one."""
+def read_answer(
+    result: SessionResult, earlier: Sequence[str] = ()
+) -> tuple[review.Review | None, str]:
+    """The validated answer of a reviewer session, or the reason it is not one; `earlier` are
+    the identifiers of the earlier blocking findings it must answer (ADR 0059)."""
     data = result.structured_output
     if data is None:
         try:
             data = json.loads(result.summary)
         except json.JSONDecodeError:
             return None, "the answer is not a JSON object"
-    errors = review.validate(data)
+    errors = review.validate(data, earlier)
     if errors:
         return None, "\n".join(errors)
     return review.parse(data), ""
@@ -95,6 +98,7 @@ class ReviewSession:
     tier: Tier | None = None  # the round's risk tier, stated in the prompt (ADR 0056)
     residuals: Sequence[review.Residual] = ()  # accepted at the base commit (ADR 0057)
     sensitive: Sequence[str] = ()  # the changed paths matching `[review] sensitive_paths`
+    earlier: Sequence[review_history.Earlier] = ()  # the earlier rounds' blocking findings
 
     @property
     def small(self) -> bool:
@@ -221,6 +225,7 @@ class ReviewSession:
                     tier=self.tier,
                     residuals=self.residuals,
                     sensitive=self.sensitive,
+                    earlier=self.earlier,
                 ),
                 env=self.small_env if self.small and self.small_env is not None else self.env,
                 json_schema=review.SCHEMA,
@@ -273,7 +278,7 @@ class ReviewSession:
                     ticket.fenced(result.summary),
                     category(result.stop_reason),
                 )
-            answer, error = read_answer(result)
+            answer, error = read_answer(result, [e.id for e in self.earlier])
             if answer is not None:
                 return answer
             self.folder.log("ticket.review.invalid", f"Reviewer answer {attempt} invalid", error)
