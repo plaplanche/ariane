@@ -29,6 +29,7 @@ Entries of a ticket's journal.
 | `ticket.review.diff_truncated` | warning | The reviewer's diff was cut; the files whose hunks are missing. |
 | `ticket.review.invalid` | warning | The reviewer's answer was invalid; asking again. |
 | `ticket.review.verdict` | info | The review ended: verdict, findings, definition of done. |
+| `ticket.review.circled` | warning | The last review round has recurring blocking findings: the rounds circled on them. |
 | `ticket.fix.unchanged` | warning | A fix round changed nothing, so the fix rounds stop. |
 | `ticket.fix.round` | info | A fix round began, with the findings its session was given. |
 | `ticket.delivering` | info | Delivery began: push and pull request. |

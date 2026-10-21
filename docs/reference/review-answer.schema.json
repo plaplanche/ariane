@@ -81,6 +81,36 @@
       "items": {
         "type": "string"
       }
+    },
+    "earlier": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "finding",
+          "answer"
+        ],
+        "properties": {
+          "finding": {
+            "type": "string"
+          },
+          "answer": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "still open",
+              "replaced"
+            ]
+          },
+          "caused": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          }
+        }
+      }
     }
   }
 }

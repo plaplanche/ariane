@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ariane import checks, context, git, ticket
+from ariane import checks, context, git, review_history, ticket
 from ariane.config import CheckConfig, DoneItem
 from ariane.risk import Tier
 from ariane.stop import CHECKS, REVIEW
@@ -61,6 +61,7 @@ SCHEMA: dict[str, Any] = {
             },
         },
         "learnings": {"type": "array", "items": {"type": "string"}},
+        "earlier": review_history.SCHEMA,  # from round 1 on (ADR 0059)
     },
 }
 
@@ -89,6 +90,7 @@ class Review:
     findings: tuple[Finding, ...]
     definition_of_done: tuple[DoneResult, ...]
     learnings: tuple[str, ...]
+    earlier: tuple[review_history.EarlierAnswer, ...] = ()  # one per earlier blocking finding
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,7 @@ class Settled:
     verdict: str
     findings: tuple[Finding, ...]  # the reviewer's, then one per unmet item
     items: tuple[DoneResult, ...]
+    circled: review_history.Circled | None = None  # the recurring findings (ADR 0059)
 
     @property
     def go(self) -> bool:
@@ -114,8 +117,9 @@ def not_green(settled: Settled | None, results: Sequence[checks.CheckResult]) ->
     return "" if settled is not None and settled.go else REVIEW
 
 
-def validate(data: Any) -> list[str]:
-    """The errors of an answer against `SCHEMA` (empty when valid)."""
+def validate(data: Any, earlier: Sequence[str] = ()) -> list[str]:
+    """The errors of an answer against `SCHEMA` (empty when valid); `earlier` holds the
+    identifiers of the earlier rounds' blocking findings, each answered once (ADR 0059)."""
     if not isinstance(data, dict):
         return ["answer: expected an object"]
     found = _keys(data, "answer", SCHEMA)
@@ -145,7 +149,7 @@ def validate(data: Any) -> list[str]:
     for i, text in enumerate(_list(data, "learnings")):
         if not isinstance(text, str):
             found.append(f"learnings[{i}]: expected a string")
-    return found
+    return found + review_history.validate(data, earlier)
 
 
 def _list(data: dict[str, Any], key: str) -> list[Any]:
@@ -175,6 +179,7 @@ def parse(data: Any) -> Review:
         findings=tuple(Finding(**f) for f in data["findings"]),
         definition_of_done=tuple(DoneResult(**d) for d in data["definition_of_done"]),
         learnings=tuple(data["learnings"]),
+        earlier=review_history.parse(data),
     )
 
 
@@ -338,6 +343,7 @@ def prompt(
     tier: Tier | None = None,
     residuals: Sequence[Residual] = (),
     sensitive: Sequence[str] = (),
+    earlier: Sequence[review_history.Earlier] = (),
 ) -> str:
     """The reviewer's prompt; the issue, the diff and the instructions are data, never rules.
 
@@ -345,7 +351,8 @@ def prompt(
     and when the diff is cut the prompt names the files whose hunks are missing (ADR 0031).
     `small_lines`, the changed lines of a small change, narrows the review (ADR 0046); the
     round's risk `tier` is stated with the checks (ADR 0056). `residuals`, from the base
-    commit's ADRs, and the changed `sensitive` paths are shown as data (ADR 0057)."""
+    commit's ADRs, and the changed `sensitive` paths are shown as data (ADR 0057); from round 1
+    on, the `earlier` rounds' blocking findings, each to answer (ADR 0059)."""
     small = f"\n{small_note(small_lines)}\n" if small_lines is not None else ""
     where = f" at `{tree}`" if tree else ""
     project = (
@@ -443,6 +450,7 @@ def prompt(
         if sensitive
         else ""
     )
+    history = review_history.prompt_block(earlier)
     failed = [r.name for r in results if r.blocking and not r.passed]
     state = (
         "all blocking checks green"
@@ -486,7 +494,7 @@ Checks replayed by Ariane ({names}); {state}:
 {not_run}
 Definition of done, sentences to answer one by one:
 {sentences}
-{untouched}{unrun_block}{owner}{accepted}Project instructions (from the base branch):
+{untouched}{unrun_block}{owner}{accepted}{history}Project instructions (from the base branch):
 {project}
 
 <{context.UNTRUSTED_TAG} number="{issue.number}">
@@ -558,19 +566,8 @@ def record(settled: Settled, commit: str, model: str, round_: int = 0) -> str:
         parts.append(f"- {'met' if d.met else '**not met**'}: {d.item}\n\n  {d.evidence}\n")
     parts.append("## Proposed learnings (not decided)\n")
     parts += [f"- {text}" for text in settled.review.learnings] or ["None."]
+    parts += review_history.record_lines(settled)
     return "\n".join(parts) + "\n"
-
-
-def fix_feedback(settled: Settled | None, failed: Sequence[checks.CheckResult] = ()) -> str:
-    """What a fix session is told: the last review's findings and the blocking checks that
-    failed after the last fix round. It comes from an agent, so the caller gives it as data."""
-    lines = []
-    if settled is not None:
-        for f in settled.findings:
-            where = f" ({f.file}:{f.line})" if f.file else ""
-            lines.append(f"- {f.severity}{where} {f.title}: {f.detail}")
-    lines += [f"- blocking check failed: {r.name} ({r.detail})" for r in failed]
-    return "\n".join(lines) or "(no finding)"
 
 
 def pull_request_section(settled: Settled, review_url: str, review_path: str) -> str:
