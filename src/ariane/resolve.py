@@ -40,6 +40,31 @@ def with_markers(worktree: Path, paths: Sequence[str]) -> list[str]:
     return found
 
 
+def staged_with_markers(worktree: Path, paths: Sequence[str]) -> list[str]:
+    """The `paths` whose staged blob (what the commit takes, whatever the working copy holds)
+    holds a conflict marker line; a path not in the index has nothing to commit."""
+    found = []
+    for path in paths:
+        blob = git.git(["cat-file", "blob", f":0:{path}"], worktree, check=False)
+        markers = tuple(m.decode() for m in MARKERS)
+        if blob.ok and any(line.startswith(markers) for line in blob.stdout.splitlines()):
+            found.append(path)
+    return found
+
+
+def _left(worktree: Path, paths: Sequence[str]) -> list[str]:
+    """The conflicts left: paths unmerged, or with a marker line in the working copy or index."""
+    files = with_markers(worktree, paths)
+    return sorted({*unmerged(worktree), *files, *staged_with_markers(worktree, paths)})
+
+
+def _refuse_left(left: Sequence[str], nothing: str) -> None:
+    if left:
+        detail = "\n".join(f"- `{p}`" for p in left)
+        reason = f"the update session left conflicts in {', '.join(left)}"
+        raise Unresolved(reason, nothing, detail, category=MERGE)
+
+
 def conflict_task(base: str, conflicts: Sequence[str]) -> str:
     """The update session's task for a merge that conflicts."""
     listing = "\n".join(f"- `{p}`" for p in conflicts)
@@ -98,14 +123,12 @@ def resolve_conflicts(
         f"finish the merge by hand in {tree} (`git status`), then run `ariane verify"
         f" {run.branch}` and push it; Ariane committed and pushed nothing"
     )
-    if left := sorted({*unmerged(tree), *with_markers(tree, conflicts)}):
-        detail = "\n".join(f"- `{p}`" for p in left)
-        reason = f"the update session left conflicts in {', '.join(left)}"
-        raise Unresolved(reason, nothing, detail, category=MERGE)
+    _refuse_left(_left(tree, conflicts), nothing)
     if git.out(records, tree) != staged:
         run.metrics.guard_violation()
         raise Unresolved("the update session staged changes to ticket records", nothing)
     git.git(["add", "--all", "--", ".", f":(exclude){ticket.WORK_DIR}"], tree, env=env)
+    _refuse_left(_left(tree, conflicts), nothing)  # the commit takes the index: checked staged
     git.git(["commit", "--quiet", "--no-edit"], tree, env=env)
     listing = "\n".join(f"- `{p}`" for p in conflicts)
     run.folder.log("ticket.work.committed", "Merge committed", f"Conflicts resolved:\n{listing}")

@@ -368,7 +368,7 @@ sequenceDiagram
     D->>G: git merge --no-ff --no-edit origin/base (untrusted environment)
     alt conflict
       D->>R: resolve_conflicts: one implementer session, its task the conflicting paths
-      R->>G: no unmerged path, no conflict marker line, git commit --no-edit (two parents)
+      R->>G: no unmerged path, no conflict marker line in a file or staged blob, git commit --no-edit (two parents)
       Note over D,R: left unresolved: needs a human, merge state kept, nothing committed
     else failed without a conflict
       D->>G: git merge --abort, check it restored the head and the tree

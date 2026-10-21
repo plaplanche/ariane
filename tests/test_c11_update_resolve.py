@@ -106,7 +106,9 @@ def test_c11_update_resolve_a_conflict_commits_the_merge_replays_reviews_and_pus
     assert not merge_pending(project) and not git.status(tree)
 
 
-@pytest.mark.parametrize("left", ["an unmerged path", "a conflict marker"])
+@pytest.mark.parametrize(
+    "left", ["an unmerged path", "a conflict marker", "a marker staged behind a clean copy"]
+)
 def test_c11_update_resolve_a_session_leaving_a_conflict_needs_a_human(
     project: Project,
     tracker: InMemoryTracker,
@@ -124,6 +126,9 @@ def test_c11_update_resolve_a_session_leaving_a_conflict_needs_a_human(
         text = "version 2\n<<<<<<< ours\nkept\n=======\nversion 3\n>>>>>>> theirs\n"
         (session.cwd / "app.txt").write_text(text, encoding="utf-8")
         sh(["git", "add", "app.txt"], session.cwd)
+        if left == "a marker staged behind a clean copy":  # `git add --all` skips the entry
+            sh(["git", "update-index", "--skip-worktree", "app.txt"], session.cwd)
+            (session.cwd / "app.txt").write_text("version 2\nversion 3\n", encoding="utf-8")
 
     runtime = FakeRuntime(action=on_update(half_done))
     outcome = run_update(project, tracker, runtime)

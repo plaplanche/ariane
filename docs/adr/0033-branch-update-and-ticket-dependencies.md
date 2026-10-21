@@ -101,11 +101,13 @@ of stopping, as §1 decided.
   paths. The `git add` clause is added to the decided text so that the check below has a meaning:
   a path not marked resolved is still unmerged. The guard expects the head where the update
   started (the session must not commit). Then Ariane refuses to continue when `git ls-files -u`
-  lists a path, or a conflicting path's file holds a line starting with `<<<<<<< ` or `>>>>>>> `
-  (the conflict-marker check; `=======` alone is too common in text to count), or the session
+  lists a path, or a conflicting path's file or staged blob holds a line starting with
+  `<<<<<<< ` or `>>>>>>> ` (the conflict-marker check; `=======` alone is too common in text to
+  count; the staged blob is what the commit takes, so a working copy hidden from `git add`, such
+  as one marked `--skip-worktree`, cannot pass it), or the session
   staged entries under `work/`; and stops as a guard violation when the merge is no longer in
-  progress at the fetched base. Otherwise it stages everything outside `work/` and runs
-  `git commit --no-edit`: the merge commit keeps both parents, which are checked as for a clean
+  progress at the fetched base. Otherwise it stages everything outside `work/`, runs the
+  unmerged and marker checks again on the index, and runs `git commit --no-edit`: the merge commit keeps both parents, which are checked as for a clean
   merge.
 - **A conflict left unresolved** stops `needs a human` with the merge state kept and nothing
   committed or pushed, as an abort that did not restore the tree: a record commit's `git reset`

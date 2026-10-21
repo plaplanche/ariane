@@ -307,8 +307,8 @@ already it says so and writes nothing. A merge conflict, or a blocking check the
 to one implementer session whose task it is (the conflicting paths, or the failing checks' output);
 Ariane commits the merge (both parents kept) or the fix as `#<n>: fix after merging <base>`, then
 replays and reviews; a red check or a `no-go` then gets one fix round, as in `ariane start`. A
-session that leaves a path unmerged or a conflict marker line stops the update with the merge left
-in progress for you, nothing committed. Still red or `no-go` after that round, or a `no-go` on a
+session that leaves a path unmerged or a conflict marker line (in a file or staged) stops the
+update with the merge left in progress for you, nothing committed. Still red or `no-go` after that round, or a `no-go` on a
 clean merge, stops with status `needs a human` and pushes nothing; the review's record continues
 the ticket's numbering (`review-<k>.md`) and `metrics.json` counts the `updates`.
 
