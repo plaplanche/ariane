@@ -117,7 +117,11 @@ and CI runs the same list on Windows, macOS and Linux:
 | Lint | `uv run ruff check .` |
 | Format | `uv run ruff format --check .` |
 | Types | `uv run mypy` |
+| Types (Windows) | `uv run mypy --platform win32` |
 | Tests | `uv run pytest` |
 | File length | `uv run python scripts/check_file_length.py` |
+
+In CI, the Windows jobs' native `uv run mypy` covers "Types (Windows)", so the workflow does not
+run it separately.
 
 Ariane's own `ariane.toml` declares the same checks for its tickets.

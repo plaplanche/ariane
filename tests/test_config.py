@@ -224,3 +224,18 @@ def test_c10_own_config_opus_implements_codex_reviews_on_the_plan() -> None:
     assert (cfg.implementer.runtime, cfg.implementer.model) == ("claude-code", "claude-opus-5-5")
     assert (cfg.reviewer.runtime, cfg.reviewer.model) == (config.CODEX, "gpt-6-astra")
     assert cfg.reviewer.api_key_env is None
+
+
+def test_c9_own_checks_match_the_claude_md_table() -> None:
+    """CLAUDE.md rule 6: the "Checks" table and `ariane.toml` list the same checks, in order."""
+    root = Path(__file__).resolve().parent.parent
+    cfg = config.load(root, {})
+    text = (root / "CLAUDE.md").read_text(encoding="utf-8").split("## Checks", 1)[1]
+    rows = re.findall(r"^\| ([^|]+?) \| `([^`]+)` \|$", text, re.MULTILINE)
+    assert [name.lower() for name, _ in rows] == [c.name.lower() for c in cfg.checks]
+    for (_, command), check in zip(rows, cfg.checks, strict=True):
+        assert " ".join(check.command).startswith(command)  # the replay may add `-q`
+    assert [item.check for item in cfg.definition_of_done if item.check] == [
+        check.name for check in cfg.checks
+    ]
+    assert ("uv", "run", "mypy", "--platform", "win32") in {c.command for c in cfg.checks}
