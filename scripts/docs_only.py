@@ -8,6 +8,9 @@ from collections.abc import Iterable
 
 def is_docs_path(path: str) -> bool:
     path = path.strip().replace("\\", "/")
+    if path.startswith("docs/adr/") and path != "docs/adr/README.md":
+        # An added ADR can collide with one merged meanwhile: the tests check it (ADR 0061).
+        return False
     if path.startswith("docs/"):
         return True
     return path.endswith(".md") and not path.startswith("work/")
