@@ -44,12 +44,12 @@ flowchart TB
   session -->|edits files in| trees
   cmd -->|push, pull request, statuses| github
   github -->|triggers| ci
-  ci -->|publishes statuses from the committed report| github
+  ci -->|replays the checks and publishes statuses| github
 ```
 
 - `ci.yml` runs the checks on Windows, macOS and Linux with Python 3.13, and on Linux with
   Python 3.11 too; the tests run in parallel (ADR 0005, ADR 0048).
-- `check-statuses.yml` publishes the statuses from the committed report when Ariane cannot.
+- `check-statuses.yml` replays the checks on an `ariane/<n>` pull request's head and publishes one status per check when Ariane cannot (ADR 0018); it is specific to Ariane's own repository.
 - The reviewer session is read-only: its tools are an allow list (`Read`, `Glob`, `Grep`). It reads a
   separate reviewer tree with no `CLAUDE.md`, `AGENTS.md` or `.claude/` (ADR 0031); Claude Code starts
   from an empty folder with `--restricted`. On opencode it ignores project configuration files. On Codex it runs `codex exec` in the read-only sandbox with the CLI's own login; Ariane never reads `~/.codex/auth.json`. On pi it runs `pi -p --mode json` with the read-only tools (`read`, `grep`, `find`, `ls`), no session file, extension, skill, prompt template, theme or context file, and offline; Ariane never reads pi's `auth.json`.
