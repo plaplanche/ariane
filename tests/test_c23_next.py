@@ -312,7 +312,7 @@ def test_c23_next_a_last_run_stopped_on_a_quota_proposes_nothing(project: Projec
     assert proposal.number is None
     assert reasons(proposal, 4) == ("the last run, #20, stopped on a quota of its agent",)
     assert proposal.last_line().endswith(
-        "Next: once the quota resets, run ariane start 20 --restart."
+        "Next: once the quota resets, run ariane start 20 --resume."
     )
 
 

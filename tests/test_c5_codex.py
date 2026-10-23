@@ -203,7 +203,8 @@ def test_c5_codex_a_usage_limit_stops_the_session_as_quota(tmp_path: Path) -> No
     result, _ = run(tmp_path, QUOTA, code=1)
     assert result.stop_reason is StopReason.QUOTA
     assert "usage limit" in result.summary and "codex" in result.summary.lower()
-    assert result.next_step == "restart the ticket after 3:45 PM"
+    assert result.next_step == "wait for the quota to reset (after 3:45 PM)"
+    assert result.reset_at is not None and result.reset_at.endswith("Z")
     assert result.structured_output is None
 
 
@@ -279,7 +280,8 @@ def test_c5_codex_a_quota_stop_ends_the_ticket_with_the_quota_status(
     )
     assert outcome.exit_code != 0
     assert "reviewer quota reached" in outcome.line
-    assert "restart the ticket after 3:45 PM" in outcome.line
+    assert "wait for the quota to reset (after 3:45 PM)" in outcome.line
+    assert "`ariane start 7 --resume`" in outcome.line
     assert "no-go" not in outcome.line
     shadow = ticket_shadow(project)
     data = json.loads((shadow / "work/7/metrics.json").read_text(encoding="utf-8"))

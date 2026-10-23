@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
@@ -66,6 +68,43 @@ def _tool_name(event: dict[str, Any]) -> str | None:
     if isinstance(item, dict) and item.get("type") not in (None, "agent_message", "reasoning"):
         return str(item.get("tool") or item["type"])
     return None
+
+
+_SPAN = re.compile(r"(\d+)\s*(second|minute|hour|day|week)s?\b", re.IGNORECASE)
+_CLOCK = re.compile(r"\b(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]\.?m\.?)?", re.IGNORECASE)
+
+
+def reset_moment(text: str, now: datetime | None = None) -> str | None:
+    """The UTC time, as ISO text, of a runtime's "try again at/in <text>": an ISO time with its
+    zone, a span ("2 hours 5 minutes") from `now`, or a clock time ("3:45 PM", the machine's
+    local time) at its next occurrence; None when the text is none of these (ADR 0062)."""
+    now = now or datetime.now(UTC)
+    try:
+        moment = datetime.fromisoformat(text.strip().replace("Z", "+00:00"))
+    except ValueError:
+        moment = None
+    if moment is not None and moment.tzinfo is not None:
+        return _utc(moment)
+    if spans := _SPAN.findall(text):
+        return _utc(
+            now + sum((timedelta(**{f"{u.lower()}s": int(n)}) for n, u in spans), timedelta())
+        )
+    if (found := _CLOCK.search(text)) is None:
+        return None
+    hour, minute, second = int(found[1]), int(found[2]), int(found[3] or 0)
+    if found[4]:
+        if not 1 <= hour <= 12:
+            return None
+        hour = hour % 12 + (12 if found[4][0].lower() == "p" else 0)
+    if hour > 23 or minute > 59 or second > 59:
+        return None
+    local = now.astimezone()
+    moment = local.replace(hour=hour, minute=minute, second=second, microsecond=0)
+    return _utc(moment if moment > local else moment + timedelta(days=1))
+
+
+def _utc(moment: datetime) -> str:
+    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def json_object(line: str) -> dict[str, Any] | None:
@@ -133,6 +172,7 @@ class SessionResult:
     attempts: Attempts = field(default_factory=Attempts)
     billing: str | None = None  # "plan" (covered by a subscription) or "api"; None when unknown
     next_step: str | None = None  # what to do, when the runtime knows (quota, login)
+    reset_at: str | None = None  # a quota stop: when the runtime said it resets, UTC (ADR 0062)
 
     @classmethod
     def failed(cls, reason: StopReason, summary: str, cap: str | None = None) -> SessionResult:

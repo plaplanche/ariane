@@ -32,7 +32,8 @@ options:
 ## `ariane start`
 
 ```text
-usage: ariane start [-h] [--log-level LEVEL] [--shadow] [--restart] issue
+usage: ariane start [-h] [--log-level LEVEL] [--shadow] [--restart | --resume]
+                    issue
 
 positional arguments:
   issue              issue number
@@ -46,6 +47,9 @@ options:
   --restart          start a stopped or interrupted ticket over: remove its
                      working trees and keep its branch as ariane-
                      restarted/<issue>-<time>
+  --resume           continue a ticket stopped by its implementer's budget,
+                     turn or time limit, or by a quota, from its saved work:
+                     as --restart, then the branch starts from the kept one
 ```
 
 ## `ariane update`

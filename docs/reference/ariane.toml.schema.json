@@ -205,6 +205,22 @@
               "type": "string",
               "minLength": 1,
               "description": "Codex or pi reviewer only: variable holding an API key, passed to the session as CODEX_API_KEY (Codex) or as the model provider's own key variable (pi); without it the CLI's own login is used."
+            },
+            "resume_factor": {
+              "type": "number",
+              "minimum": 1,
+              "default": 2,
+              "description": "`ariane start <n> --resume` multiplies the limit that stopped the implementer session (max_budget_usd and max_tokens after a budget stop, timeout_minutes after a timeout) by this factor, for the resumed session only."
+            },
+            "max_budget_usd_cap": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Highest max_budget_usd a resumed session gets; at least max_budget_usd. Default: the raised value itself."
+            },
+            "timeout_minutes_cap": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Highest timeout_minutes a resumed session gets; at least timeout_minutes. Default: the raised value itself."
             }
           }
         },

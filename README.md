@@ -113,8 +113,9 @@ session then bills your ChatGPT plan and `ariane report` shows it as "covered by
 `api_key_env = "<variable>"` in `[agents.reviewer]`: that variable's value is given to the Codex
 process only, as `CODEX_API_KEY`, and the session is billed per token. Without `api_key_env`, every
 OpenAI key variable is removed from the process's environment. When the plan's usage limit is
-reached the ticket stops with "reviewer quota reached", never a no-go: restart it after the reset
-time. Not logged in and no `api_key_env`: the ticket stops with "Codex is not logged in". Without
+reached the ticket stops with "reviewer quota reached", never a no-go: resume it with
+`ariane start <n> --resume` after the reset time, which it refuses before that time when Codex gave
+one. Not logged in and no `api_key_env`: the ticket stops with "Codex is not logged in". Without
 `api_key_env` the CLI must be logged in with ChatGPT: a CLI logged in with an API key stops the
 ticket ("Codex is logged in with an API key, not ChatGPT"; run `codex login --device-auth` with the
 ChatGPT account, or set `api_key_env`), since `max_tokens` cannot bound a per-token turn (ADR 0043).
@@ -227,6 +228,35 @@ bash:
 
 ```bash
 ariane start 12 --restart || ariane status 12
+```
+
+**Resuming a ticket stopped by a limit.** When the implementer session (or a fix session) of
+ticket 12 stopped on its budget, turn or time limit, or a session stopped on its runtime's usage
+quota, the stop line names `ariane start 12 --resume` next to `--restart`. `--resume` runs the same
+restart steps (lock, saved work, kept branch), then starts `ariane/12` from the kept branch's head
+instead of the base: the new implementer session is told it continues an interrupted attempt and
+given the previous stop reason, the files it changed and the last journal entries, as data. For
+that session only, the limit that stopped it is raised by `[agents.implementer] resume_factor`
+(default 2: twice `max_budget_usd`, and `max_tokens` when set, after a budget stop; twice
+`timeout_minutes` after a timeout), capped by `max_budget_usd_cap` and `timeout_minutes_cap`; the
+journal says which limit was raised, from what to what. After a quota stop no limit is raised, and
+after the reviewer's quota the run replays the checks and reviews the kept head without a new
+implementer session. Any other stop (a check failure, a review hand-over, a guard stop) refuses
+`--resume` and names `--restart`; a resumed run that stops on a limit again refuses another
+`--resume`, so a ticket never loops on limits
+([ADR 0062](docs/adr/0062-resume-a-ticket-stopped-by-a-limit.md)).
+
+PowerShell:
+
+```powershell
+ariane start 12 --resume
+if ($LASTEXITCODE -ne 0) { ariane status 12 }
+```
+
+bash:
+
+```bash
+ariane start 12 --resume || ariane status 12
 ```
 
 `work/12/metrics.json` also counts, in `attempts`, the `git push` and `gh pr create` commands the agent tried and the guard violations ([ADR 0036](docs/adr/0036-shadow-mode-and-attempts.md)).

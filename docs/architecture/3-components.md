@@ -69,6 +69,7 @@ flowchart TD
   flow --> redact
   flow --> replay
   flow --> restart
+  flow --> resume
   flow --> review
   flow --> review_history
   flow --> review_session
@@ -165,6 +166,15 @@ flowchart TD
   restart --> slots
   restart --> stop
   restart --> ticket
+  resume --> checks
+  resume --> config
+  resume -.-> flow
+  resume --> git
+  resume --> metrics
+  resume --> restart
+  resume --> runtime
+  resume --> stop
+  resume --> ticket
   review --> checks
   review --> config
   review --> context

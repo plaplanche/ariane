@@ -15,7 +15,8 @@ from ariane.delivery import FAILURES, Delivery, PullRequestRefused
 from ariane.full_replay import after_delivery
 from ariane.metrics import METRICS, Metrics, keep_refused, stopped_metrics_path
 from ariane.redact import redact
-from ariane.restart import Restarted, kept_name, lock_path, locked, prepare, with_restart
+from ariane.restart import Restarted, kept_name, lock_path, locked, with_restart
+from ariane.resume import Resumed, enter, offered, prepare, with_resume
 from ariane.review_history import Round, feedback
 from ariane.risk import Tier
 from ariane.runtime import AgentRuntime, SessionResult, StopReason, for_role, session_for
@@ -24,13 +25,12 @@ from ariane.stop import CHECKS, GUARD, SPEC, Stop, category_of, describe
 from ariane.tracker import Issue, Tracker, TrackerError
 
 REMOTE = "origin"
-SETUP_TIMEOUT_S = 30 * 60
+SETUP_TIMEOUT_S = replay.SETUP_TIMEOUT_S
 EXIT_OK = 0
 EXIT_STOPPED = 1
 EXIT_INTERRUPTED = 130
 MAX_FIX_ROUNDS = 2
 _FAILURES = FAILURES
-_Env = Mapping[str, str] | None  # a parallel check's environment, with its own slot
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,7 @@ def start(
     runtime: AgentRuntime,
     environ: Mapping[str, str],
     restarting: bool = False,
+    resuming: bool = False,
 ) -> Outcome:
     try:
         issue = runs.read_issue(tracker, number)
@@ -75,15 +76,17 @@ def start(
         try:
             registry.enter_context(locked(lock_path(repo_root, number), number))
             slot = registry.enter_context(held_slot())  # to the run's end (ADR 0050)
-            kept = kept_name(number) if restarting else ""  # registered before the rename
+            kept = kept_name(number) if restarting or resuming else ""  # registered first
             registry.enter_context(runs.registered(runs.folder(repo_root), number, branch, kept))
             witnessed = registry.enter_context(runs.watching(runs.folder(repo_root)))
-            url, refs_before, instructions, restarted = prepare(
-                repo_root, config.base_branch, branch, worktree, kept
+            url, refs_before, instructions, restarted, resumed = prepare(
+                repo_root, config, branch, worktree, kept, resuming
             )
             run = _TicketRun(issue, config, tracker, runtime, environ, worktree, branch, url, slot)
             run.base_instructions = instructions
             run.restarted = restarted
+            if resumed is not None:  # once the base's ADRs were read (ADR 0062)
+                enter(run, resumed)
             run.witnessed = witnessed
         except (Stop, KeyboardInterrupt, *_FAILURES) as exc:
             keep_refused(worktree, number, exc)  # lock, slot, registry or preparation: `infra`
@@ -133,6 +136,10 @@ class _TicketRun:
         self.base_instructions = ""
         self.residuals = review.residuals_in(worktree)  # the tree is the base commit (ADR 0057)
         self.restarted: Restarted | None = None
+        # `--resume` (ADR 0062): the run continues, its first session with `resume_next`.
+        self.resumed: Resumed | None = None
+        self.resume_next: Resumed | None = None
+        self.diff_base = ""  # where the changes start when not at the start commit
         self.pushed = False  # this run pushed the branch: it is never restarted (ADR 0047)
         self.not_updated: list[str] = []
         self.changed: list[str] = []
@@ -175,6 +182,8 @@ class _TicketRun:
             if self.restarted is not None:  # the journal opens with it (ADR 0047)
                 text = self.restarted.journal(self.number)
                 self.folder.log("ticket.restarted", "Ticket started over", text)
+                if self.resumed is not None:
+                    self.folder.log("ticket.resumed", "Ticket resumed", self.resumed.journal())
             self.metrics.step("folder opened")
             self.folder.log(
                 "ticket.started",
@@ -194,7 +203,7 @@ class _TicketRun:
             self._commit_record(f"#{self.number}: open the ticket folder")
             start_commit = self.start_commit = git.head(self.worktree)
             ignored_before = git.ignored(self.worktree)
-            result = self._implement()
+            result = None if self.resumed and self.resumed.agent is None else self._implement()
             self.verify("the agent session", start_commit, guard, refs_before)
             self._warn_ignored(ignored_before)
             self._commit_agent_work(start_commit, result)
@@ -228,46 +237,14 @@ class _TicketRun:
         self.metrics.surviving_processes(len(killed))
         return runs.survivors_stop(after, killed)
 
-    def setup(
-        self, cwd: Path, command: tuple[str, ...] | None, guard: dict[str, str], env: _Env = None
-    ) -> Stop | None:
-        """Run the setup command (C8) in `cwd` in `env` or the run's, without credentials (it may
-        run agent-written code), then, before anything else runs, compare git and the instruction
-        files to `guard` (ADR 0031); an error is journaled once the folder exists."""
-        if not command:
-            return None
-        try:
-            env = self.untrusted_env if env is None else env
-            done = process.run(command, cwd=cwd, timeout_s=SETUP_TIMEOUT_S, env=env)
-        except process.CommandNotFoundError as exc:
-            return Stop(f"setup failed: {exc}", "install it or fix project.setup")
-        survived = self.survivors(f"setup `{' '.join(command)}`") or self._unchanged("setup", guard)
-        if survived is not None:
-            self.metrics.guard_violation()
-            return survived
-        if not done.ok:
-            status = "timed out" if done.timed_out else f"exit {done.returncode}"
-            return Stop(
-                f"setup `{' '.join(command)}` failed ({status})",
-                "fix the setup command, then start the ticket again",
-                ticket.fenced(done.output),
-            )
-        if leftovers := git.untracked(cwd):
-            listing = "\n".join(f"- `{path}`" for path in leftovers)
-            return Stop(
-                "setup left files that git does not ignore",
-                "add them to .gitignore, then start the ticket again",
-                listing,
-            )
-        return None
-
     def _implement(self, fix_round: int = 0, findings: str = "", task: str = "") -> SessionResult:
         """The implementer session, a fix round's (C10), or an update's for `task` (ADR 0033)."""
-        agent = self.config.implementer
+        resumed, self.resume_next = self.resume_next, None  # its first session only
+        agent = resumed.agent if resumed and resumed.agent else self.config.implementer
         done = self.config.definition_of_done
-        docs = self.config.documentation
-        args = (self.issue, self.branch, self.config.checks, done, docs)
-        made = functools.partial(context.implementer_prompt, *args, update=self.updating, task=task)
+        args = (self.issue, self.branch, self.config.checks, done, self.config.documentation)
+        prompt_of = functools.partial(context.implementer_prompt, *args, update=self.updating)
+        made = functools.partial(prompt_of, task=task, resumed=resumed.data() if resumed else "")
         prompt = made(fix_round=fix_round, findings=findings)
         recorded = made(fix_round=fix_round, findings=findings, recorded=True, read_at=ticket.now())
         name = f"Fix session {fix_round}" if fix_round else "Update session" if task else ""
@@ -411,7 +388,7 @@ class _TicketRun:
         return False
 
     def _commit_agent_work(
-        self, start_commit: str, result: SessionResult, message: str = ""
+        self, start_commit: str, result: SessionResult | None, message: str = ""
     ) -> None:
         # This ticket's own folder is rewritten by Ariane anyway (an agent's `git commit -a`
         # picks up Ariane's journal); other tickets' records must stay untouched.
@@ -429,7 +406,7 @@ class _TicketRun:
             )
         changed = [
             p
-            for p in git.changed_paths(self.worktree, start_commit)
+            for p in git.changed_paths(self.worktree, self.diff_base or start_commit)
             if not p.startswith(ticket.WORK_DIR + "/")
         ]
         exclude = f":(exclude){ticket.WORK_DIR}"
@@ -439,7 +416,7 @@ class _TicketRun:
             self.folder.log("ticket.work.committed", "Agent work committed", listing)
         self.changed = changed
         self._flag_untouched_docs(changed)
-        if result.stop_reason is not StopReason.FINISHED:
+        if result is not None and result.stop_reason is not StopReason.FINISHED:
             raise Stop(
                 f"the implementer session stopped: {result.stop_text()}",
                 f"read work/{self.number}/journal.md; its work is kept on the branch",
@@ -468,10 +445,11 @@ class _TicketRun:
         """C10: replay the checks and review; after a `no-go` (or blocking checks failing after
         a fix round) up to two fix rounds, then deliver, as a draft if still `no-go`."""
         settled: review.Settled | None = None
-        reviewed = unchanged = 0
+        first = reviewed = self.resumed.stopped.rounds if self.resumed else 0
+        unchanged = 0
         failed: list[checks.CheckResult] = []
-        for round_ in range(MAX_FIX_ROUNDS + 1):
-            if round_ and not self._fix(
+        for round_ in range(first, MAX_FIX_ROUNDS + 1):  # a resumed run's rounds count (C10)
+            if round_ > first and not self._fix(
                 round_, start_commit, guard, refs_before, feedback(self.reviews, settled, failed)
             ):
                 unchanged = round_
@@ -571,8 +549,9 @@ class _TicketRun:
 
     def _stopped(self, exc: BaseException) -> Outcome:
         reason, next_action = describe(exc)
-        if self.restartable and not self.pushed:
-            next_action = with_restart(next_action, self.number)
+        if self.restartable and not self.pushed:  # a limit or quota stop: `--resume` too
+            more = with_resume if offered(self.metrics, category_of(exc)) else None
+            next_action = (more or with_restart)(next_action, self.number)
         detail = exc.detail if isinstance(exc, Stop) else str(exc)
         logs.emit("run.stopped", f"ticket #{self.number}: {reason}")
         # Ctrl-C or an error can end a command before its survivors were counted.

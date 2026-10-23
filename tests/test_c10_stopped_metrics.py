@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from ariane import flow, metrics, process
+from ariane import flow, metrics, process, replay
 from ariane.tracker import InMemoryTracker
 
 from conftest import FakeRuntime, Project
@@ -24,7 +24,7 @@ def test_c10_stopped_metrics_an_interrupted_first_setup_keeps_its_survivors(
     def interrupted(*args: Any, **kwargs: Any) -> None:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(flow._TicketRun, "setup", interrupted)
+    monkeypatch.setattr(replay, "run_setup", interrupted)
     monkeypatch.setattr(process, "kill_survivors", lambda *args, **kwargs: {})
     monkeypatch.setattr(process, "take_killed", lambda: {4242: "detached"})
     outcome = start(project, tracker, FakeRuntime())

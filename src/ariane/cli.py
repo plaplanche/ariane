@@ -84,14 +84,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     logs.configure(level, logs.log_path(root, args.issue))
     if args.command == "status":
         return _status(root, args.issue)
-    if args.shadow and args.restart:
+    if args.shadow and (args.restart or args.resume):
+        flag = "--resume" if args.resume else "--restart"
         return _say(
             EXIT_USAGE,
-            f"Did not start #{args.issue}: --restart does not apply to shadow tickets. Next:"
+            f"Did not start #{args.issue}: {flag} does not apply to shadow tickets. Next:"
             f" remove the clone at {shadow.clone_path(root, args.issue)}, then run"
             f" ariane start {args.issue} --shadow.",
         )
-    return _start(root, args.issue, args.shadow, args.restart)
+    return _start(root, args.issue, args.shadow, args.restart, resuming=args.resume)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -116,11 +117,18 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="run the ticket in a separate clone, without push or pull request",
     )
-    start.add_argument(
+    again = start.add_mutually_exclusive_group()
+    again.add_argument(
         "--restart",
         action="store_true",
         help="start a stopped or interrupted ticket over: remove its working trees and keep its"
         " branch as ariane-restarted/<issue>-<time>",
+    )
+    again.add_argument(
+        "--resume",
+        action="store_true",
+        help="continue a ticket stopped by its implementer's budget, turn or time limit, or by"
+        " a quota, from its saved work: as --restart, then the branch starts from the kept one",
     )
     upd = sub.add_parser(
         "update",
@@ -322,6 +330,7 @@ def _start(
     shadowed: bool = False,
     restarting: bool = False,
     updating: bool = False,
+    resuming: bool = False,
 ) -> int:
     """`ariane start`, or `ariane update` when `updating`: both read the issue through the gate."""
     try:
@@ -343,7 +352,8 @@ def _start(
         api_url=cfg.tracker.api_url,
         ready_label=cfg.tracker.ready_label,
     )
-    run = shadow.start if shadowed else functools.partial(flow.start, restarting=restarting)
+    again = functools.partial(flow.start, restarting=restarting, resuming=resuming)
+    run = shadow.start if shadowed else again
     if updating:
         run = update.update
     outcome = run(

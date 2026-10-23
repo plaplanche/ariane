@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import ipaddress
 import math
 import os
 import tomllib
-import urllib.parse
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,10 +16,12 @@ from ariane.config_schema import (
     CODEX,
     OPENCODE,
     PI,
+    RESUME_KEYS,
     RUNTIMES,
     SCHEMA,
     agent_problem,
     model_problem,
+    safe_api_url,
 )
 from ariane.globs import glob_regex
 from ariane.risk import FULL_WHEN, ChecksPolicy, PolicyError
@@ -60,6 +60,11 @@ class AgentConfig:
     api_key_env: str | None = None  # codex, pi: variable holding an API key, else CLI's login
     idle_minutes: float | None = None  # no event for this long stops the session; None: no limit
     small: SmallReview | None = None  # reviewer only: settings for a small change (ADR 0046)
+    # Implementer only: `--resume` raises the limit that stopped a session by this factor, up
+    # to the caps; None: the raised value itself (ADR 0062).
+    resume_factor: float = 2.0
+    max_budget_usd_cap: float | None = None
+    timeout_minutes_cap: float | None = None
 
 
 @dataclass(frozen=True)
@@ -249,7 +254,7 @@ def parse(data: dict[str, Any]) -> Config:
     if base_branch.startswith("-") or any(c.isspace() or c in "~^:?*[\\" for c in base_branch):
         raise ConfigError(f"{CONFIG_FILE}: project.base_branch: not a valid branch name")
     api_url = _str(tracker, "api_url", "tracker.", "https://api.github.com").rstrip("/")
-    if not _safe_api_url(api_url):
+    if not safe_api_url(api_url):
         raise ConfigError(
             f"{CONFIG_FILE}: tracker.api_url: expected an https:// URL (the token is sent there)"
         )
@@ -342,7 +347,7 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
             "idle_minutes",
             "max_tokens",
             "api_key_env",
-            *(("small",) if role == "reviewer" else ()),
+            *(("small",) if role == "reviewer" else RESUME_KEYS),
         },
     )
     prefix = f"{where}."
@@ -363,17 +368,28 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
     if problem is not None:
         raise ConfigError(f"{CONFIG_FILE}: {where}.{problem[0]}: {problem[1]}")
     timeout_minutes = _positive(table, "timeout_minutes", prefix)
+    max_budget_usd = _positive(table, "max_budget_usd", prefix)
     return AgentConfig(
         runtime=runtime,
         model=model,
         tools=tools,
-        max_budget_usd=_positive(table, "max_budget_usd", prefix),
+        max_budget_usd=max_budget_usd,
         timeout_minutes=timeout_minutes,
         max_tokens=_count(table, "max_tokens", where),
         api_key_env=api_key_env,
         idle_minutes=_idle_minutes(table, where, timeout_minutes),
         small=_small(table, where, runtime, api_key_env) if "small" in table else None,
+        **_resume(table, where, max_budget_usd, timeout_minutes),
     )
+
+
+def _resume(table: dict[str, Any], where: str, usd: float, minutes: float) -> dict[str, float]:
+    """The implementer's `resume_factor` (at least 1) and caps (at least the limit they cap)."""
+    found = {k: _positive(table, k, f"{where}.") for k in RESUME_KEYS if k in table}
+    floors = {"resume_factor": 1.0, "max_budget_usd_cap": usd, "timeout_minutes_cap": minutes}
+    if low := [k for k, v in found.items() if v < floors[k]]:
+        raise ConfigError(f"{CONFIG_FILE}: {where}.{low[0]}: must be at least {floors[low[0]]:g}")
+    return found
 
 
 def _small(table: dict[str, Any], where: str, runtime: str, api_key_env: str | None) -> SmallReview:
@@ -410,23 +426,6 @@ def _idle_minutes(table: dict[str, Any], where: str, timeout_minutes: float) -> 
             f" ({timeout_minutes:g})"
         )
     return idle
-
-
-def _safe_api_url(url: str) -> bool:
-    """https, or plain http to the local machine only (a test server)."""
-    parsed = urllib.parse.urlsplit(url)
-    if not parsed.hostname:
-        return False
-    if parsed.scheme == "https":
-        return True
-    if parsed.scheme != "http":
-        return False
-    if parsed.hostname == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(parsed.hostname).is_loopback
-    except ValueError:
-        return False
 
 
 def _checks(raw: list[Any]) -> tuple[CheckConfig, ...]:

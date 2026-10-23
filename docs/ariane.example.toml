@@ -70,6 +70,13 @@ timeout_minutes = 30
 # Optional: stop the session when it sends no event for this many minutes (below
 # timeout_minutes). Default 10, or none when timeout_minutes is 10 or less.
 # idle_minutes = 10
+# Optional: `ariane start <n> --resume` multiplies the limit that stopped the implementer
+# session (max_budget_usd and max_tokens after a budget stop, timeout_minutes after a timeout) by
+# this factor, for the resumed session only (at least 1).
+# resume_factor = 2
+# Optional: the highest values a resumed session gets (default: the raised value itself).
+# max_budget_usd_cap = 10.0
+# timeout_minutes_cap = 60
 
 # The reviewer reads the result after the checks pass (C10). Its model must differ from the
 # implementer's; give it read-only tools.

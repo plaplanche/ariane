@@ -345,7 +345,7 @@ def _blockers(root: Path, slot_folder: Path | None) -> tuple[tuple[str, ...], st
     quota = last_quota_stop(root)
     if quota is not None:
         found.append(f"the last run, #{quota}, stopped on a quota of its agent")
-        action = action or f"once the quota resets, run ariane start {quota} --restart"
+        action = action or f"once the quota resets, run ariane start {quota} --resume"
     return tuple(found), action
 
 

@@ -62,7 +62,8 @@ class Metrics:
         self.first_pass_verdict = NOT_REVIEWED
         self.outcome = "running"
         self.category = ""  # why it did not end delivered green (`stop.CATEGORIES`, ADR 0058)
-        self.restarted_from: dict[str, str | float] | None = None  # the run this one started over
+        # The run this one started over (ADR 0047), `resumed` when it continues it (ADR 0062).
+        self.restarted_from: dict[str, str | float | bool] | None = None
         self.updates = 0  # the `ariane update` runs that merged the base branch (ADR 0033)
         self.recurring_findings = 0  # the last review's recurring blocking findings (ADR 0059)
         self._marked: dict[str, Any] | None = None  # the session `finish` marked `pushed`
@@ -130,6 +131,7 @@ class Metrics:
                 "duration_s": round(time.monotonic() - began, 3),
             }
             | ({"billing": result.billing} if result.billing else {})
+            | ({"reset_at": result.reset_at} if result.reset_at else {})
             | ({"changed_lines": changed_lines} if changed_lines is not None else {})
         )
         self.attempts += result.attempts

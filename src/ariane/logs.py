@@ -48,6 +48,12 @@ FUNCTIONAL_TYPES = _declare(
             "info",
             "The ticket started over: trees removed, previous branch kept, its last action.",
         ),
+        (
+            "ticket.resumed",
+            "info",
+            "The ticket resumed from its kept branch: the previous stop, the limit raised, what"
+            " the session is told.",
+        ),
         ("ticket.started", "info", "The ticket folder was opened for an issue."),
         ("ticket.setup", "info", "The setup command ran, or there was none."),
         (

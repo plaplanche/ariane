@@ -16,11 +16,13 @@
 | `with_restart(action, number)` | function | `action` followed by "; to start over, run `ariane start <n> --restart`", a trailing ", then start (the ticket) again" dropped; unchanged when it already names the command. |
 | `locked(path, number)` | context manager | Holds the ticket's lock for the block, without waiting; held by another process: `Stop` "ticket #<n> is running in another Ariane process". |
 | `prepare(repo_root, base_branch, branch, worktree, kept)` | function | Fetches the base branch, reads its instructions and the remote's refs, refuses a pushed branch, clears a previous run when `kept` is not empty (restarting), refuses leftovers, then creates the branch and the working tree; returns the push URL, the remote refs, the instructions and the `Restarted` record (or None). |
-| `Restarted` | dataclass | What `--restart` cleared: `removed` trees, `kept_branch`, `kept_head`, `saved` (the commit of the uncommitted work, or empty), the previous run's `last_action`, `stopped_at` and `earlier_s` (the restart time that run carried, 0 when none); `journal(number)` is the `ticket.restarted` text, `metrics()` the `restarted_from` object. |
+| `Restarted` | dataclass | What `--restart` cleared: `removed` trees, `kept_branch`, `kept_head`, `saved` (the commit of the uncommitted work, or empty), the previous run's `last_action`, `stopped_at` and `earlier_s` (the restart time that run carried, 0 when none); `resumed` (set by `resume.prepare`, ADR 0062); `journal(number)` is the `ticket.restarted` text, `metrics()` the `restarted_from` object, with `"resumed": true` for a resumed run. |
 | `leftovers(worktree, number)` | function | The ticket's trees that exist: `<n>`, `<n>-review` and every `<n>-replay*`. |
 | `clear(repo_root, worktree, number, branch, kept)` | function | Stops when the tree `<n>` is a folder git does not know that holds files (`_unknown_with_files`: neither saved nor removed). Saves the uncommitted work of the tree `<n>`, removes those trees (`git worktree remove --force` for a registered one, the folder otherwise, then `git worktree prune`), deletes `ariane/<n>` (`git branch -D`, its config with it); `kept` is created first, at the saved commit or the branch's head, before any removal (`git update-ref` with an empty old value: an existing `kept` stops the restart with everything in place); None when there was nothing to clear. |
 
 ## Behaviour and errors
+
+- `ariane start <n> --resume` (module `resume`, ADR 0062) runs these same steps, then moves the new branch to the kept head.
 
 - The lock is an operating-system lock on the whole run of `ariane start <n>`, taken by `slots.try_lock`: `fcntl.flock` (exclusive, non-blocking) on POSIX, `msvcrt.locking` (`LK_NBLCK`, one byte) on Windows. Closing the file releases it, and so does the system when the process dies, so a killed run never leaves it held. The file stays; it holds nothing.
 - `prepare` checks the remote first: a branch `ariane/<n>` on `origin` refuses, with or without `--restart` ("close its pull request and delete the branch, then start again"). Then, when `restarting`, `clear`; then any leftover tree or local branch refuses with the next action "run `ariane start <n> --restart`".
@@ -87,6 +89,7 @@ flowchart LR
   restart --> slots
   restart --> stop
   restart --> ticket
+  resume --> restart
   runs --> restart
   update --> restart
 ```

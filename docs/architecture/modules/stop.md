@@ -60,6 +60,7 @@ flowchart LR
   replay --> stop
   resolve --> stop
   restart --> stop
+  resume --> stop
   review --> stop
   review_escapes --> stop
   review_session --> stop

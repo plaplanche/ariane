@@ -8,7 +8,7 @@ Builds what an agent receives from Ariane (C5, C21, C25, C26): its prompt and an
 | --- | --- | --- |
 | `UNTRUSTED_TAG` | constant | The tag, `untrusted-ticket`, that wraps the ticket text in a prompt. |
 | `RECHECK_RULE` | constant | The fix round's rule on design changes (ADR 0059). |
-| `implementer_prompt(issue, branch, checks, definition_of_done=DEFAULT_DEFINITION_OF_DONE, documentation=NO_DOCUMENTATION, *, recorded=False, read_at='', fix_round=0, findings='', update='', task='')` | function | The prompt of the implementer session; a check with `not_run_locally` is marked as not run locally (ADR 0042); `update` and `task` make it an update's (ADR 0033). |
+| `implementer_prompt(issue, branch, checks, definition_of_done=DEFAULT_DEFINITION_OF_DONE, documentation=NO_DOCUMENTATION, *, recorded=False, read_at='', fix_round=0, findings='', update='', task='', resumed='')` | function | The prompt of the implementer session; a check with `not_run_locally` is marked as not run locally (ADR 0042); `update` and `task` make it an update's (ADR 0033); `resumed`, the first session of a resumed run's: it says the session continues an interrupted attempt and gives what Ariane recorded of it (stop reason, changed files, last journal entries) in an untrusted block `kind="resume"` (in the journal's copy, a pointer to the `ticket.resumed` entry; ADR 0062). |
 | `BASE_VARIABLES` | constant | The variables untrusted code receives without being declared: system, proxy and certificate variables (ADR 0024). |
 | `WINDOWS_VARIABLES` | constant | The system variables added to the base set on Windows. |
 | `SLOT_VARIABLE` | constant | `ARIANE_SLOT`, the one `ARIANE_*` variable Ariane sets for the project (ADR 0050). |

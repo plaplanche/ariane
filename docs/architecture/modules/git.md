@@ -176,6 +176,7 @@ flowchart LR
   replay --> git
   resolve --> git
   restart --> git
+  resume --> git
   review --> git
   review_session --> git
   runs --> git

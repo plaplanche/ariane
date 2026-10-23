@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ipaddress
+import urllib.parse
 from collections.abc import Sequence
 from typing import Any
 
@@ -101,6 +103,26 @@ def model_problem(runtime: str, model: str, api_key_env: str | None) -> str | No
     return None
 
 
+def safe_api_url(url: str) -> bool:
+    """https, or plain http to the local machine only (a test server)."""
+    parsed = urllib.parse.urlsplit(url)
+    if not parsed.hostname:
+        return False
+    if parsed.scheme == "https":
+        return True
+    if parsed.scheme != "http":
+        return False
+    if parsed.hostname == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        return False
+
+
+# The implementer's settings for `ariane start <n> --resume` (ADR 0062).
+RESUME_KEYS = ("resume_factor", "max_budget_usd_cap", "timeout_minutes_cap")
+
 _STR: dict[str, Any] = {"type": "string", "minLength": 1}
 _ARGV: dict[str, Any] = {"type": "array", "minItems": 1, "items": _STR}
 _POSITIVE: dict[str, Any] = {"type": "number", "exclusiveMinimum": 0}
@@ -135,6 +157,28 @@ _AGENT: dict[str, Any] = {
             " session as CODEX_API_KEY (Codex) or as the model provider's own key variable (pi);"
             " without it the CLI's own login is used.",
         },
+    },
+}
+
+# `ariane start <n> --resume` raises the limit that stopped the implementer (ADR 0062).
+_RESUME: dict[str, Any] = {
+    "resume_factor": {
+        "type": "number",
+        "minimum": 1,
+        "default": 2,
+        "description": "`ariane start <n> --resume` multiplies the limit that stopped the"
+        " implementer session (max_budget_usd and max_tokens after a budget stop,"
+        " timeout_minutes after a timeout) by this factor, for the resumed session only.",
+    },
+    "max_budget_usd_cap": {
+        **_POSITIVE,
+        "description": "Highest max_budget_usd a resumed session gets; at least max_budget_usd."
+        " Default: the raised value itself.",
+    },
+    "timeout_minutes_cap": {
+        **_POSITIVE,
+        "description": "Highest timeout_minutes a resumed session gets; at least"
+        " timeout_minutes. Default: the raised value itself.",
     },
 }
 
@@ -314,7 +358,11 @@ SCHEMA: dict[str, Any] = {
             "properties": {
                 "implementer": {
                     **_AGENT,
-                    "properties": {**_AGENT["properties"], "runtime": {"enum": [CLAUDE_CODE]}},
+                    "properties": {
+                        **_AGENT["properties"],
+                        "runtime": {"enum": [CLAUDE_CODE]},
+                        **_RESUME,
+                    },
                 },
                 "reviewer": {
                     **_AGENT,

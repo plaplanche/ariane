@@ -266,7 +266,7 @@ class ReviewSession:
             if result.stop_reason is StopReason.QUOTA:
                 raise ReviewFailed(
                     "reviewer quota reached",
-                    result.next_step or "restart the ticket later",
+                    result.next_step or "wait for the quota to reset",
                     ticket.fenced(result.summary),
                 )
             if result.next_step:

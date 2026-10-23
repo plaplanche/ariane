@@ -70,6 +70,7 @@ class Restarted:
     last_action: str  # "" when the kept branch has no readable status
     stopped_at: str | None  # the previous run's last step, None when unreadable
     earlier_s: float = 0.0  # the restart time the previous run itself carried (ADR 0047)
+    resumed: bool = False  # `--resume`: the new branch continues from the kept head (ADR 0062)
 
     def journal(self, number: int) -> str:
         trees = "\n".join(f"- `{p}`" for p in self.removed) or "- none"
@@ -89,11 +90,12 @@ class Restarted:
             f"{trees}\n\n{branch}\n\nPrevious run's last action: {last}."
         )
 
-    def metrics(self) -> dict[str, str | float]:
-        found: dict[str, str | float] = {"branch": self.kept_branch}
+    def metrics(self) -> dict[str, str | float | bool]:
+        found: dict[str, str | float | bool] = {"branch": self.kept_branch}
         if self.stopped_at:
             found["stopped_at"] = self.stopped_at
-        return found | ({"earlier_s": self.earlier_s} if self.earlier_s else {})
+        found |= {"earlier_s": self.earlier_s} if self.earlier_s else {}
+        return found | ({"resumed": True} if self.resumed else {})
 
 
 def kept_name(number: int) -> str:

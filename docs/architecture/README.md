@@ -77,6 +77,7 @@ flowchart LR
 - [`report`](modules/report.md)
 - [`resolve`](modules/resolve.md)
 - [`restart`](modules/restart.md)
+- [`resume`](modules/resume.md)
 - [`review`](modules/review.md)
 - [`review_escapes`](modules/review_escapes.md)
 - [`review_history`](modules/review_history.md)

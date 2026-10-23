@@ -106,6 +106,7 @@ flowchart LR
   report --> ticket
   resolve --> ticket
   restart --> ticket
+  resume --> ticket
   review --> ticket
   review_session --> ticket
   shadow --> ticket

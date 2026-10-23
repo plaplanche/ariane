@@ -17,6 +17,7 @@ from ariane.runtime import (
     as_int,
     idle_summary,
     json_object,
+    reset_moment,
     timeout_summary,
     token_cap,
 )
@@ -129,7 +130,9 @@ class CodexRuntime:
         except (process.CommandNotFoundError, OSError) as exc:
             return SessionResult.failed(StopReason.ERROR, str(exc))
         if events.quota is not None:
-            return events.result(StopReason.QUOTA, events.quota, next_step=events.reset_step())
+            reset_at = reset_moment(events.reset) if events.reset else None
+            step = events.reset_step()
+            return events.result(StopReason.QUOTA, events.quota, next_step=step, reset_at=reset_at)
         if completed.stopped:
             return events.result(StopReason.BUDGET, events.stop_text, cap=events.cap)
         if completed.idle and session.idle_timeout_s is not None:
@@ -246,8 +249,7 @@ class Events:
         return self.cap is not None
 
     def reset_step(self) -> str:
-        after = f" after {self.reset}" if self.reset else " later"
-        return f"restart the ticket{after}"
+        return f"wait for the quota to reset{f' (after {self.reset})' if self.reset else ''}"
 
     def answer(self) -> Any:
         """The last message's fenced JSON block (else the whole text as JSON), if it parses."""
@@ -265,6 +267,7 @@ class Events:
         cap: str | None = None,
         structured: Any = None,
         next_step: str | None = None,
+        reset_at: str | None = None,
     ) -> SessionResult:
         seen = self.turns > 0
         return SessionResult(
@@ -279,4 +282,5 @@ class Events:
             structured_output=structured,
             billing=self.billing,
             next_step=next_step,
+            reset_at=reset_at,
         )

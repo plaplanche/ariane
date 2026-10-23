@@ -23,6 +23,9 @@ from ariane.stop import GUARD, Stop
 if TYPE_CHECKING:
     from ariane.flow import _TicketRun
 
+SETUP_TIMEOUT_S = 30 * 60
+Env = Mapping[str, str] | None  # a parallel check's environment, with its own slot
+
 
 @dataclass(frozen=True)
 class ReplayTree:
@@ -329,10 +332,8 @@ def replay(
             )
             if not full:
                 run.check_failed |= any(not r.passed for r in results)
-                names = [c.name for c in chosen]
-                skipped = checks.skipped_names(results)
-                partial = checks.partial_names(chosen, tier)
-                elapsed = time.monotonic() - began
+                names, skipped = [c.name for c in chosen], checks.skipped_names(results)
+                partial, elapsed = checks.partial_names(chosen, tier), time.monotonic() - began
                 run.metrics.replayed(run.metrics.rounds, names, skipped, partial, elapsed)
             return results
     finally:
@@ -392,7 +393,7 @@ def set_up_tree(
     stop, or None."""
 
     def build(setup: tuple[str, ...]) -> None:
-        error = run.setup(tree, setup, guard, env)
+        error = run_setup(run, tree, setup, guard, env)
         if error is not None:
             raise error
 
@@ -408,8 +409,7 @@ def set_up_tree(
                 "\n".join(f"- `{path}`" for path in changed),
                 category=GUARD,
             )
-        leftovers = git.untracked(tree)
-        if leftovers:
+        if leftovers := git.untracked(tree):
             raise Stop(
                 "the dependency caches left files that git does not ignore",
                 "add them to .gitignore, then start the ticket again",
@@ -422,14 +422,43 @@ def set_up_tree(
         )
     except Stop as exc:
         return [], exc
-    return used, run.setup(tree, command, guard, env)
+    return used, run_setup(run, tree, command, guard, env)
+
+
+def run_setup(
+    run: _TicketRun, cwd: Path, command: tuple[str, ...] | None, guard: dict[str, str], env: Env
+) -> Stop | None:
+    """Run the setup command (C8) in `cwd` in `env` or the run's, without credentials (it may run
+    agent-written code), then compare git and the instruction files to `guard` (ADR 0031)."""
+    if not command:
+        return None
+    shown = f"setup `{' '.join(command)}`"
+    try:
+        env = run.untrusted_env if env is None else env
+        done = process.run(command, cwd=cwd, timeout_s=SETUP_TIMEOUT_S, env=env)
+    except process.CommandNotFoundError as exc:
+        return Stop(f"setup failed: {exc}", "install it or fix project.setup")
+    if (survived := run.survivors(shown) or run._unchanged("setup", guard)) is not None:
+        run.metrics.guard_violation()
+        return survived
+    again = "then start the ticket again"
+    if not done.ok:
+        status = "timed out" if done.timed_out else f"exit {done.returncode}"
+        output = ticket.fenced(done.output)
+        return Stop(f"{shown} failed ({status})", f"fix the setup command, {again}", output)
+    if leftovers := git.untracked(cwd):
+        listing = "\n".join(f"- `{path}`" for path in leftovers)
+        reason = "setup left files that git does not ignore"
+        return Stop(reason, f"add them to .gitignore, {again}", listing)
+    return None
 
 
 def round_changes(run: _TicketRun, start_commit: str, checked: str) -> git.Changes:
     """The round's diff from `start_commit` to `checked`, without `work/`: read once, for the
     selection of its checks and for its review (ADR 0053)."""
     if checked not in run.changes:
-        run.changes[checked] = git.changes(run.worktree, start_commit, checked, ticket.WORK_DIR)
+        since = run.diff_base or start_commit  # a resumed run's change starts at its base
+        run.changes[checked] = git.changes(run.worktree, since, checked, ticket.WORK_DIR)
     return run.changes[checked]
 
 

@@ -1,6 +1,6 @@
 # 0043. The reviewer on Codex
 
-- Status: accepted
+- Status: accepted; the quota's next step superseded by 0062
 - Date: 2026-10-17
 - Capabilities: C5, C10, C19
 

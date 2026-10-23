@@ -7,7 +7,7 @@
 | Name | Kind | What it does |
 | --- | --- | --- |
 | `REMOTE` | constant | The remote name, `origin`. |
-| `SETUP_TIMEOUT_S` | constant | Time allowed for the setup command, in seconds. |
+| `SETUP_TIMEOUT_S` | constant | Time allowed for the setup command, in seconds (`replay.SETUP_TIMEOUT_S`). |
 | `EXIT_OK` | constant | Exit code 0: delivered. |
 | `EXIT_STOPPED` | constant | Exit code 1: the ticket stopped. |
 | `EXIT_INTERRUPTED` | constant | Exit code 130: Ctrl-C. |
@@ -16,7 +16,7 @@
 | `QUIET` | constant | The sentence naming the rule that only Ariane runs git commands in the repository or pushes to it while a ticket runs. |
 | `worktree_path(repo_root, number)` | function | Where the ticket's working tree lives. |
 | `branch_name(number)` | function | The ticket's branch, `ariane/<n>`. |
-| `start(number, ..., restarting=False)` | function | The whole flow for one ticket number; `restarting` is `ariane start --restart` (ADR 0047); returns an `Outcome`. |
+| `start(number, ..., restarting=False, resuming=False)` | function | The whole flow for one ticket number; `restarting` is `ariane start --restart` (ADR 0047), `resuming` `ariane start --resume` (ADR 0062); returns an `Outcome`. |
 
 ## Behaviour and errors
 
@@ -29,11 +29,12 @@
 - Back-to-back tickets (C11, ADR 0055): when the only change left is the base's tracking ref, `_unchanged` passes it to `runs.tracking_fast_forward` with `_remote_base` (one `git.remote_refs` of the URL, read only then): a fast-forward to the commit the remote's base points to now, another run's fetch after a merge, is tolerated and the guard takes the new commit; any other move stops. Parallel checks share the guard: `guard_lock` (one per run) is held by `verify` and `_unchanged` from the read of git until the guard advanced, so no check compares an older read with a guard another check advanced, which would look like a move backwards. The ticket keeps its start base: the reviewer's diff and the delivered range start from `start_commit`, and the base instructions were read at the start.
 - `Stop` (module `stop`): ends the flow early with a recorded reason and a stop category (C19, ADR 0058). A start that ends before its run exists records its category with `metrics.keep_refused` (the issue gate's refusal `spec`; Ctrl-C during the issue's read, the lock, a slot, the registry or the preparation `infra`); a stop in the first setup keeps its metrics at `metrics.stopped_metrics_path` (ADR 0031). `_stopped` records it in `metrics.json` (`stop.category_of`: anything but a `Stop`, Ctrl-C included, is `infra`); a delivery that is not green records `review.not_green(settled, results)`: `checks` when blocking checks are still red after the rounds, else `review` (a review still `no-go`, or a fix round that changed nothing after one). Each stop path names its category: the guards `guard`, the setup `infra`, an implementer session that did not finish `budget` (cost, token, turn or time limit) or `runtime` (error, quota), no changed file `spec`, blocking checks red on the first replay `checks`, a reviewer failure its own (`budget` or `runtime`).
 - Ticket lock and restart (C5, C23, ADR 0047): `start` first holds `restart.locked` on `<repo>.ariane/locks/<n>.lock` until it returns (held by another process: "Did not start ticket #n: ticket #n is running in another Ariane process", nothing removed). Right after, before any branch, tree or setup, it holds the run's machine-wide slot (`slots.held`, ADR 0050) until it returns; with all 16 held: "Did not start ticket #n: 16 Ariane runs already hold a slot on this machine. Next: wait for one to end.", nothing created. `ticket.started` names the slot. The preparation is `restart.prepare`: a pushed `ariane/<n>` refuses; with `restarting`, `start` registers the kept name `restart.kept_name(n)` with the run, then `restart.clear` saves the uncommitted work of the tree `<n>` in a commit, removes the ticket's trees (registered ones with git, unknown folders as folders) and keeps the branch, the saved commit on top, under that name, `ariane-restarted/<n>-<UTC time>`; leftover trees or a local branch refuse with "run `ariane start <n> --restart`", and an interruption or failure of the preparation that is not one of its refusals (a `Stop`) names `--restart` when the ticket's tree or local branch exists. A run that started over sets `restarted_from` in the metrics before its first setup and opens its journal with `ticket.restarted`, before `ticket.started`. Every stop of a ticket not pushed (`_stopped`, unless `on_pushed` was called or the run is a shadow run, `restartable = False`) ends its next action with "to start over, run `ariane start <n> --restart`" (`restart.with_restart`).
+- Resume (C5, C23, ADR 0062): with `resuming`, `start` registers the kept name as for `--restart` and prepares with `resume.prepare`, which refuses unless the previous run stopped on its implementer's budget, turn or time limit or on a quota (before anything is cleared), then runs `restart.prepare`; once the run is made (the base's ADRs read), `resume.enter` moves the new branch to the kept head and brings `work/` back to the base's in a commit of its own. The journal adds `ticket.resumed` after `ticket.restarted`; `restarted_from` has `"resumed": true`. The first implementer session (`resume_next`, taken once by `_implement`) runs with the raised limit (`resume.raised`) and is told it continues an interrupted attempt (`context.implementer_prompt(resumed=...)`); after a reviewer's quota stop there is no implementer session (`result` None), and `_check_and_deliver` starts at the previous run's round, so the fix rounds used count against `MAX_FIX_ROUNDS`. The changed files, the checks' selection, the risk tier and the review start at `diff_base`, the base the kept branch left. A stop whose last session hit a limit (`budget` category) or a quota (`runtime`) names `--resume` too (`resume.offered`, `resume.with_resume`), unless the run was resumed already and stopped on a limit.
 - The replay of the checks and the review round are in [replay](replay.md) (ADR 0034).
 - Dependency caches (C9, ADR 0054): the first setup is `replay.set_up_ticket_tree`: old cache entries pruned, the ticket's tree given its `[[project.cache]]` folders (copied from the store or built, never stored), then `project.setup`; `ticket.setup` names what each cache did.
 - Metrics (C19): `work/<n>/metrics.json` is rewritten after the folder is opened, each session, the checks replayed, and the delivery or stop ([metrics](metrics.md)); delivery also records `blocking_red_at_delivery`, the number of blocking checks red at that point (C19, ADR 0038).
 - Issue gate (C21, ADR 0032): the start exit code comes from `TrackerError.exit_code`; an issue refused by the tracker gate (no label, labelled by someone without write access, or changed after the label) gives exit 2 before any branch, worktree or agent.
-- Environments (C21, ADR 0029, ADR 0024): every environment is the allow list of `context.untrusted_environment` with the `[project] env` entries; the implementer and fix sessions add the implementer runtime's login variables, the reviewer those of the reviewer's model, and a small reviewer round those of the small model (`review_session.agent_logins`, ADR 0046); the setup and the checks get none. Every one of them, and the commits' hooks, gets the run's slot as `ARIANE_SLOT` (`slot=`, ADR 0050), except the setup and check of a parallel replay worker, which get that worker's slot (`setup(cwd, command, guard, env)`, ADR 0052). When a declared name looks like a secret, the journal says so once, after `ticket.started`, as `ticket.env.declared_secret` (names only).
+- Environments (C21, ADR 0029, ADR 0024): every environment is the allow list of `context.untrusted_environment` with the `[project] env` entries; the implementer and fix sessions add the implementer runtime's login variables, the reviewer those of the reviewer's model, and a small reviewer round those of the small model (`review_session.agent_logins`, ADR 0046); the setup and the checks get none. Every one of them, and the commits' hooks, gets the run's slot as `ARIANE_SLOT` (`slot=`, ADR 0050), except the setup and check of a parallel replay worker, which get that worker's slot (`replay.run_setup(run, cwd, command, guard, env)`, ADR 0052). When a declared name looks like a secret, the journal says so once, after `ticket.started`, as `ticket.env.declared_secret` (names only).
 - Documentation upkeep (C25): after the agent's work is committed, mapped documents of changed files that the ticket did not change are journaled (`ticket.docs.not_updated`) and given to the reviewer; the `generated` documentation commands run in the clean replay as blocking checks `docs: <name>`, in `checks.md` and the statuses.
 - Each reviewer session journals `ticket.review.stopped` ("Reviewer session <n> stopped: <reason>") with its cost and tokens, in the implementer's format, including an invalid answer's.
 - Fix rounds (C10, ADR 0027): after a `no-go`, or blocking checks failing after a fix round, a fresh implementer session gets the findings (an escaped untrusted block: `review_history.feedback` over `reviews`, the reviewed rounds of the run, so the earlier rounds' blocking findings come before the last review's, ADR 0059) and fixes them in the ticket's working tree; Ariane commits, replays the checks in a clean tree and reviews again (`review-1.md`, `review-2.md`). A fix round that leaves the head where it was (`ticket.fix.unchanged`, the session's summary in the journal) skips the replay and the review and ends the rounds: the same draft pull request, with the stop line "fix round N changed nothing". After the second fix round a review still `no-go` is delivered as a draft pull request with status `needs a human`. The journal records each round's sessions (`ticket.fix.round`, `ticket.session.*`, `ticket.review.*`) and verdict.
@@ -45,8 +46,8 @@
 - `worktree_path`, `branch_name`: where a ticket lives.
 - Shadow mode (C19, ADR 0036): delivery is the overridable `_TicketRun._deliver`; [shadow](shadow.md) subclasses the run, with its own preparation, no remote check and a local record instead of the push.
 - Guard violations (C19): `verify` counts each `Stop` of the post-session check in the metrics before raising it.
-- Reviewer instruction files (C10, ADR 0031): the guard's snapshot also holds `git.instruction_snapshot` of the folders the reviewer can load instructions from (`review_session.instruction_dirs` of `<n>-review`) for the configured reviewer runtime and its environment; it is taken before the first setup command and compared right after every setup command, the ticket's and each replay tree's, before its check runs (`setup` calls `_unchanged`; counted as a guard violation), so an instruction file written outside the repository by a setup, a session or a check stops the ticket before the review ("<step> changed instruction files the reviewer can load", the changed paths in the journal).
-- Surviving processes (C10, ADR 0031): each command's own teardown in `process` already killed what it left running. The descendants (exited ones included) are noted when the ticket starts; after each setup command (`setup`, before its exit code is looked at) and at the start of every post-session check (`verify`: after each agent session, check and reviewer session), `survivors` kills any new one with `process.kill_survivors`, takes what was killed with `process.take_killed`, counts them in `metrics.json` (`surviving_processes`) and stops the ticket as a guard violation ("<step> left N process(es) running after it ended"). A ticket stopped or interrupted for another reason (`_stopped`) kills and counts them too. It finds them on Linux only.
+- Reviewer instruction files (C10, ADR 0031): the guard's snapshot also holds `git.instruction_snapshot` of the folders the reviewer can load instructions from (`review_session.instruction_dirs` of `<n>-review`) for the configured reviewer runtime and its environment; it is taken before the first setup command and compared right after every setup command, the ticket's and each replay tree's, before its check runs (`replay.run_setup` calls `_unchanged`; counted as a guard violation), so an instruction file written outside the repository by a setup, a session or a check stops the ticket before the review ("<step> changed instruction files the reviewer can load", the changed paths in the journal).
+- Surviving processes (C10, ADR 0031): each command's own teardown in `process` already killed what it left running. The descendants (exited ones included) are noted when the ticket starts; after each setup command (`replay.run_setup`, before its exit code is looked at) and at the start of every post-session check (`verify`: after each agent session, check and reviewer session), `survivors` kills any new one with `process.kill_survivors`, takes what was killed with `process.take_killed`, counts them in `metrics.json` (`surviving_processes`) and stops the ticket as a guard violation ("<step> left N process(es) running after it ended"). A ticket stopped or interrupted for another reason (`_stopped`) kills and counts them too. It finds them on Linux only.
 - Round's diff (C9, ADR 0053, ADR 0056): `run.changes` keeps, per replayed commit, the diff from the start commit (`replay.round_changes`), read once and used both to select the round's checks and for its review.
 - Risk tier (C9, ADR 0056): `run.tier` holds the last replayed round's tier and `run.check_failed` whether a replayed round failed a check (`replay.replay` sets both); `checks.md` starts with the tier and `Delivery` states it in the pull request body. When the run is made, before any setup or agent session, it reads the accepted residuals of the ADRs in the fresh working tree, which is the base commit (`review.residuals_in`, no git process, ADR 0057), as `run.residuals`. `Delivery` also gets the ticket's changed files matching `[review] sensitive_paths`, for the `owner-review` label and line (ADR 0057).
 - Sensitive paths (C10, ADR 0057): `_deliver` gives `Delivery`, as `sensitive`, `replay.sensitive` of the delivered commit: the same match the review was given (decoded, both sides of a rename, without `work/`).
@@ -60,7 +61,7 @@ flowchart TD
   A[start number] --> B[read the issue: TrackerError gives its exit code]
   B --> LK[hold locks/n.lock: held elsewhere refuses]
   LK --> R[register the run in runs/n, removed however it ends]
-  R --> C[prepare: refuse a pushed branch, clear with --restart or refuse leftovers, create branch and tree]
+  R --> C[prepare: refuse --resume unless a limit or quota stop, refuse a pushed branch, clear with --restart or --resume or refuse leftovers, create branch and tree; resume.enter moves it to the kept head]
   C --> D[open the ticket folder]
   D --> E[prune the cache store; caches, never stored; setup command]
   E --> F[implementer session]
@@ -102,14 +103,13 @@ class _TicketRun {
   pushed bool
   execute(refs_before) Outcome
   state() GitState
-  setup(cwd, command, guard, env) Stop
   verify(after, start_commit, guard, refs_before, expected_head)
 }
 class flow {
   <<module>>
   worktree_path(repo_root, number) Path
   branch_name(number) str
-  start(number, repo_root, config, tracker, runtime, environ, restarting) Outcome
+  start(number, repo_root, config, tracker, runtime, environ, restarting, resuming) Outcome
 }
 flow ..> _TicketRun
 _TicketRun ..> Outcome
@@ -135,6 +135,7 @@ flowchart LR
   flow --> redact
   flow --> replay
   flow --> restart
+  flow --> resume
   flow --> review
   flow --> review_history
   flow --> review_session
@@ -149,6 +150,7 @@ flowchart LR
   next_start --> flow
   next_ticket --> flow
   replay -.-> flow
+  resume -.-> flow
   shadow --> flow
   update --> flow
   verify --> flow
