@@ -10,7 +10,8 @@ Claude Code as an agent runtime: it starts the `claude` CLI for one session and 
 | `schema_argument(schema)` | function | The session's schema as given to `--json-schema`, without its `$schema` key. |
 | `ClaudeCodeRuntime` | class | `ClaudeCodeRuntime(executable=("claude",))` implements `AgentRuntime`; it declares `ANTHROPIC_` and `CLAUDE_` as its login variables; `command(session)` builds the command line, `run(session)` runs it. |
 | `TokenTally` | class | `TokenTally(max_tokens)`: the running token total of a stream (`parts`, `total`), fed by `add_line(line)`; `stopped_result()` is the result when the cap was reached; `killed_result(reason, summary, cap=None)` is the result of any session Ariane killed, with the tokens streamed so far and no cost. |
-| `parse_result(stdout, stderr, returncode)` | function | Maps the final `result` event (or a single JSON result), stderr and the exit code to a `SessionResult` and a stop reason; a stream without a result is `error`; `num_turns` becomes `SessionResult.turns`. |
+| `parse_result(stdout, stderr, returncode)` | function | Maps the final `result` event (or a single JSON result), stderr and the exit code to a `SessionResult` and a stop reason; a stream without a result is `error`; `num_turns` becomes `SessionResult.turns`; an error naming the plan's usage limit is `quota` (`quota_stop`). |
+| `quota_stop(text)` | function | The `quota` result a Claude Code error text reports ("usage limit", "limit reached", "hit your limit"), with `reset_at` from "limit reached\|<epoch seconds>" or from a "resets/try again <time>" sentence (`runtime.reset_moment`; "3pm" read as 3:00 PM) and the next step "wait for the quota to reset (after <time>)"; None otherwise (ADR 0062). |
 
 ## Behaviour and errors
 

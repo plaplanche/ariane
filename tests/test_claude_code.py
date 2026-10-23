@@ -150,3 +150,30 @@ def test_c10_review_schema_goes_to_claude_code_without_its_draft(tmp_path: Path)
     passed = json.loads(argv[argv.index("--json-schema") + 1])
     assert "$schema" in review.SCHEMA and "$schema" not in passed
     assert passed == {k: v for k, v in review.SCHEMA.items() if k != "$schema"}
+
+
+@pytest.mark.parametrize(
+    ("text", "reset_at"),
+    [
+        ("Claude AI usage limit reached|1792700000", "2026-10-22T20:13:20Z"),
+        ("You've hit your limit · resets 3pm", "15:00:00Z"),
+        ("Usage limit reached. Try again at 2026-10-30T08:00:00Z", "2026-10-30T08:00:00Z"),
+    ],
+    ids=["epoch", "clock", "iso"],
+)
+def test_c5_resume_a_claude_code_usage_limit_is_a_quota_stop_with_its_reset(
+    text: str, reset_at: str
+) -> None:
+    for stdout, stderr in (
+        (
+            json.dumps({"type": "result", "subtype": "success", "is_error": True, "result": text}),
+            "",
+        ),
+        ("", text),  # no structured result: the message on the error stream
+    ):
+        result = parse_result(stdout, stderr, 1)
+        assert result.stop_reason is StopReason.QUOTA, (stdout, stderr)
+        assert result.reset_at is not None and result.reset_at.endswith(reset_at)
+        assert result.next_step == f"wait for the quota to reset (after {result.reset_at})"
+    other = {"type": "result", "subtype": "error_during_execution", "is_error": True, "result": "x"}
+    assert parse_result(json.dumps(other), "", 1).stop_reason is StopReason.ERROR

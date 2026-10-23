@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from ariane import config, flow, resume
+from ariane import claude_code, config, flow, resume
 from ariane.config import Config
 from ariane.runtime import Session, SessionResult, StopReason, reset_moment
 from ariane.tracker import InMemoryTracker
@@ -286,6 +286,37 @@ def test_c5_resume_after_a_reviewer_quota_reviews_the_kept_head_without_an_imple
     assert "No limit raised: the reviewer stopped on its runtime's quota." in journal
     assert "Checks replayed by Ariane" in journal
     assert "Implementer session started" not in journal
+
+
+@dataclass
+class QuotaOnce(Scripted):
+    """The implementer writes part of the work, then Claude Code reports its usage limit."""
+
+    reset: int = 0  # epoch seconds Claude Code gives
+
+    def run(self, session: Session) -> SessionResult:
+        result = super().run(session)
+        if session.role == "implementer" and len(implementers(self)) == 1:
+            stop = claude_code.quota_stop(f"Claude AI usage limit reached|{self.reset}")
+            assert stop is not None
+            return stop
+        return result
+
+
+def test_c5_resume_after_an_implementer_quota_continues_with_the_same_limits(
+    project: Project, tracker: InMemoryTracker
+) -> None:
+    past = int((datetime.now(UTC) - timedelta(minutes=1)).timestamp())
+    stopped = start(project, tracker, QuotaOnce(action=partial_work, reset=past))
+    assert stopped.exit_code == 1 and "`ariane start 7 --resume`" in stopped.line
+    assert metrics_of(project)["sessions"][-1]["stop_reason"] == "quota"  # type: ignore[index]
+    runtime = Scripted(action=finish_work)
+    done = start(project, tracker, runtime, resuming=True)
+    assert done.exit_code == 0, done.line
+    [session] = implementers(runtime)
+    assert session.timeout_s == make_config().implementer.timeout_minutes * 60  # nothing raised
+    journal = project.show("ariane/7", "work/7/journal.md")
+    assert "No limit raised: the session stopped on its runtime's quota." in journal
 
 
 def project_head_file(project: Project) -> str:

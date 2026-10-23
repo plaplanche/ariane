@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from typing import Any
 
 from ariane import process
@@ -19,6 +21,7 @@ from ariane.runtime import (
     cost_cap,
     idle_summary,
     json_object,
+    reset_moment,
     timeout_summary,
     token_cap,
 )
@@ -38,6 +41,31 @@ _SUBTYPES = {
     "error_max_budget_usd": StopReason.BUDGET,
     "error_max_turns": StopReason.TURNS,
 }
+
+
+# A plan's usage limit (ADR 0062): Claude Code ends with an error whose text names it, either
+# "Claude AI usage limit reached|<epoch seconds>" or a sentence with the time it resets.
+_QUOTA = re.compile(r"usage limit|limit reached|hit your limit", re.IGNORECASE)
+_EPOCH = re.compile(r"limit reached\|(\d{9,11})\b", re.IGNORECASE)
+_RESETS = re.compile(r"\b(?:resets?|try again)(?:\s+(?:at|in|on))?\s+([^\n|.]+)", re.IGNORECASE)
+
+
+def quota_stop(text: str) -> SessionResult | None:
+    """The quota stop a Claude Code error `text` reports, with the reset time it gives (UTC),
+    or None when the text names no usage limit."""
+    if not _QUOTA.search(text):
+        return None
+    reset_at = None
+    if epoch := _EPOCH.search(text):
+        reset_at = datetime.fromtimestamp(int(epoch[1]), UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    elif when := _RESETS.search(text):  # "3pm" is "3:00 pm" for reset_moment
+        reset_at = reset_moment(re.sub(r"\b(\d{1,2})\s*([ap]m)\b", r"\1:00 \2", when[1].strip()))
+    summary = f"Claude Code usage limit reached: {text.strip()[-OUTPUT_TAIL_CHARS:]}"
+    after = f" (after {reset_at})" if reset_at else ""
+    result = SessionResult.failed(StopReason.QUOTA, summary)
+    return dataclasses.replace(
+        result.with_next(f"wait for the quota to reset{after}"), reset_at=reset_at
+    )
 
 
 def schema_argument(schema: Mapping[str, Any]) -> dict[str, Any]:
@@ -194,6 +222,8 @@ def parse_result(stdout: str, stderr: str, returncode: int | None) -> SessionRes
     data = _final_event(stdout)
     if data is None:
         tail = (stderr or stdout).strip()[-OUTPUT_TAIL_CHARS:]
+        if quota := quota_stop(f"{stdout}\n{stderr}"):
+            return quota
         return SessionResult.failed(
             StopReason.ERROR, f"no structured result (exit {returncode}): {tail}"
         )
@@ -207,6 +237,8 @@ def parse_result(stdout: str, stderr: str, returncode: int | None) -> SessionRes
     if not isinstance(summary, str) or not summary:
         subtype = str(data.get("subtype"))
         summary = "; ".join(map(str, errors)) if isinstance(errors, list) else subtype
+    if reason is StopReason.ERROR and (quota := quota_stop(f"{summary}\n{stderr}")):
+        return dataclasses.replace(quota, cost_usd=as_number(data.get("total_cost_usd")))
     denials = data.get("permission_denials")
     return SessionResult(
         stop_reason=reason,

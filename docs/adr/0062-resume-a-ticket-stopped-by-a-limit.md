@@ -68,6 +68,11 @@ gave it more time. The owner added (21 October 2026) that a stop on a runtime's 
   early; an impossible date gives no reset time; before it, `--resume` refuses and names it. The quota's next
   action becomes "wait for the quota to reset (after <time>)", replacing ADR 0043's "restart the
   ticket after <time>", and `ariane next` names `--resume` for a quota-stopped ticket.
+  Codex reports its quota as an event (ADR 0043); Claude Code, the implementer's runtime, ends
+  with an error whose text names the usage limit: "Claude AI usage limit reached|<epoch
+  seconds>", or a sentence with "resets"/"try again" and a time ("resets 3pm" is 3:00 PM). Such
+  an error, in the result or on the error stream, is a `quota` stop with that reset time, so an
+  implementer or fix session stopped on the plan's limit is resumed like the reviewer.
 - **Stop lines.** A stop whose last session reached a limit or a quota (as above) ends with "to
   continue from its saved work, run `ariane start <n> --resume` (or `ariane start <n>
   --restart`)".
