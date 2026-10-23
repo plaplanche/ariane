@@ -1,5 +1,5 @@
 # Ariane's own configuration with the reviewer on opencode (C5): for a single run, with
-# ARIANE_CONFIG=docs/ariane.opencode-reviewer.example.toml (see the README).
+# ARIANE_CONFIG=docs/ariane.opencode-reviewer.example.toml (see docs/guide/reviewers.md).
 # Ariane's configuration for its own repository (ADR 0003).
 
 [project]

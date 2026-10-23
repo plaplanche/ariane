@@ -59,6 +59,10 @@ command = ["uv", "run", "python", "scripts/check_file_length.py"]
 paths = ["docs/", "README.md"]
 map = [
   { source = "src/ariane/*.py", docs = ["docs/architecture/modules/{stem}.md"] },
+  { source = "src/ariane/checks.py", docs = ["docs/guide/checks.md"] },
+  { source = "src/ariane/replay*.py", docs = ["docs/guide/checks.md"] },
+  { source = "src/ariane/review*.py", docs = ["docs/guide/reviewers.md"] },
+  { source = "src/ariane/cli.py", docs = ["docs/guide/operations.md", "README.md"] },
 ]
 generated = [
   { name = "references", check = ["uv", "run", "python", "scripts/generate_docs.py", "--check"] },
