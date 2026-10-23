@@ -22,7 +22,7 @@ their own, with or without the tool:
 - deterministic proof before opinion: the checks are replayed outside the agent's session, and
   each result is a commit status;
 - an executable definition of done, given to the implementer and checked item by item by a
-  reviewer from another vendor;
+  reviewer on a different model, from another vendor if you choose;
 - a measure per ticket (cost, rounds, first-pass verdict, human time, gates bypassed) as the basis
   for deciding how to use agents.
 
@@ -31,11 +31,11 @@ would show it.
 
 | Claimed value | What we know today | What would demonstrate it |
 | --- | --- | --- |
-| Faster or cheaper than an agent alone | **Not true for one person on a well-specified project.** On the [benchmark](docs/benchmark.md), Claude Code alone reached the same hidden acceptance, two to three times faster, and with Sonnet for less money. Ariane is not pitched on speed. | Nothing planned: this claim is dropped. |
+| Faster or cheaper than an agent alone | **Not true for one person on a well-specified project.** On the [benchmark](docs/benchmark.md), Claude Code alone reached the same hidden acceptance, two to three times faster; Ariane cost less than Opus alone but more than Sonnet alone. Ariane is not pitched on speed. | Running the benchmark again after the fixes it called for; until then, the claim is dropped. |
 | Trust for someone who merges many agents' pull requests | The checks are replayed and the review is independent; the review caught real defects before a human looked, but they did not change the benchmark's final result. | The benchmark's next lot: two people (or sessions) in parallel on one repository, where Ariane is expected to pay off. |
-| Works on someone else's project | Almost every ticket so far ran on Ariane itself, in a Linux cloud sandbox. | Slice 4's gate: a second user runs 10 tickets in shadow mode on their own project (below), compared on human time and gates bypassed. |
+| Works on someone else's project | Almost every ticket so far ran on Ariane itself, in a Linux cloud sandbox. | Slice 4's gate: a second user installs Ariane on macOS and runs 10 tickets in shadow mode on their own project (below), compared on human time and gates bypassed. |
 | Keeps the human understanding their own code | Not built: approvals before code, mastery checks and learnings are slices 5 to 8. | Those slices, measured with the same two numbers. |
-| Fits teams under constraints (everything local, a reviewer from another vendor as a rule) | Built for it, never tested in such a team. | A team in that situation running the shadow mode. |
+| Fits teams under constraints (everything local, a reviewer from another vendor required by policy) | Built for it, never tested in such a team. | A team in that situation running the shadow mode. |
 
 ## What Ariane protects against, and what it does not
 
@@ -59,8 +59,8 @@ your user, without an operating-system sandbox, until the security slice (slice 
   token formats; it is not a complete secret scanner, and the detail of a failure printed on the
   terminal is not redacted.
 
-The residuals the owner accepted are written in the ADRs, each as an item starting with
-`- **Accepted residual.**`.
+The residuals the owner accepted are written in the ADRs; those written as an item starting
+with `- **Accepted residual.**` are also given to the reviewer.
 
 ## How a ticket runs
 
@@ -69,7 +69,7 @@ flowchart LR
   issue[Issue labelled ariane] --> tree[Worktree ariane/n]
   tree --> impl[Implementer session<br/>Claude Code]
   impl --> checks[Checks replayed<br/>one clean tree each]
-  checks -->|blocking check red| stop[Stop, nothing pushed]
+  checks -->|blocking check red before any review| stop[Stop, nothing pushed]
   checks --> review[Read-only review<br/>different model]
   review -->|no-go, up to 2 fix rounds| impl
   review -->|go| pr[Push, pull request,<br/>one status per check]
@@ -132,7 +132,8 @@ command = ["uv", "run", "pytest", "-q"]
 ```
 
 [`docs/ariane.example.toml`](docs/ariane.example.toml) comments every other key (definition of
-done, documentation, selective checks, caches, sensitive paths, the queue); the
+done, documentation, selective checks, caches, sensitive paths, the queue), Ariane's own
+[`ariane.toml`](ariane.toml) is a complete example, and the
 [JSON Schema](docs/reference/ariane.toml.schema.json) lists them all.
 
 PowerShell:
@@ -142,6 +143,7 @@ uv tool install git+https://github.com/plaplanche/ariane
 $env:GH_TOKEN = "<the token>"
 ariane start 12
 ariane status 12
+ariane verify my-branch --issue 12
 ```
 
 bash:
@@ -151,13 +153,14 @@ uv tool install git+https://github.com/plaplanche/ariane
 export GH_TOKEN="<the token>"
 ariane start 12
 ariane status 12
+ariane verify my-branch --issue 12
 ```
 
 ## Commands
 
 Every command exits 0 on success, 1 when the work stopped or was refused (the last line says why
-and what to do next), 2 on a usage or configuration error or an issue the gate refused, and 130 on
-Ctrl-C. Options are in the [command-line reference](docs/reference/cli.md); behaviour in
+and what to do next), 2 on a usage or configuration error or an issue the gate refused; `start`, `update` and
+`verify` exit 130 on Ctrl-C. Options are in the [command-line reference](docs/reference/cli.md); behaviour in
 [operations](docs/guide/operations.md).
 
 | Command | What it does |
@@ -173,7 +176,7 @@ Ctrl-C. Options are in the [command-line reference](docs/reference/cli.md); beha
 
 ## Measure Ariane on your project (shadow mode)
 
-This is the path for a second user (on macOS, Linux or Windows) who wants to know whether Ariane
+This is the path for a second user on macOS (it works the same on Linux and Windows) who wants to know whether Ariane
 does at least as well as their current process, on their own project. Shadow mode never pushes,
 opens a pull request, sets a status, posts a comment or writes to your repository: it works in a
 separate clone.
@@ -227,9 +230,11 @@ per merged pull request and the count of steps skipped or gates bypassed; Ariane
 
 Slices 1 to 3 are done: the ticket flow, dogfooding, and the vendor-neutral review with fix rounds
 and `ariane verify`. Slice 4 (measurement and shadow mode) is built; its gate waits for the second
-user's shadow run. Of slice 5, branch updates and ticket dependencies are delivered
-(`ariane update`, `Needs #N`, `ariane next`); approved briefs and designs before the code, and
-vertical slices, are not started. Slices 6 to 9 (stronger checks, mastery, learnings, security)
+user's shadow run. Of slice 5, branch updates (`ariane update`) and a queue that honours `Needs #N`
+(`ariane next`) are delivered; `ariane start` does not check dependencies yet. Approved briefs and
+designs before the code, vertical slices, the per-ticket budget and the approve and revise
+commands are not started, and depth by risk (C3) is partly built (selective checks, small
+review). Slices 6 to 9 (stronger checks, mastery, learnings, security)
 are not started. The roadmap is in [`docs/spec.md`](docs/spec.md).
 
 ## Documentation

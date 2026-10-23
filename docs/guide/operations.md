@@ -223,7 +223,7 @@ and `shadow pass: yes|no` over the last 10 (no attempt, no violation, at least 8
 
 A "Selective checks" line gives the tickets with selection and their replay time, the selective
 rounds' time against the full replays' time on the sampled tickets (the time saved), the full
-replays run, the escapes and the escape rate ([checks](checks.md#full-replay-measuring-what-selection-misses)).
+replays run, the escapes and the escape rate (escapes / full replays; [checks](checks.md#full-replay-measuring-what-selection-misses)).
 
 The review escapes count, per implementer model, reviewer model and reviewer runtime, the reviews,
 `go` verdicts, findings per review and escapes: a `go` followed on its pull request by a red CI on

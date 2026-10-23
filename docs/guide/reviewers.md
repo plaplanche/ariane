@@ -15,7 +15,7 @@ implementer's.
 - The review is in proportion (ADR 0057): a case that neither the ticket nor the specification
   asks for, and that no acceptance criterion covers, is minor unless it loses data, breaks a
   security property or makes a check pass wrongly.
-- The residuals the owner accepted in an ADR (an item starting with `- **Accepted residual.**` in
+- The residuals the owner accepted in an ADR (only those written as an item starting with `- **Accepted residual.**` in
   `docs/adr/`, read at the base commit): a finding that is one of them is minor, titled "accepted
   residual (ADR NNNN)".
 - With `[review] sensitive_paths` (path globs), a change touching one of those files is pointed
@@ -93,7 +93,8 @@ Log in once by running `pi` and `/login` (an API key or a subscription): pi stor
 Ariane never reads, copies or logs it, and gives the process no provider key from its own
 environment. Or set `api_key_env = "<variable>"` in `[agents.reviewer]`: that variable's value is
 given to the pi process only, under the provider's own variable (`ANTHROPIC_API_KEY` for
-`anthropic/...`). `max_tokens` is required because pi may bill per token whatever the login;
+`anthropic/...`). `max_tokens` is required because pi may bill per token whatever the login (pi's docs say a
+Claude subscription used through pi draws from extra usage);
 `max_budget_usd` stops the session on the cost pi reports, and `ariane report` shows it. Without
 credentials the ticket stops with "pi has no credentials for <provider>", never a no-go. A `.pi/`
 folder in the repository is left out of the reviewer's tree, and pi's `settings.json`,

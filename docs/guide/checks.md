@@ -70,7 +70,7 @@ A check that fails only there is an escape: `work/<n>/full-replay.md` records it
 the journal logs `ticket.checks.escape`, a comment on the pull request names the check, and the
 `ariane/full-replay` status fails; a passing full replay posts a success. A check that fails before
 a later one stops the full replay is still an escape. `full-replay` is reserved: no check may take
-that name. The defaults apply without the table too. `ariane report` gives the escape rate and
+that name. The defaults apply without the table too. `ariane report` gives the escape rate (escapes / full replays) and
 warns above `[checks_policy] max_escape_rate` (default 0.02); turning selection off stays the
 owner's call.
 
@@ -162,9 +162,9 @@ pass, even if declared.
 ## Statuses published from CI
 
 Ariane's own repository has a GitHub Actions workflow, `.github/workflows/check-statuses.yml`, that
-replays the declared checks on the head of an `ariane/<n>` pull request and publishes one status
-per check, for when Ariane cannot publish them itself (for example from a cloud session without
-the token). The statuses come from running the checks in the workflow, never from a report file of
+replays the declared checks on the head of every `ariane/<n>` pull request of the repository and
+publishes one status per check, so the statuses exist even when Ariane could not publish them
+itself (for example from a cloud session without the token). The statuses come from running the checks in the workflow, never from a report file of
 the branch ([ADR 0018](../adr/0018-clean-tree-replay-and-statuses.md)). The workflow and its
 script are specific to Ariane's repository: another project does not need them, since Ariane
 publishes the statuses itself when it pushes.
