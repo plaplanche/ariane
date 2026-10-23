@@ -63,6 +63,7 @@ class AgentConfig:
     # Implementer only: `--resume` raises the limit that stopped a session by this factor, up
     # to the caps; None: the raised value itself (ADR 0062).
     resume_factor: float = 2.0
+    max_turns: int | None = None  # implementer only: Claude Code's `--max-turns`; None: its own
     max_budget_usd_cap: float | None = None
     timeout_minutes_cap: float | None = None
 
@@ -347,7 +348,7 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
             "idle_minutes",
             "max_tokens",
             "api_key_env",
-            *(("small",) if role == "reviewer" else RESUME_KEYS),
+            *(("small",) if role == "reviewer" else (*RESUME_KEYS, "max_turns")),
         },
     )
     prefix = f"{where}."
@@ -379,6 +380,7 @@ def _agent(agents: dict[str, Any], role: str) -> AgentConfig:
         api_key_env=api_key_env,
         idle_minutes=_idle_minutes(table, where, timeout_minutes),
         small=_small(table, where, runtime, api_key_env) if "small" in table else None,
+        max_turns=_count(table, "max_turns", where),
         **_resume(table, where, max_budget_usd, timeout_minutes),
     )
 

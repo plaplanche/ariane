@@ -45,9 +45,14 @@ gave it more time. The owner added (21 October 2026) that a stop on a runtime's 
   and, when set, `max_tokens` (both are the session's budget, and the record does not say which
   cap was reached); after `timeout`, `timeout_minutes` (`idle_minutes` stays). The raised values
   are capped by `max_budget_usd_cap` and `timeout_minutes_cap`, optional, at least the value
-  they cap, the raised value itself by default; `max_tokens` has no cap of its own. Ariane sets no
-  turn limit, so after `turns` nothing is raised. The journal says which limit was raised, from
-  what to what.
+  they cap, the raised value itself by default; `max_tokens` has no cap of its own. After
+  `turns`, the turn limit is raised: the new optional `[agents.implementer] max_turns` (Claude
+  Code's `--max-turns`, not passed when unset, so the runtime's own limit applies), else the turns
+  the stopped session took (Claude Code's `num_turns`, recorded as `turns` on the session in
+  `metrics.json`), multiplied and rounded up, and passed as `--max-turns` to the resumed session;
+  with neither known (a record without `turns`), nothing is raised and the journal says so. The
+  turn limit has no cap of its own, as the spec names none. The journal says which limit was
+  raised, from what to what.
 - **At most once in a row.** A run that was resumed and stops on a limit again refuses
   `--resume`, naming `--restart` or a hand takeover with `ariane verify`, and its stop line names
   only `--restart`. A quota stop raises nothing, so it can be resumed again.
@@ -56,8 +61,11 @@ gave it more time. The owner added (21 October 2026) that a stop on a runtime's 
   kept head and reviews it. The rounds continue from the previous run's (`metrics.rounds`), so
   the fix rounds already used count against C10's limit; the same holds after a fix session's
   limit. The runtime's reset time ("try again at 3:45 PM", "in 2 hours", an ISO time) is read as
-  a UTC time, `reset_at` on the session in `metrics.json` (a clock time is the machine's local
-  time at its next occurrence); before it, `--resume` refuses and names it. The quota's next
+  a UTC time, `reset_at` on the session in `metrics.json`. A clock time and an ISO time without
+  a zone are the machine's local time; a clock time keeps the date the text gives ("Oct 25, 3:45
+  PM", "Oct 25th, 2026 3:45 PM"; without a year, the next such date), and is otherwise at its
+  next occurrence; a date without a clock time is the end of that day, so the refusal never ends
+  early; an impossible date gives no reset time; before it, `--resume` refuses and names it. The quota's next
   action becomes "wait for the quota to reset (after <time>)", replacing ADR 0043's "restart the
   ticket after <time>", and `ariane next` names `--resume` for a quota-stopped ticket.
 - **Stop lines.** A stop whose last session reached a limit or a quota (as above) ends with "to
@@ -71,8 +79,9 @@ gave it more time. The owner added (21 October 2026) that a stop on a runtime's 
 - A ticket stopped near the end of its work continues in one command, with more room, once.
 - The resumed branch carries the previous attempt's commits, the saved-work commit and a commit
   removing the previous records: the pull request's history shows the interruption.
-- A clock time with a date Codex may give ("Oct 25, 3:45 PM") is read as the next 3:45 PM: the
-  refusal can end early, and the resumed run then stops on the quota again; never later.
+- A reset time in a form Ariane does not read (no ISO time, span, clock time or month name)
+  gives no `reset_at`: `--resume` is then not refused, and the resumed run stops on the quota
+  again if it has not reset.
 - Resuming a reviewer session itself, a resume without the person running it, and a resume after
   a crash with no limit reached (`--restart` covers it) are not provided.
 

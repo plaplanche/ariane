@@ -238,7 +238,8 @@ instead of the base: the new implementer session is told it continues an interru
 given the previous stop reason, the files it changed and the last journal entries, as data. For
 that session only, the limit that stopped it is raised by `[agents.implementer] resume_factor`
 (default 2: twice `max_budget_usd`, and `max_tokens` when set, after a budget stop; twice
-`timeout_minutes` after a timeout), capped by `max_budget_usd_cap` and `timeout_minutes_cap`; the
+`timeout_minutes` after a timeout; twice the turn limit, `max_turns` or else the turns the
+stopped session took, after a turns stop), capped by `max_budget_usd_cap` and `timeout_minutes_cap`; the
 journal says which limit was raised, from what to what. After a quota stop no limit is raised, and
 after the reviewer's quota the run replays the checks and reviews the kept head without a new
 implementer session. Any other stop (a check failure, a review hand-over, a guard stop) refuses

@@ -132,6 +132,7 @@ class Metrics:
             }
             | ({"billing": result.billing} if result.billing else {})
             | ({"reset_at": result.reset_at} if result.reset_at else {})
+            | ({"turns": result.turns} if result.turns is not None else {})
             | ({"changed_lines": changed_lines} if changed_lines is not None else {})
         )
         self.attempts += result.attempts

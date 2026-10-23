@@ -71,9 +71,12 @@ timeout_minutes = 30
 # timeout_minutes). Default 10, or none when timeout_minutes is 10 or less.
 # idle_minutes = 10
 # Optional: `ariane start <n> --resume` multiplies the limit that stopped the implementer
-# session (max_budget_usd and max_tokens after a budget stop, timeout_minutes after a timeout) by
-# this factor, for the resumed session only (at least 1).
+# session (max_budget_usd and max_tokens after a budget stop, timeout_minutes after a timeout,
+# the turn limit after a turns stop) by this factor, for the resumed session only (at least 1).
 # resume_factor = 2
+# Optional: the implementer's turn limit (Claude Code's --max-turns); default: the runtime's own.
+# A resume after a turns stop raises it, or the turns the stopped session took when unset.
+# max_turns = 200
 # Optional: the highest values a resumed session gets (default: the raised value itself).
 # max_budget_usd_cap = 10.0
 # timeout_minutes_cap = 60

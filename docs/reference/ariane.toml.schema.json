@@ -210,7 +210,12 @@
               "type": "number",
               "minimum": 1,
               "default": 2,
-              "description": "`ariane start <n> --resume` multiplies the limit that stopped the implementer session (max_budget_usd and max_tokens after a budget stop, timeout_minutes after a timeout) by this factor, for the resumed session only."
+              "description": "`ariane start <n> --resume` multiplies the limit that stopped the implementer session (max_budget_usd and max_tokens after a budget stop, timeout_minutes after a timeout, the turn limit after a turns stop) by this factor, for the resumed session only."
+            },
+            "max_turns": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Turn limit of an implementer session (Claude Code's --max-turns); default: the runtime's own. A resume after a turns stop raises it, or the turns the stopped session took when it is not set."
             },
             "max_budget_usd_cap": {
               "type": "number",

@@ -47,6 +47,7 @@ class Scripted(FakeRuntime):
 
     reasons: list[StopReason] = field(default_factory=list)
     reviews: list[SessionResult] = field(default_factory=list)
+    turns: int | None = None  # the turns each session reports
 
     def run(self, session: Session) -> SessionResult:
         if session.role == "reviewer" and self.reviews:
@@ -54,7 +55,7 @@ class Scripted(FakeRuntime):
             return self.reviews.pop(0)
         if session.role != "reviewer":
             self.stop_reason = self.reasons.pop(0) if self.reasons else StopReason.FINISHED
-        return super().run(session)
+        return dataclasses.replace(super().run(session), turns=self.turns)
 
 
 def start(
@@ -144,6 +145,28 @@ def test_c5_resume_after_a_budget_stop_doubles_the_budget_and_a_cap_lowers_it(
     assert session.timeout_s == 60  # the time limit stays
     journal = project.show("ariane/7", "work/7/journal.md")
     assert f"Raised `max_budget_usd` from 1 to {raised:g} USD." in journal
+
+
+@pytest.mark.parametrize(("max_turns", "taken", "limit"), [(3, 3, 6), (None, 5, 10)])
+def test_c5_resume_after_a_turns_stop_doubles_the_turn_limit(
+    project: Project, tracker: InMemoryTracker, max_turns: int | None, taken: int, limit: int
+) -> None:
+    base = make_config()
+    cfg = dataclasses.replace(
+        base, implementer=dataclasses.replace(base.implementer, max_turns=max_turns)
+    )
+    first = Scripted(action=partial_work, reasons=[StopReason.TURNS], turns=taken)
+    assert start(project, tracker, first, cfg).exit_code == 1
+    assert implementers(first)[0].max_turns == max_turns
+    assert metrics_of(project)["sessions"][-1]["turns"] == taken  # type: ignore[index]
+    runtime = Scripted(action=finish_work)
+    done = start(project, tracker, runtime, cfg, resuming=True)
+    assert done.exit_code == 0, done.line
+    [session] = implementers(runtime)
+    assert session.max_turns == limit  # the limit the resumed runtime is given
+    assert session.timeout_s == 60 and session.max_budget_usd == 1.0  # the others stay
+    journal = project.show("ariane/7", "work/7/journal.md")
+    assert f"Raised the turn limit (`max_turns`) from {taken} to {limit}." in journal
 
 
 def test_c5_resume_the_prompt_names_the_stop_and_the_changed_files_as_untrusted_data(
@@ -300,6 +323,30 @@ def test_c5_resume_reset_times_of_a_runtime_are_read_as_utc() -> None:
     assert moment.astimezone().strftime("%H:%M") == "15:45"
     assert reset_moment("later", now) is None
     assert reset_moment("13:61", now) is None
+    assert reset_moment("2026-10-25T15:45:00", now) == _local_utc(2026, 10, 25, 15, 45)
+
+
+def _local_utc(year: int, month: int, day: int, hour: int, minute: int) -> str:
+    """The UTC text of a moment of the machine's local time."""
+    local = datetime(year, month, day, hour, minute).astimezone()
+    return local.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_c5_resume_a_dated_reset_time_keeps_its_date_and_refuses_until_then() -> None:
+    now = datetime(2026, 10, 23, 12, 0, tzinfo=UTC)
+    reset = _local_utc(2026, 10, 25, 15, 45)
+    assert reset_moment("Oct 25, 3:45 PM", now) == reset
+    assert reset_moment("Oct 25th, 2026 3:45 PM", now) == reset
+    end_of_day = datetime(2026, 10, 25, 23, 59, 59).astimezone().astimezone(UTC)
+    assert reset_moment("October 25", now) == end_of_day.strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert reset_moment("Jan 3, 1:00 AM", now) == _local_utc(2027, 1, 3, 1, 0)  # the next one
+    assert reset_moment("Feb 30, 3:45 PM", now) is None
+    found = resume.Stopped("quota", "reviewer", "runtime", "stopped", reset_at=reset)
+    moment = datetime.fromisoformat(reset.replace("Z", "+00:00"))
+    for before in (now, moment - timedelta(days=1, minutes=-1), moment - timedelta(seconds=1)):
+        refused = resume.refusal(found, 7, before)
+        assert refused is not None and reset in refused.reason, before
+    assert resume.refusal(found, 7, moment) is None
 
 
 def test_c5_resume_settings_are_validated(tmp_path: Path) -> None:
@@ -325,6 +372,16 @@ def test_c5_resume_settings_are_validated(tmp_path: Path) -> None:
         data["agents"]["implementer"][key] = value
         with pytest.raises(config.ConfigError, match=re.escape(message)):
             config.parse(data)
+    data = valid_data()
+    data["agents"]["implementer"]["max_turns"] = 40
+    assert config.parse(data).implementer.max_turns == 40
+    data["agents"]["implementer"]["max_turns"] = 0
+    with pytest.raises(config.ConfigError, match=r"max_turns: expected a positive integer"):
+        config.parse(data)
+    data = valid_data()
+    data["agents"]["reviewer"]["max_turns"] = 40
+    with pytest.raises(config.ConfigError, match=r"agents\.reviewer"):
+        config.parse(data)
     data = valid_data()
     data["agents"]["reviewer"]["resume_factor"] = 2
     with pytest.raises(config.ConfigError, match=r"agents\.reviewer"):

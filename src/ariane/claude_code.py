@@ -71,6 +71,7 @@ class ClaudeCodeRuntime:
                 "--setting-sources",
                 "project,local",
             ]
+        turns = [] if session.max_turns is None else ["--max-turns", str(session.max_turns)]
         return [
             *self.executable,
             "-p",
@@ -87,6 +88,7 @@ class ClaudeCodeRuntime:
             "--strict-mcp-config",
             "--max-budget-usd",
             f"{session.max_budget_usd:g}",
+            *turns,
             "--no-session-persistence",
             *schema,
         ]
@@ -215,6 +217,7 @@ def parse_result(stdout: str, stderr: str, returncode: int | None) -> SessionRes
         cache_write_tokens=as_int(usage.get("cache_creation_input_tokens")),
         summary=summary,
         structured_output=data.get("structured_output"),
+        turns=as_int(data.get("num_turns")),
         permission_denials=tuple(_denial(d) for d in denials if isinstance(d, dict))
         if isinstance(denials, list)
         else (),

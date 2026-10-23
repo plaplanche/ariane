@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -53,6 +54,7 @@ class Stopped:
     rounds: int = 0  # the fix rounds the run had begun
     resumed: bool = False  # the run was itself resumed
     reset_at: str = ""  # when the runtime said its quota resets, UTC; "" when it did not
+    turns: int | None = None  # the turns the last session took, when its runtime reported them
 
     @property
     def limit(self) -> bool:
@@ -87,6 +89,7 @@ def stopped(data: Mapping[str, Any]) -> Stopped | None:
             int(data.get("rounds") or 0),
             before.get("resumed") is True,
             str(last.get("reset_at") or ""),
+            last["turns"] if isinstance(last.get("turns"), int) else None,
         )
     except (KeyError, IndexError, TypeError, ValueError, AttributeError):
         return None
@@ -172,9 +175,10 @@ class Resumed:
         )
 
 
-def raised(agent: AgentConfig, reason: str) -> tuple[AgentConfig, str]:
+def raised(agent: AgentConfig, reason: str, turns: int | None = None) -> tuple[AgentConfig, str]:
     """`agent` with the limit that stopped its session raised by `resume_factor`, capped by its
-    `*_cap` setting, and the journal's sentence for it."""
+    `*_cap` setting, and the journal's sentence for it; after a turns stop, the turn limit is
+    `max_turns`, else the `turns` the stopped session took."""
     factor = agent.resume_factor
     if reason == StopReason.BUDGET.value:
         usd = min(agent.max_budget_usd * factor, agent.max_budget_usd_cap or float("inf"))
@@ -189,7 +193,12 @@ def raised(agent: AgentConfig, reason: str) -> tuple[AgentConfig, str]:
         text = f"Raised `timeout_minutes` from {agent.timeout_minutes:g} to {minutes:g} min."
         return dataclasses.replace(agent, timeout_minutes=minutes), text
     if reason == StopReason.TURNS.value:
-        return agent, "No limit raised: Ariane sets no turn limit of its own."
+        limit = agent.max_turns or turns
+        if limit is None:
+            return agent, "No limit raised: the turn limit that stopped the session is not known."
+        more = math.ceil(limit * factor)
+        text = f"Raised the turn limit (`max_turns`) from {limit} to {more}."
+        return dataclasses.replace(agent, max_turns=more), text
     return agent, "No limit raised: the session stopped on its runtime's quota."
 
 
@@ -237,7 +246,7 @@ def prepare(
     if found.reason == QUOTA and found.role == "reviewer":
         agent, text = None, "No limit raised: the reviewer stopped on its runtime's quota."
     else:
-        agent, text = raised(config.implementer, found.reason)
+        agent, text = raised(config.implementer, found.reason, found.turns)
     entries = last_entries(journal)
     resumed = Resumed(found, kept, head, base, tuple(changed), entries, agent, text)
     return url, refs, instructions, restarted, resumed

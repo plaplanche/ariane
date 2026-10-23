@@ -72,25 +72,46 @@ def _tool_name(event: dict[str, Any]) -> str | None:
 
 _SPAN = re.compile(r"(\d+)\s*(second|minute|hour|day|week)s?\b", re.IGNORECASE)
 _CLOCK = re.compile(r"\b(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]\.?m\.?)?", re.IGNORECASE)
+_MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+_DATE = re.compile(
+    r"\b(" + "|".join(_MONTHS) + r")[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b,?(?:\s+(\d{4})\b)?",
+    re.IGNORECASE,
+)
 
 
 def reset_moment(text: str, now: datetime | None = None) -> str | None:
-    """The UTC time, as ISO text, of a runtime's "try again at/in <text>": an ISO time with its
-    zone, a span ("2 hours 5 minutes") from `now`, or a clock time ("3:45 PM", the machine's
-    local time) at its next occurrence; None when the text is none of these (ADR 0062)."""
+    """The UTC time, as ISO text, of a runtime's "try again at/in <text>": an ISO time (without
+    a zone, the machine's local time), a span ("2 hours 5 minutes") from `now`, or a clock time
+    ("3:45 PM", the machine's local time), on the date the text names ("Oct 25th, 2026", the
+    year after `now` when none is given) or else at its next occurrence; a date without a clock
+    time is the end of that day. None when the text is none of these (ADR 0062)."""
     now = now or datetime.now(UTC)
+    local = now.astimezone()
     try:
         moment = datetime.fromisoformat(text.strip().replace("Z", "+00:00"))
     except ValueError:
         moment = None
-    if moment is not None and moment.tzinfo is not None:
-        return _utc(moment)
+    if moment is not None:
+        return _utc(moment if moment.tzinfo is not None else moment.astimezone())
     if spans := _SPAN.findall(text):
         return _utc(
             now + sum((timedelta(**{f"{u.lower()}s": int(n)}) for n, u in spans), timedelta())
         )
-    if (found := _CLOCK.search(text)) is None:
+    clock = _CLOCK.search(text)
+    time = _clock(clock) if clock is not None else None
+    if clock is not None and time is None:
         return None
+    if (dated := _DATE.search(text)) is not None:
+        return _dated(dated, time, local)
+    if time is None:
+        return None
+    today = local.replace(tzinfo=None)
+    moment = today.replace(hour=time[0], minute=time[1], second=time[2], microsecond=0)
+    return _utc((moment if moment > today else moment + timedelta(days=1)).astimezone())
+
+
+def _clock(found: re.Match[str]) -> tuple[int, int, int] | None:
+    """The hour, minute and second of a clock time, or None when it is not one."""
     hour, minute, second = int(found[1]), int(found[2]), int(found[3] or 0)
     if found[4]:
         if not 1 <= hour <= 12:
@@ -98,9 +119,23 @@ def reset_moment(text: str, now: datetime | None = None) -> str | None:
         hour = hour % 12 + (12 if found[4][0].lower() == "p" else 0)
     if hour > 23 or minute > 59 or second > 59:
         return None
-    local = now.astimezone()
-    moment = local.replace(hour=hour, minute=minute, second=second, microsecond=0)
-    return _utc(moment if moment > local else moment + timedelta(days=1))
+    return hour, minute, second
+
+
+def _dated(found: re.Match[str], time: tuple[int, int, int] | None, local: datetime) -> str | None:
+    """The moment of a named date, at `time` (else the end of the day), local time; without a
+    year, the first such date that is not before `local`'s day."""
+    month, day = _MONTHS.index(found[1][:3].lower()) + 1, int(found[2])
+    hour, minute, second = time or (23, 59, 59)
+    years = [int(found[3])] if found[3] else [local.year, local.year + 1]
+    for year in years:
+        try:
+            moment = datetime(year, month, day, hour, minute, second).astimezone()
+        except ValueError:
+            return None
+        if found[3] or moment.date() >= local.date():
+            return _utc(moment)
+    return _utc(moment)
 
 
 def _utc(moment: datetime) -> str:
@@ -154,6 +189,7 @@ class Session:
     json_schema: Mapping[str, Any] | None = None  # shape of the structured answer, if any
     add_dirs: tuple[Path, ...] = ()  # read-only reviewer: the trees it may read, cwd is empty
     idle_timeout_s: float | None = None  # killed when no event arrives for this long (C5)
+    max_turns: int | None = None  # the runtime's turn limit; None: the runtime's own (ADR 0062)
 
 
 @dataclass(frozen=True)
@@ -173,6 +209,7 @@ class SessionResult:
     billing: str | None = None  # "plan" (covered by a subscription) or "api"; None when unknown
     next_step: str | None = None  # what to do, when the runtime knows (quota, login)
     reset_at: str | None = None  # a quota stop: when the runtime said it resets, UTC (ADR 0062)
+    turns: int | None = None  # the turns the session took, as reported
 
     @classmethod
     def failed(cls, reason: StopReason, summary: str, cap: str | None = None) -> SessionResult:
@@ -279,6 +316,7 @@ def session_for(
         max_tokens=agent.max_tokens,
         timeout_s=agent.timeout_minutes * 60,
         idle_timeout_s=None if agent.idle_minutes is None else agent.idle_minutes * 60,
+        max_turns=agent.max_turns,
         cwd=cwd,
         prompt=prompt,
         env=env,

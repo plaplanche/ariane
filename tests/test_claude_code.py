@@ -53,6 +53,7 @@ def test_c5_stop_reason_and_cost_come_from_recorded_results(
     assert result.cost_usd == data["total_cost_usd"]
     assert result.input_tokens == data["usage"]["input_tokens"]
     assert result.output_tokens == data["usage"]["output_tokens"]
+    assert result.turns == data["num_turns"]
 
 
 def test_c5_refused_tool_calls_are_reported() -> None:
@@ -85,6 +86,9 @@ def test_c5_command_line_has_the_allowlist_deny_list_budget_and_no_extra_tool_se
     assert argv[argv.index("--max-budget-usd") + 1] == "2.5"
     assert "--strict-mcp-config" in argv and "--no-session-persistence" in argv
     assert argv[argv.index("--model") + 1] == "claude-sonnet-5-5"
+    assert "--max-turns" not in argv  # no turn limit of Ariane's unless one is set
+    limited = ClaudeCodeRuntime().command(dataclasses.replace(session(tmp_path), max_turns=12))
+    assert limited[limited.index("--max-turns") + 1] == "12"
 
 
 def test_c5_the_prompt_goes_on_standard_input_with_the_session_environment(
