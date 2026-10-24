@@ -92,15 +92,62 @@ flowchart LR
 6. **Delivery.** One push, one pull request (a draft if still `no-go`), one commit status per
    check, and the ticket's records in `work/<n>/`. You merge.
 
-## Try it
+## Get started from Claude Code
 
-Requirements: Python 3.11 or later, [uv](https://docs.astral.sh/uv/), git, and Claude Code
-(`claude`) logged in. Use a fine-grained GitHub token limited to the one repository, with
-**contents, pull requests and commit statuses: write; issues: read** (issues: write if you use
-`ariane next --start`, which relabels the issue); no workflows, no administration. Shadow mode
-only needs issues: read.
+The shortest path to Ariane on your own project is to drive it from a Claude Code session opened
+in that project: you give the prompts below, Claude Code runs the commands, and you read the pull
+request and merge. Start with Claude models only (Sonnet implements, Opus reviews), then move the
+review to Codex once the first tickets go through.
 
-Put an `ariane.toml` at the root of the repository to work on. This one is enough to start:
+### Before the session
+
+You need Python 3.11 or later, [uv](https://docs.astral.sh/uv/), git, and Claude Code (`claude`)
+logged in. Create a fine-grained GitHub token limited to the one repository, with **contents,
+pull requests and commit statuses: write; issues: read** (issues: write if you use
+`ariane next --start`, which relabels the issue); no workflows, no administration. Set it in the
+shell that starts Claude Code, so that the commands Claude Code runs inherit it; Ariane removes it
+from its own environment once read and never gives it to an agent.
+
+PowerShell:
+
+```powershell
+$env:GH_TOKEN = "<the token>"
+claude
+```
+
+bash:
+
+```bash
+export GH_TOKEN="<the token>"
+claude
+```
+
+In a cloud session, set `GH_TOKEN` in the environment's variables instead.
+
+### Step 1: Sonnet implements, Opus reviews
+
+**1. Install Ariane.** Prompt:
+
+```text
+Install Ariane with `uv tool install git+https://github.com/plaplanche/ariane`, then run
+`ariane --version` and tell me the version.
+```
+
+**2. Write the configuration.** Prompt (replace the repository name):
+
+```text
+Create ariane.toml at the root of this repository, from the minimal configuration in Ariane's
+README (https://github.com/plaplanche/ariane#get-started-from-claude-code):
+tracker.repository = "<owner>/<repository>", the implementer on Claude Code with
+claude-sonnet-5-5, the reviewer on Claude Code with claude-opus-5-5 and the tools Read, Glob,
+Grep. Set project.base_branch to our default branch, project.setup to the command that installs
+this project, and add one [[checks]] entry per command our CI runs (lint, types, tests), as
+lists of arguments run from the repository root. Run each check command once to see that it
+passes on the default branch. Commit ariane.toml on the default branch, push it, and add nothing
+else.
+```
+
+The minimal configuration it starts from:
 
 ```toml
 [project]
@@ -134,27 +181,88 @@ command = ["uv", "run", "pytest", "-q"]
 [`docs/ariane.example.toml`](docs/ariane.example.toml) comments every other key (definition of
 done, documentation, selective checks, caches, sensitive paths, the queue), Ariane's own
 [`ariane.toml`](ariane.toml) is a complete example, and the
-[JSON Schema](docs/reference/ariane.toml.schema.json) lists them all.
+[JSON Schema](docs/reference/ariane.toml.schema.json) lists them all. A configuration error stops
+`ariane start` with exit code 2 before it creates anything, naming the key.
 
-PowerShell:
+**3. Write a small ticket and label it yourself.** On GitHub, open an issue for a change of a few
+hundred lines at most, with what is wanted, its acceptance criteria and what is out of scope.
+Then add the label `ariane` yourself, from your account: Ariane only runs an issue labelled by a
+person with write access, and not changed since (add the label again after any edit or comment).
 
-```powershell
-uv tool install git+https://github.com/plaplanche/ariane
-$env:GH_TOKEN = "<the token>"
-ariane start 12
-ariane status 12
-ariane verify my-branch --issue 12
+**4. Run the ticket.** Prompt (replace 12 with the issue's number):
+
+```text
+Run `ariane start 12` in the background: it can take 10 to 60 minutes, longer than one command's
+time limit. When it ends, give me its last line, the output of `ariane status 12`, and a summary
+of the ticket's records in work/12/ of its working tree (../<this folder>.ariane/worktrees/12):
+the checks, each review's verdict and blocking findings, the cost in metrics.json, and the pull
+request's link. Do not push, merge, relabel or change anything yourself.
 ```
 
-bash:
+Ariane works beside the repository (`../<repo>.ariane/`), so Claude Code may ask you to allow
+access to that folder. The ticket ends in one of three ways:
 
-```bash
-uv tool install git+https://github.com/plaplanche/ariane
-export GH_TOKEN="<the token>"
-ariane start 12
-ariane status 12
-ariane verify my-branch --issue 12
+- **A pull request**: the checks passed and the reviewer said `go`. Read it and merge it.
+- **A draft pull request that needs a human**: the review was still `no-go` after two fix rounds.
+  Finish the branch by hand (or with Claude Code), then have it checked again with the prompt
+  `Run ariane verify ariane/12 --issue 12 and summarise the review.` after labelling the issue
+  `ariane` again.
+- **A stop, nothing pushed**: a blocking check failed before any review, a limit was reached or
+  the gate refused the issue; the last line says why and what to do next. A stopped ticket starts
+  over with `ariane start 12 --restart`, which keeps the previous branch.
+
+Run a few tickets this way before changing the configuration. `ariane report` sums up their cost,
+rounds and first-pass verdicts.
+
+### Step 2: the review on Codex
+
+A reviewer from another vendor is less likely to share the implementer's blind spots. Ariane's own tickets
+run with Opus implementing and Codex reviewing (ADR 0044). The reviewer runs on the
+[Codex CLI](https://github.com/openai/codex), logged in with a ChatGPT plan, so its reviews are
+covered by the plan.
+
+**1. Install and log in to Codex, yourself.** Install the Codex CLI following its own
+instructions, check that `codex --version` works, then log in once from a terminal (or from
+Claude Code with `!` before the command): `codex login --device-auth`, with your ChatGPT account.
+The login stays in `~/.codex/auth.json`, which Ariane never reads; keep it private, like a
+password. In a cloud session that file is lost with the container unless the environment keeps
+it, so you log in again in each new session.
+
+**2. Move the reviewer to Codex.** Prompt (choose the Codex model your plan offers):
+
+```text
+In ariane.toml, change [agents.reviewer] to runtime = "codex" and model = "<a Codex model>",
+keeping its tools, max_budget_usd and timeout_minutes. Change the implementer's model to
+claude-opus-5-5. Commit and push on the default branch, nothing else.
 ```
+
+The result:
+
+```toml
+[agents.implementer]
+runtime = "claude-code"
+model = "claude-opus-5-5"
+tools = ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
+max_budget_usd = 10.0
+timeout_minutes = 30
+
+[agents.reviewer]
+runtime = "codex"
+model = "<a Codex model>"
+tools = ["Read", "Glob", "Grep"]
+max_budget_usd = 3.0
+timeout_minutes = 20
+```
+
+On Codex, the read-only sandbox restricts the reviewer, not `tools`. Opus as implementer is a
+choice, not a requirement: Sonnet can keep implementing.
+
+**3. Run the next ticket** with the same prompt as in step 1. A Codex login that is missing, or
+made with an API key instead of ChatGPT, stops the ticket when the review starts and says how
+to fix it; a plan whose usage limit is reached stops it with "reviewer quota reached", never a `no-go`:
+restart it after the reset time. To be billed per token instead, set `api_key_env` in
+`[agents.reviewer]`; [reviewers](docs/guide/reviewers.md#reviewer-on-codex) has the details, and
+the pi and opencode reviewers.
 
 ## Commands
 
